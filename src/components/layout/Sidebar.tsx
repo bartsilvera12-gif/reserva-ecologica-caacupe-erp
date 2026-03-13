@@ -85,8 +85,8 @@ function NavItem({
         <span
           className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all cursor-pointer ${
             isActive || childActive
-              ? "bg-white/20 text-white"
-              : "text-slate-300 hover:bg-white/10 hover:text-white"
+              ? "bg-[#0EA5E9] text-white"
+              : "text-slate-700 hover:bg-[#E2E8F0]"
           }`}
           onClick={onToggleExpand}
         >
@@ -119,8 +119,8 @@ function NavItem({
                   href={c.href}
                   className={`block rounded-lg px-3 py-2 text-sm transition-all ${
                     p === c.href || p.startsWith(c.href + "/")
-                      ? "bg-white/15 text-white font-medium"
-                      : "text-slate-400 hover:text-white hover:bg-white/5"
+                      ? "bg-[#0EA5E9] text-white font-medium"
+                      : "text-slate-600 hover:bg-[#E2E8F0]"
                   }`}
                 >
                   {c.label}
@@ -139,7 +139,7 @@ function NavItem({
       className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
         isActive
           ? "bg-[#0EA5E9] text-white"
-          : "text-slate-300 hover:bg-white/10 hover:text-white"
+          : "text-slate-700 hover:bg-[#E2E8F0]"
       }`}
     >
       <Icon className="h-5 w-5 shrink-0" />
@@ -150,7 +150,7 @@ function NavItem({
             type="button"
             onClick={(e) => { e.preventDefault(); onToggleFavorito(itemId); }}
             className={`rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100 ${
-              isFavorito ? "opacity-100 text-amber-400" : "text-slate-400 hover:text-amber-400"
+              isFavorito ? "opacity-100 text-amber-500" : "text-slate-500 hover:text-amber-500"
             }`}
           >
             <Star className={`h-4 w-4 ${isFavorito ? "fill-current" : ""}`} />
@@ -230,11 +230,10 @@ export default function Sidebar() {
       initial={false}
       animate={{ width: collapsed ? 80 : 260 }}
       transition={{ duration: 0.2 }}
-      className="flex shrink-0 flex-col border-r border-white/5"
-      style={{ backgroundColor: "#1a1a1a" }}
+      className="flex shrink-0 flex-col border-r border-slate-200 bg-[#F1F5F9]"
     >
       {/* Logo mucho más grande y visible */}
-      <div className="flex h-24 items-center justify-between gap-3 border-b border-white/10 px-4 py-4">
+      <div className="flex h-24 items-center justify-between gap-3 border-b border-slate-200 px-4 py-4">
         <Link href="/" className={`flex items-center min-w-0 ${collapsed ? "flex-1 justify-center" : "gap-4"}`}>
           <div className="relative shrink-0 flex items-center" style={{ height: 56, width: collapsed ? 56 : 120 }}>
             <Image
@@ -242,18 +241,18 @@ export default function Sidebar() {
               alt="Neura"
               width={120}
               height={56}
-              className="h-14 w-auto max-w-full object-contain object-left"
+              className="h-14 w-auto max-w-full object-contain object-left brightness-0"
               priority
             />
           </div>
           {!collapsed && (
-            <span className="text-xl font-black tracking-tight text-white whitespace-nowrap">NEURA ERP</span>
+            <span className="text-xl font-black tracking-tight text-[#0F172A] whitespace-nowrap">NEURA ERP</span>
           )}
         </Link>
         <button
           type="button"
           onClick={() => setCollapsed(!collapsed)}
-          className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
+          className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-[#E2E8F0] hover:text-slate-700"
           aria-label={collapsed ? "Expandir sidebar" : "Colapsar sidebar"}
         >
           {collapsed ? <PanelLeft className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
@@ -264,7 +263,7 @@ export default function Sidebar() {
         {/* Favoritos */}
         {favoritos.length > 0 && !collapsed && (
           <div className="mb-4">
-            <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-amber-400/90">★ Favoritos</p>
+            <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-[#475569]">★ Favoritos</p>
             <div className="space-y-0.5">
               {MENU_STRUCTURE.filter((item) => favoritos.includes(slugToId(item.slug))).map((item) => (
                 <NavItem
@@ -290,7 +289,7 @@ export default function Sidebar() {
             <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-slate-500">General</p>
           )}
           {cargando ? (
-            <div className="px-3 py-2 text-sm text-slate-400 animate-pulse">Cargando…</div>
+            <div className="px-3 py-2 text-sm text-[#475569] animate-pulse">Cargando…</div>
           ) : (
             MENU_STRUCTURE.filter((item) => !favoritos.includes(slugToId(item.slug))).map((item) => (
               <NavItem
@@ -311,16 +310,16 @@ export default function Sidebar() {
 
         {/* Admin */}
         {esSuperAdmin && (
-          <div className="mt-6 pt-4 border-t border-white/10">
+          <div className="mt-6 pt-4 border-t border-slate-200">
             {!collapsed && (
-              <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Admin</p>
+              <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-[#475569]">Admin</p>
             )}
             <Link
               href="/admin/empresas"
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
                 (pathname ?? "").startsWith("/admin/empresas")
-                  ? "bg-white/20 text-amber-300"
-                  : "text-amber-400/90 hover:bg-white/10 hover:text-amber-300"
+                  ? "bg-[#0EA5E9] text-white"
+                  : "text-amber-600 hover:bg-[#E2E8F0]"
               }`}
             >
               <Building2 className="h-5 w-5 shrink-0" />

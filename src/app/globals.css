@@ -53,14 +53,5 @@ body {
   font-family: var(--font-plus-jakarta), system-ui, sans-serif;
 }
 
-/* Sidebar: gris puro #1a1a1a - maxima prioridad */
-#neura-sidebar {
-  background-color: #1a1a1a !important;
-  background: #1a1a1a !important;
-}
-html.dark #neura-sidebar {
-  background-color: #0a0a0a !important;
-  background: #0a0a0a !important;
-}
 
 
