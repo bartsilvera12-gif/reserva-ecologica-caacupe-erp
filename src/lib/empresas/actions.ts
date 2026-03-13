@@ -109,3 +109,41 @@ export async function crearEmpresa(data: CrearEmpresaData): Promise<{ empresa_id
   }
   return json;
 }
+
+export interface EmpresaDetalle {
+  empresa: Empresa;
+  usuarios: { id: string; nombre: string; email: string; rol: string; created_at: string }[];
+  modulos: { id: string; nombre: string; slug: string }[];
+}
+
+export async function getEmpresaById(id: string): Promise<EmpresaDetalle> {
+  const res = await fetch(`/api/admin/empresas/${id}`, { cache: "no-store" });
+  const json = await res.json();
+  if (!res.ok) {
+    throw new Error(typeof json.error === "string" ? json.error : "Empresa no encontrada");
+  }
+  return json;
+}
+
+export interface ActualizarEmpresaData {
+  nombre_empresa?: string;
+  ruc?: string;
+  plan?: string;
+  estado?: string;
+  modulo_ids?: string[];
+}
+
+export async function actualizarEmpresa(id: string, data: ActualizarEmpresaData): Promise<void> {
+  const res = await fetch(`/api/admin/empresas/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+
+  const json = await res.json();
+  if (!res.ok) {
+    throw new Error(
+      typeof json.error === "string" ? json.error : json.error?.message || "Error actualizando empresa"
+    );
+  }
+}
