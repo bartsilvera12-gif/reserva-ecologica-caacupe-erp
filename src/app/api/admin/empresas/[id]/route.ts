@@ -52,7 +52,7 @@ export async function GET(
         .in("id", moduloIds);
       modulos = (mod ?? []).map((m) => ({
         id: m.id,
-        nombre: (m.nombre ?? m.name ?? m.id) as string,
+        nombre: (m.nombre ?? m.id) as string,
         slug: (m.slug ?? "") as string,
       }));
     }
