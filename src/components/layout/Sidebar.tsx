@@ -85,7 +85,7 @@ function NavItem({
         <span
           className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all cursor-pointer ${
             isActive || childActive
-              ? "bg-[#0EA5E9] text-white"
+              ? "bg-white/20 text-white"
               : "text-slate-300 hover:bg-white/10 hover:text-white"
           }`}
           onClick={onToggleExpand}
@@ -119,7 +119,7 @@ function NavItem({
                   href={c.href}
                   className={`block rounded-lg px-3 py-2 text-sm transition-all ${
                     p === c.href || p.startsWith(c.href + "/")
-                      ? "bg-[#0EA5E9]/20 text-[#0EA5E9] font-medium"
+                      ? "bg-white/15 text-white font-medium"
                       : "text-slate-400 hover:text-white hover:bg-white/5"
                   }`}
                 >
@@ -319,7 +319,7 @@ export default function Sidebar() {
               href="/admin/empresas"
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
                 (pathname ?? "").startsWith("/admin/empresas")
-                  ? "bg-[#0EA5E9] text-white"
+                  ? "bg-white/20 text-amber-300"
                   : "text-amber-400/90 hover:bg-white/10 hover:text-amber-300"
               }`}
             >
