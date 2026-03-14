@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { saveProspecto } from "@/lib/crm/storage";
 import { getPlanes } from "@/lib/planes/storage";
+import PlanSelector from "@/components/crm/PlanSelector";
 import type { EtapaFunnel } from "@/lib/crm/types";
 import type { Plan } from "@/lib/planes/types";
 
@@ -208,25 +209,12 @@ export default function NuevoProspectoPage() {
                   </Link>
                 </div>
               ) : (
-                <div className="space-y-2 rounded-lg border border-slate-200 p-3 bg-slate-50/50 max-h-48 overflow-y-auto">
-                  {planesActivos.map((plan) => (
-                    <label
-                      key={plan.id}
-                      className="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-white transition-colors"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={form.planIds.includes(plan.id)}
-                        onChange={() => togglePlan(plan.id)}
-                        className="rounded border-slate-300 text-[#0EA5E9] focus:ring-[#0EA5E9]"
-                      />
-                      <span className="text-sm text-gray-800 flex-1">{plan.nombre}</span>
-                      <span className="text-xs text-gray-500 font-mono">
-                        {plan.precio.toLocaleString("es-PY")} ₲
-                      </span>
-                    </label>
-                  ))}
-                </div>
+                <PlanSelector
+                  planes={planes}
+                  selectedIds={form.planIds}
+                  onToggle={togglePlan}
+                  placeholder="Buscar plan por nombre…"
+                />
               )}
             </div>
 
