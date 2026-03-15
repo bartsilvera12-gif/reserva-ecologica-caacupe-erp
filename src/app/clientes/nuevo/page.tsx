@@ -4,7 +4,10 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { saveCliente } from "@/lib/clientes/storage";
 import { getProspecto, updateProspecto } from "@/lib/crm/storage";
+import { saveSuscripcion } from "@/lib/facturacion/storage";
+import { getPlanes } from "@/lib/planes/storage";
 import type { TipoCliente, OrigenCliente } from "@/lib/clientes/types";
+import type { Plan } from "@/lib/planes/types";
 
 // ── Estilos ────────────────────────────────────────────────────────────────────
 
@@ -30,6 +33,7 @@ function NuevoClienteForm() {
   const [crmBanner,  setCrmBanner]  = useState<string | null>(null);
   const [error,      setError]      = useState<string | null>(null);
   const [guardando,  setGuardando]  = useState(false);
+  const [planes,     setPlanes]     = useState<Plan[]>([]);
 
   const [form, setForm] = useState({
     tipo_cliente:        "empresa" as TipoCliente,
@@ -57,6 +61,20 @@ function NuevoClienteForm() {
     prospecto_id:        null as string | null,
     estado:              "activo" as "activo" | "inactivo",
   });
+
+  // Campos de suscripción (solo cuando condicion_pago = MENSUAL)
+  const [formSusc, setFormSusc] = useState({
+    plan_id:           "",
+    precio:            "",
+    duracion_meses:    "12",
+    dia_facturacion:   "1",
+    dia_vencimiento:   "10",
+    generar_factura:   false,
+  });
+
+  useEffect(() => {
+    if (form.condicion_pago === "MENSUAL") getPlanes().then(setPlanes);
+  }, [form.condicion_pago]);
 
   // Pre-fill desde CRM si viene con ?from_crm=id
   useEffect(() => {
@@ -99,6 +117,19 @@ function NuevoClienteForm() {
     if (!form.nombre_contacto.trim())                              return setError("El nombre de contacto es obligatorio.");
     if (form.tipo_cliente === "empresa" && !form.empresa.trim())   return setError("La razón social es obligatoria para empresas.");
 
+    if (form.condicion_pago === "MENSUAL") {
+      const dur = parseInt(formSusc.duracion_meses, 10) || 0;
+      const diaFac = parseInt(formSusc.dia_facturacion, 10) || 0;
+      const diaVenc = parseInt(formSusc.dia_vencimiento, 10) || 0;
+      if (dur <= 0) return setError("La duración del contrato debe ser mayor a 0.");
+      if (diaFac < 1 || diaFac > 28) return setError("El día de facturación debe estar entre 1 y 28.");
+      if (diaVenc < 1 || diaVenc > 31) return setError("El día de vencimiento debe estar entre 1 y 31.");
+      if (diaVenc <= diaFac) return setError("El día de vencimiento debe ser mayor al día de facturación.");
+      if (!formSusc.plan_id.trim()) return setError("Seleccioná un plan para clientes mensuales.");
+      const precio = parseFloat(formSusc.precio) || 0;
+      if (precio <= 0) return setError("El precio debe ser mayor a 0.");
+    }
+
     setGuardando(true);
 
     const nuevo = await saveCliente({
@@ -129,15 +160,36 @@ function NuevoClienteForm() {
       estado:              form.estado,
     });
 
-    setGuardando(false);
+    if (!nuevo) {
+      setGuardando(false);
+      return setError("Error al guardar en Supabase. Revisa la consola.");
+    }
 
-    if (!nuevo) return setError("Error al guardar en Supabase. Revisa la consola.");
+    // Crear suscripción automática si condicion_pago = MENSUAL
+    if (form.condicion_pago === "MENSUAL") {
+      const plan = planes.find((p) => p.id === formSusc.plan_id);
+      await saveSuscripcion(
+        {
+          cliente_id: nuevo.id,
+          plan_id: formSusc.plan_id || null,
+          precio: parseFloat(formSusc.precio) || (plan?.precio ?? 0),
+          moneda: form.moneda_preferida,
+          fecha_inicio: new Date().toISOString().slice(0, 10),
+          duracion_meses: parseInt(formSusc.duracion_meses, 10) || 12,
+          dia_facturacion: parseInt(formSusc.dia_facturacion, 10) || 1,
+          dia_vencimiento: parseInt(formSusc.dia_vencimiento, 10) || 10,
+          generar_factura_este_mes: formSusc.generar_factura,
+        },
+        plan?.nombre
+      );
+    }
 
     // Marcar prospecto CRM como cliente_creado
     if (form.prospecto_id) {
       await updateProspecto(form.prospecto_id, { cliente_creado: true });
     }
 
+    setGuardando(false);
     router.push(`/clientes/${nuevo.id}`);
   }
 
@@ -384,11 +436,11 @@ function NuevoClienteForm() {
                   className={inputClass}
                 >
                   <option value="CONTADO">Contado</option>
-                  <option value="MENSUAL">Mensual</option>
                   <option value="15 DÍAS">15 días</option>
                   <option value="30 DÍAS">30 días</option>
                   <option value="60 DÍAS">60 días</option>
                   <option value="90 DÍAS">90 días</option>
+                  <option value="MENSUAL">Mensual</option>
                 </select>
               </div>
               <div>
@@ -444,6 +496,83 @@ function NuevoClienteForm() {
                 </select>
               </div>
             </div>
+
+            {/* Campos de suscripción (solo cuando condicion_pago = MENSUAL) */}
+            {form.condicion_pago === "MENSUAL" && (
+              <div className="mt-6 p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-4">
+                <SectionTitle>Configuración de suscripción</SectionTitle>
+                <div>
+                  <label className={labelClass}>Plan</label>
+                  <select
+                    value={formSusc.plan_id}
+                    onChange={(e) => {
+                      const p = planes.find((x) => x.id === e.target.value);
+                      setFormSusc((prev) => ({ ...prev, plan_id: e.target.value, precio: p ? String(p.precio) : prev.precio }));
+                    }}
+                    className={inputClass}
+                  >
+                    <option value="">— Seleccionar plan —</option>
+                    {planes.filter((p) => p.estado === "activo").map((p) => (
+                      <option key={p.id} value={p.id}>{p.nombre} — Gs. {p.precio.toLocaleString("es-PY")}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Precio (Gs.)</label>
+                  <input
+                    type="number"
+                    value={formSusc.precio}
+                    onChange={(e) => setFormSusc((p) => ({ ...p, precio: e.target.value }))}
+                    className={inputClass}
+                    min={0}
+                    placeholder="Monto mensual"
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Duración contrato (meses)</label>
+                  <input
+                    type="number"
+                    value={formSusc.duracion_meses}
+                    onChange={(e) => setFormSusc((p) => ({ ...p, duracion_meses: e.target.value }))}
+                    className={inputClass}
+                    min={1}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelClass}>Día facturación (1–28)</label>
+                    <input
+                      type="number"
+                      value={formSusc.dia_facturacion}
+                      onChange={(e) => setFormSusc((p) => ({ ...p, dia_facturacion: e.target.value }))}
+                      className={inputClass}
+                      min={1}
+                      max={28}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Día vencimiento (1–31)</label>
+                    <input
+                      type="number"
+                      value={formSusc.dia_vencimiento}
+                      onChange={(e) => setFormSusc((p) => ({ ...p, dia_vencimiento: e.target.value }))}
+                      className={inputClass}
+                      min={1}
+                      max={31}
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="gen_fact_nuevo"
+                    checked={formSusc.generar_factura}
+                    onChange={(e) => setFormSusc((p) => ({ ...p, generar_factura: e.target.checked }))}
+                  />
+                  <label htmlFor="gen_fact_nuevo" className="text-sm text-slate-600">Emitir factura este mes</label>
+                </div>
+              </div>
+            )}
           </section>
 
           {/* Error */}
