@@ -1,4 +1,4 @@
-import { queryEmpresa, getEmpresaId } from "@/lib/db/empresa";
+import { getEmpresaId } from "@/lib/db/empresa";
 import { supabase } from "@/lib/supabase";
 
 export type Gasto = {
@@ -39,23 +39,25 @@ function mapRow(r: Record<string, unknown>): Gasto {
   };
 }
 
-/** Obtiene todos los gastos de la empresa, ordenados por fecha desc */
+/** Obtiene todos los gastos de la empresa, ordenados por fecha desc. RLS filtra por empresa. */
 export async function getGastos(): Promise<Gasto[]> {
-  const q = await queryEmpresa("gastos");
-  const { data, error } = await q.select("*").order("fecha", { ascending: false });
+  const { data, error } = await supabase
+    .from("gastos")
+    .select("*")
+    .order("fecha", { ascending: false });
 
   if (error) throw new Error(error.message);
   return (data ?? []).map(mapRow);
 }
 
-/** Obtiene los gastos del mes actual (para Dashboard) */
+/** Obtiene los gastos del mes actual (para Dashboard). RLS filtra por empresa. */
 export async function getGastosMesActual(): Promise<Gasto[]> {
   const hoy = new Date();
   const inicioMes = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-01`;
   const finMes = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-31`;
 
-  const q = await queryEmpresa("gastos");
-  const { data, error } = await q
+  const { data, error } = await supabase
+    .from("gastos")
     .select("*")
     .gte("fecha", inicioMes)
     .lte("fecha", finMes)
@@ -92,7 +94,6 @@ export async function createGasto(input: GastoInput): Promise<Gasto> {
 export async function updateGasto(id: string, input: Partial<GastoInput>): Promise<Gasto> {
   if (input.monto !== undefined && input.monto <= 0) throw new Error("El monto debe ser mayor a 0");
 
-  const q = await queryEmpresa("gastos");
   const update: Record<string, unknown> = {};
   if (input.categoria !== undefined) update.categoria = input.categoria.trim() || null;
   if (input.descripcion !== undefined) update.descripcion = input.descripcion.trim() || null;
@@ -102,15 +103,19 @@ export async function updateGasto(id: string, input: Partial<GastoInput>): Promi
   if (input.frecuencia !== undefined) update.frecuencia = input.frecuencia?.trim() || null;
   if (input.fecha !== undefined) update.fecha = input.fecha;
 
-  const { data, error } = await q.update(update).eq("id", id).select().single();
+  const { data, error } = await supabase
+    .from("gastos")
+    .update(update)
+    .eq("id", id)
+    .select()
+    .single();
 
   if (error) throw new Error(error.message);
   return mapRow(data as Record<string, unknown>);
 }
 
 export async function deleteGasto(id: string): Promise<void> {
-  const q = await queryEmpresa("gastos");
-  const { error } = await q.delete().eq("id", id);
+  const { error } = await supabase.from("gastos").delete().eq("id", id);
 
   if (error) throw new Error(error.message);
 }
