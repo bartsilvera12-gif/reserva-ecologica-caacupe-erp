@@ -3,7 +3,6 @@ import { createClient } from "@supabase/supabase-js";
 import { getUserAndEmpresa } from "@/lib/middleware/auth";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
-import { emitEvent, EVENT_TYPES } from "@/lib/integrations/events";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -72,9 +71,10 @@ export async function GET(
       suscripcion.duracion_meses ?? 12
     );
 
+    const hoy = new Date().toISOString().slice(0, 10);
     const { data: facturas, error: errFact } = await supabase
       .from("facturas")
-      .select("id, fecha")
+      .select("id, fecha, fecha_vencimiento, saldo, estado")
       .eq("cliente_id", clienteId)
       .eq("suscripcion_id", suscripcion.id)
       .eq("empresa_id", auth.empresa_id);
@@ -83,19 +83,34 @@ export async function GET(
       return NextResponse.json(errorResponse(errFact.message), { status: 400 });
     }
 
-    const facturasPorMes = new Map<string, { id: string }>();
+    const facturasPorMes = new Map<string, { id: string; saldo: number; fecha_vencimiento: string; estado: string }>();
     for (const f of facturas ?? []) {
       const mes = (f.fecha as string).slice(0, 7);
       if (!facturasPorMes.has(mes)) {
-        facturasPorMes.set(mes, { id: f.id });
+        const saldo = Number(f.saldo ?? 0);
+        const estaVencida = saldo > 0 && (f.fecha_vencimiento as string) < hoy;
+        facturasPorMes.set(mes, {
+          id: f.id,
+          saldo,
+          fecha_vencimiento: f.fecha_vencimiento as string,
+          estado: estaVencida ? "Vencido" : (f.estado as string),
+        });
       }
     }
 
     const facturacion = meses.map((mes) => {
       const factura = facturasPorMes.get(mes);
+      const estadoBase = factura ? "emitida" : "proyectada";
+      let badgeEstado = estadoBase;
+      if (factura) {
+        if (factura.estado === "Pagado" || factura.saldo === 0) badgeEstado = "emitida";
+        else if (factura.estado === "Vencido") badgeEstado = "vencida";
+        else badgeEstado = "pendiente";
+      }
       return {
         mes,
-        estado: factura ? "emitida" : "proyectada",
+        estado: estadoBase,
+        badge_estado: badgeEstado,
         factura_id: factura?.id ?? null,
       };
     });

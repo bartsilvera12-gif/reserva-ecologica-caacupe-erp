@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Calendar } from "lucide-react";
 import { getClientes, clienteNombre } from "@/lib/clientes/storage";
 import { getFacturas } from "@/lib/gestion-clientes/storage";
 import type { Cliente } from "@/lib/clientes/types";
@@ -77,12 +78,14 @@ function BadgeTipo({ tipo }: { tipo: string }) {
 function BotonOperativo({
   label,
   icon,
+  iconNode,
   activo = false,
   href,
   onClick,
 }: {
   label:    string;
   icon:     string;
+  iconNode?: React.ReactNode;
   activo?:  boolean;
   href?:    string;
   onClick?: () => void;
@@ -91,11 +94,12 @@ function BotonOperativo({
     "flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-colors";
   const activeClass  = "border-gray-800 bg-gray-900 text-white hover:bg-gray-700";
   const disabledClass = "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed";
+  const iconEl = iconNode ?? <span>{icon}</span>;
 
   if (activo && href) {
     return (
       <Link href={href} className={`${base} ${activeClass}`}>
-        <span>{icon}</span>
+        {iconEl}
         {label}
       </Link>
     );
@@ -103,14 +107,14 @@ function BotonOperativo({
   if (activo && onClick) {
     return (
       <button type="button" onClick={onClick} className={`${base} ${activeClass}`}>
-        <span>{icon}</span>
+        {iconEl}
         {label}
       </button>
     );
   }
   return (
     <button type="button" disabled className={`${base} ${disabledClass}`}>
-      <span>{icon}</span>
+      {iconEl}
       {label}
     </button>
   );
@@ -122,6 +126,168 @@ function ColHeader({ children }: { children: React.ReactNode }) {
   return (
     <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200">
       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{children}</p>
+    </div>
+  );
+}
+
+// ── Modal Estado de Facturación ─────────────────────────────────────────────
+
+const MESES_ES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+function formatMesLabel(mes: string) {
+  const [y, m] = mes.split("-").map(Number);
+  return `${MESES_ES[m - 1]} ${y}`;
+}
+
+function ModalFacturacion({
+  clienteId,
+  clienteNombre: nombreCliente,
+  onClose,
+}: {
+  clienteId: string;
+  clienteNombre: string;
+  onClose: () => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<{
+    facturacion: { mes: string; estado: string; badge_estado: string; factura_id: string | null }[];
+    suscripcion: { id: string; precio: number; moneda: string; fecha_inicio: string; duracion_meses: number } | null;
+  } | null>(null);
+  const [emitiendo, setEmitiendo] = useState<string | null>(null);
+  const [errorEmitir, setErrorEmitir] = useState<string | null>(null);
+
+  async function cargar() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/clientes/${clienteId}/facturacion`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error ?? "Error al cargar");
+      setData(json.data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al cargar facturación");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    cargar();
+  }, [clienteId]);
+
+  async function handleEmitir(mes: string) {
+    setEmitiendo(mes);
+    setErrorEmitir(null);
+    try {
+      const res = await fetch(`/api/clientes/${clienteId}/facturacion/emitir`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mes }),
+      });
+      const json = await res.json();
+      if (res.status === 409) {
+        setErrorEmitir("Ya existe una factura para este mes");
+        return;
+      }
+      if (!res.ok) throw new Error(json?.error ?? "Error al emitir");
+      await cargar();
+    } catch (e) {
+      setErrorEmitir(e instanceof Error ? e.message : "Error al emitir factura");
+    } finally {
+      setEmitiendo(null);
+    }
+  }
+
+  const badgeClass: Record<string, string> = {
+    emitida:   "bg-green-100 text-green-700",
+    proyectada: "bg-gray-100 text-gray-600",
+    vencida:  "bg-red-100 text-red-700",
+    pendiente: "bg-amber-100 text-amber-700",
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[85vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="shrink-0 px-6 py-4 border-b border-gray-200">
+          <h3 className="text-lg font-bold text-gray-900">Estado de Facturación</h3>
+          <p className="text-sm text-gray-500 mt-0.5">{nombreCliente}</p>
+          {data?.suscripcion && (
+            <p className="text-sm font-medium text-gray-700 mt-2">
+              Suscripción mensual — {data.suscripcion.moneda === "USD" ? "USD" : "Gs."} {data.suscripcion.precio.toLocaleString("es-PY")}
+            </p>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          {loading ? (
+            <div className="py-12 text-center text-sm text-gray-500">Cargando...</div>
+          ) : error ? (
+            <div className="py-12 text-center text-sm text-red-600">{error}</div>
+          ) : !data?.suscripcion ? (
+            <div className="py-12 text-center text-sm text-gray-500">
+              Este cliente no tiene suscripción activa para proyectar facturación.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {errorEmitir && (
+                <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+                  <span>⚠</span>
+                  <span>{errorEmitir}</span>
+                </div>
+              )}
+              <div className="space-y-2">
+                {data.facturacion.map((item) => (
+                  <div
+                    key={item.mes}
+                    className="flex items-center justify-between gap-4 py-3 px-4 rounded-lg border border-gray-100 hover:bg-gray-50/60"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">{formatMesLabel(item.mes)}</p>
+                      <span className={`inline-flex text-xs font-medium px-2 py-0.5 rounded-full mt-1 ${badgeClass[item.badge_estado] ?? badgeClass.proyectada}`}>
+                        {item.badge_estado === "emitida" ? "Emitida" : item.badge_estado === "proyectada" ? "Proyectada" : item.badge_estado === "vencida" ? "Vencida" : "Pendiente"}
+                      </span>
+                    </div>
+                    <div className="shrink-0">
+                      {item.estado === "proyectada" && (
+                        <button
+                          type="button"
+                          disabled={emitiendo === item.mes}
+                          onClick={() => handleEmitir(item.mes)}
+                          className="text-xs font-medium text-[#0EA5E9] hover:text-[#0284C7] hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {emitiendo === item.mes ? "Emitiendo..." : "Emitir factura"}
+                        </button>
+                      )}
+                      {item.factura_id && (
+                        <Link
+                          href={`/facturas/${item.factura_id}`}
+                          className="text-xs font-medium text-[#0EA5E9] hover:text-[#0284C7] hover:underline"
+                        >
+                          Ver factura
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="shrink-0 px-6 py-4 border-t border-gray-200">
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full text-sm font-medium text-gray-600 border border-gray-200 rounded-lg py-2.5 hover:bg-gray-50 transition-colors"
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -302,6 +468,7 @@ export default function GestionClientesPage() {
   const [clientes,  setClientes]  = useState<Cliente[]>([]);
   const [selected,  setSelected]  = useState<Cliente | null>(null);
   const [facturas,  setFacturas]  = useState<Factura[]>([]);
+  const [modalFacturacion, setModalFacturacion] = useState(false);
 
   const [filters, setFilters] = useState({
     cliente:                 "",
@@ -663,6 +830,13 @@ export default function GestionClientesPage() {
                     activo
                     href={`/clientes/${selected.id}/tipificacion`}
                   />
+                  <BotonOperativo
+                    label="Facturación"
+                    icon="📄"
+                    iconNode={<Calendar className="w-3.5 h-3.5" />}
+                    activo
+                    onClick={() => setModalFacturacion(true)}
+                  />
                   <BotonOperativo label="Servicios asociados"   icon="🔗" />
                   <BotonOperativo label="Cambio de plan"        icon="🔄" />
                   <BotonOperativo label="Cambio fecha venc."    icon="📅" />
@@ -863,6 +1037,14 @@ export default function GestionClientesPage() {
         </div>
       </div>
 
+      {/* Modal Estado de Facturación */}
+      {modalFacturacion && selected && (
+        <ModalFacturacion
+          clienteId={selected.id}
+          clienteNombre={clienteNombre(selected)}
+          onClose={() => setModalFacturacion(false)}
+        />
+      )}
     </div>
   );
 }
