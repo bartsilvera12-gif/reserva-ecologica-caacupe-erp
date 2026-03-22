@@ -127,7 +127,7 @@ export async function getClientes(opts?: { incluirEliminados?: boolean; incluirP
   if (opts?.incluirPlanActivo) {
     const planMap = await getPlanActivoPorClienteMap(clientes.map((c) => c.id));
     clientes.forEach((c) => {
-      (c as Cliente & { plan_activo?: string }).plan_activo = planMap.get(c.id) ?? null;
+      (c as Cliente).plan_activo = planMap.get(c.id) ?? undefined;
     });
   }
 
@@ -154,8 +154,9 @@ async function getPlanActivoPorClienteMap(clienteIds: string[]): Promise<Map<str
   for (const row of data ?? []) {
     const cid = (row as { cliente_id: string }).cliente_id;
     if (!map.has(cid)) {
-      const planes = (row as { planes: { nombre: string } | null }).planes;
-      const nombre = planes?.nombre?.trim();
+      const planes = (row as { planes: { nombre: string } | { nombre: string }[] | null }).planes;
+      const plan = Array.isArray(planes) ? planes[0] : planes;
+      const nombre = plan?.nombre?.trim();
       map.set(cid, nombre || "Suscripción");
     }
   }
