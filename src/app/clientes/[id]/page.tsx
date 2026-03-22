@@ -254,7 +254,8 @@ export default function ClienteDetailPage() {
     if (!form.nombre_contacto.trim())                             return setFormError("El contacto es obligatorio.");
     if (form.tipo_cliente === "empresa" && !form.empresa.trim())  return setFormError("La razón social es obligatoria para empresas.");
 
-    if (form.condicion_pago === "MENSUAL" && form.estado === "activo") {
+    // Solo validar creación de suscripción cuando: MENSUAL + activo + NO tiene suscripciones
+    if (form.condicion_pago === "MENSUAL" && form.estado === "activo" && suscripciones.length === 0) {
       const dur = parseInt(formSuscEdit.duracion_meses, 10) || 0;
       const diaFac = parseInt(formSuscEdit.dia_facturacion, 10) || 0;
       const diaVenc = parseInt(formSuscEdit.dia_vencimiento, 10) || 0;
