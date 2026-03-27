@@ -33,6 +33,7 @@ export type AdvanceConversationParams = {
 
 export type SendCurrentNodeParams = {
   conversationId: string;
+  __autoHop?: number;
 };
 
 type FlowOption = {
@@ -42,6 +43,7 @@ type FlowOption = {
   meta_button_id: string;
   next_node_code: string | null;
   sort_order: number;
+  option_payload: Record<string, unknown> | null;
 };
 
 type FlowNode = {
@@ -288,11 +290,44 @@ export function createFlowEngine(ctx: FlowEngineContext) {
   async function getNodeOptions(nodeId: string): Promise<FlowOption[]> {
     const { data, error } = await supabase
       .from("chat_flow_options")
-      .select("id, label, option_value, meta_button_id, next_node_code, sort_order")
+      .select("id, label, option_value, meta_button_id, next_node_code, sort_order, option_payload")
       .eq("node_id", nodeId)
       .order("sort_order", { ascending: true });
     if (error) throw new Error(error.message);
     return (data ?? []) as FlowOption[];
+  }
+
+  async function getConversationFlowDataMap(input: {
+    empresaId: string;
+    conversationId: string;
+    flowCode: string | null;
+  }): Promise<Record<string, string>> {
+    if (!input.flowCode) return {};
+    const { data, error } = await supabase
+      .from("chat_flow_data")
+      .select("field_name, field_value")
+      .eq("empresa_id", input.empresaId)
+      .eq("conversation_id", input.conversationId)
+      .eq("flow_code", input.flowCode);
+    if (error) throw new Error(error.message);
+    const out: Record<string, string> = {};
+    for (const row of data ?? []) {
+      const key = String((row as { field_name?: unknown }).field_name ?? "").trim();
+      if (!key) continue;
+      out[key] = String((row as { field_value?: unknown }).field_value ?? "");
+    }
+    return out;
+  }
+
+  function interpolateTemplate(
+    input: string,
+    vars: Record<string, string | number | boolean | null | undefined>
+  ): string {
+    return input.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_full, name: string) => {
+      const raw = vars[name];
+      if (raw === null || raw === undefined) return "";
+      return String(raw);
+    });
   }
 
   async function getNodeBlocks(node: FlowNode): Promise<FlowNodeBlock[]> {
@@ -326,6 +361,10 @@ export function createFlowEngine(ctx: FlowEngineContext) {
   async function sendCurrentFlowNode(
     params: SendCurrentNodeParams
   ): Promise<{ ok: boolean; nodeCode?: string; error?: string }> {
+    const currentHop = params.__autoHop ?? 0;
+    if (currentHop > 10) {
+      return { ok: false, error: "Se alcanzó el límite de auto-encadenamiento del flujo" };
+    }
     const ctxSend = await getConversationSendContext(params.conversationId);
     const state = ctxSend.conversation;
     if (!state.flow_code || !state.flow_current_node) {
@@ -335,7 +374,15 @@ export function createFlowEngine(ctx: FlowEngineContext) {
     const node = await getNode(state.empresa_id, state.flow_code, state.flow_current_node);
     if (!node) return { ok: false, error: "Nodo actual no encontrado" };
 
-    const fallbackText = node.message_text?.trim() || "Continuemos con el flujo.";
+    const flowVars = await getConversationFlowDataMap({
+      empresaId: state.empresa_id,
+      conversationId: state.id,
+      flowCode: state.flow_code,
+    });
+    const fallbackText = interpolateTemplate(
+      node.message_text?.trim() || "Continuemos con el flujo.",
+      flowVars
+    );
     const basePayload = {
       flow_code: state.flow_code,
       node_code: node.node_code,
@@ -444,7 +491,8 @@ export function createFlowEngine(ctx: FlowEngineContext) {
     const options = await getNodeOptions(node.id);
     for (const block of blocks) {
       if (block.block_type === "text") {
-        const text = block.content_text?.trim();
+        const textRaw = block.content_text?.trim();
+        const text = textRaw ? interpolateTemplate(textRaw, flowVars) : "";
         if (!text) continue;
         const send = await sendWhatsAppText({
           toDigits: ctxSend.toDigits,
@@ -467,7 +515,8 @@ export function createFlowEngine(ctx: FlowEngineContext) {
       if (block.block_type === "image") {
         const imageUrl = block.media_url?.trim();
         if (!imageUrl) continue;
-        const caption = block.content_text?.trim() || undefined;
+        const captionRaw = block.content_text?.trim() || "";
+        const caption = captionRaw ? interpolateTemplate(captionRaw, flowVars) : undefined;
         const send = await sendWhatsAppImage({
           toDigits: ctxSend.toDigits,
           phoneNumberId: ctxSend.phoneNumberId,
@@ -489,7 +538,8 @@ export function createFlowEngine(ctx: FlowEngineContext) {
         continue;
       }
       if (block.block_type === "buttons") {
-        const bodyText = block.content_text?.trim() || fallbackText;
+        const bodyTextRaw = block.content_text?.trim() || fallbackText;
+        const bodyText = interpolateTemplate(bodyTextRaw, flowVars);
         const send = await sendWhatsAppInteractiveButtons({
           toDigits: ctxSend.toDigits,
           phoneNumberId: ctxSend.phoneNumberId,
@@ -536,6 +586,33 @@ export function createFlowEngine(ctx: FlowEngineContext) {
       eventType: "node_sent",
       payload: { ...basePayload, blocks: blocks.length },
     });
+
+    const canAutoAdvance =
+      Boolean(node.next_node_code) &&
+      !["buttons", "list", "image_input", "human", "end"].includes(node.node_type) &&
+      !(node.node_type === "text" && Boolean(node.save_as_field?.trim()));
+    if (canAutoAdvance && node.next_node_code && state.flow_code) {
+      const adv = await advanceConversationToNode({
+        conversationId: state.id,
+        empresaId: state.empresa_id,
+        flowCode: state.flow_code,
+        nextNodeCode: node.next_node_code,
+      });
+      if (!adv.ok) return { ok: false, error: adv.error ?? "No se pudo auto-avanzar nodo" };
+      await insertFlowEvent({
+        empresaId: state.empresa_id,
+        conversationId: state.id,
+        flowCode: state.flow_code,
+        nodeCode: node.next_node_code,
+        eventType: "node_advanced",
+        payload: {
+          from_node: node.node_code,
+          next_node_code: node.next_node_code,
+          reason: "auto_chain_after_outbound",
+        },
+      });
+      return sendCurrentFlowNode({ conversationId: state.id, __autoHop: currentHop + 1 });
+    }
 
     return { ok: true, nodeCode: node.node_code };
   }
@@ -621,8 +698,39 @@ export function createFlowEngine(ctx: FlowEngineContext) {
       eventType: "button_selected",
       selectedOptionId: selected.id,
       metaButtonId: params.metaButtonId,
-      payload: { option_value: selected.option_value, raw: params.rawPayload },
+      payload: {
+        option_value: selected.option_value,
+        option_payload: selected.option_payload ?? {},
+        raw: params.rawPayload,
+      },
     });
+
+    const optionPayload =
+      selected.option_payload && typeof selected.option_payload === "object"
+        ? selected.option_payload
+        : {};
+    const payloadEntries = Object.entries(optionPayload).filter(([key]) => key.trim().length > 0);
+    if (!payloadEntries.some(([k]) => k === "opcion_label")) {
+      payloadEntries.push(["opcion_label", selected.label]);
+    }
+    if (payloadEntries.length > 0 && state.flow_code) {
+      const upserts = payloadEntries.map(([fieldName, fieldValue]) => ({
+        empresa_id: state.empresa_id,
+        conversation_id: state.id,
+        flow_code: state.flow_code as string,
+        field_name: fieldName.trim(),
+        field_value:
+          typeof fieldValue === "string" || typeof fieldValue === "number" || typeof fieldValue === "boolean"
+            ? String(fieldValue)
+            : JSON.stringify(fieldValue ?? ""),
+      }));
+      const { error: payloadSaveErr } = await supabase
+        .from("chat_flow_data")
+        .upsert(upserts, { onConflict: "conversation_id,field_name" });
+      if (payloadSaveErr) {
+        return { ok: false, status: "save_option_payload_failed", error: payloadSaveErr.message };
+      }
+    }
 
     if (!selected.next_node_code) {
       await insertFlowEvent({
@@ -736,7 +844,7 @@ export function createFlowEngine(ctx: FlowEngineContext) {
       });
       return { ok: true, status: "image_expected_text_received" };
     }
-    if (currentNode.node_type !== "text") {
+    if (currentNode.node_type !== "text" || !currentNode.save_as_field?.trim()) {
       return { ok: true, status: "ignored_not_text_node" };
     }
 

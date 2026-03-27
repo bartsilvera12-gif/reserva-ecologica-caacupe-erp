@@ -71,6 +71,7 @@ export type ChatFlowOptionRow = {
   meta_button_id: string;
   next_node_code: string | null;
   sort_order: number;
+  option_payload: Record<string, unknown>;
   created_at: string;
 };
 

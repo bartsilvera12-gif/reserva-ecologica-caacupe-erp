@@ -41,7 +41,7 @@ export async function GET(
     if (ids.length) {
       const { data: opts } = await supabase
         .from("chat_flow_options")
-        .select("id, node_id, label, option_value, meta_button_id, next_node_code, sort_order")
+        .select("id, node_id, label, option_value, meta_button_id, next_node_code, sort_order, option_payload")
         .in("node_id", ids)
         .order("sort_order", { ascending: true });
       options = (opts ?? []) as Array<Record<string, unknown>>;

@@ -12,6 +12,7 @@ type FlowNodeOption = {
   meta_button_id: string;
   next_node_code: string | null;
   sort_order: number;
+  option_payload?: Record<string, unknown>;
 };
 
 type FlowNodeBlock = {
@@ -115,6 +116,14 @@ function toMetaButtonId(label: string): string {
   );
 }
 
+function stringifyOptionPayload(value: Record<string, unknown> | undefined): string {
+  try {
+    return JSON.stringify(value ?? {}, null, 2);
+  } catch {
+    return "{}";
+  }
+}
+
 export default function FlowEditorPage() {
   const params = useParams<{ flowCode: string }>();
   const flowCode = decodeURIComponent(params?.flowCode ?? "");
@@ -128,6 +137,7 @@ export default function FlowEditorPage() {
   const [savingNodeId, setSavingNodeId] = useState<string | null>(null);
   const [lastSavedNodeId, setLastSavedNodeId] = useState<string | null>(null);
   const [expandedNodeId, setExpandedNodeId] = useState<string | null>(null);
+  const [optionPayloadDrafts, setOptionPayloadDrafts] = useState<Record<string, string>>({});
 
   const orderedNodes = useMemo(
     () =>
@@ -180,6 +190,17 @@ export default function FlowEditorPage() {
       if (!res.ok || !json.ok) throw new Error(json.error ?? "No se pudo cargar nodos");
       const items = json.items ?? [];
       setNodes(items);
+      setOptionPayloadDrafts((prev) => {
+        const next = { ...prev };
+        for (const node of items) {
+          for (const option of node.options ?? []) {
+            if (typeof next[option.id] !== "string") {
+              next[option.id] = stringifyOptionPayload(option.option_payload);
+            }
+          }
+        }
+        return next;
+      });
       setError(null);
       return items;
     } catch (e) {
@@ -276,6 +297,17 @@ export default function FlowEditorPage() {
     if ((node.node_type === "buttons" || node.node_type === "list") && !opt.next_node_code) {
       throw new Error("Seleccioná 'Va a' para esta opción antes de guardar.");
     }
+    const payloadDraft = optionPayloadDrafts[opt.id] ?? stringifyOptionPayload(opt.option_payload);
+    let payloadParsed: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(payloadDraft) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("El payload debe ser un objeto JSON");
+      }
+      payloadParsed = parsed as Record<string, unknown>;
+    } catch {
+      throw new Error("Variables JSON inválidas para esta opción.");
+    }
     const metaButtonId = toMetaButtonId(opt.label);
     const res = await fetch(
       `/api/chat/flows/${encodeURIComponent(flowCode)}/nodes/${encodeURIComponent(node.node_code)}/options/${opt.id}`,
@@ -288,6 +320,7 @@ export default function FlowEditorPage() {
           meta_button_id: metaButtonId,
           next_node_code: opt.next_node_code,
           sort_order: opt.sort_order,
+          option_payload: payloadParsed,
         }),
       }
     );
@@ -310,6 +343,7 @@ export default function FlowEditorPage() {
           meta_button_id: toMetaButtonId(label),
           next_node_code: defaultNext,
           sort_order: node.options.length + 1,
+          option_payload: {},
         }),
       }
     );
@@ -508,6 +542,9 @@ export default function FlowEditorPage() {
                 <div>
                   <label className="block text-xs text-slate-500 mb-1">Mensaje al cliente (compatibilidad)</label>
                   <textarea className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm min-h-[74px]" placeholder="Se usa solo en nodos sin bloques configurados" value={node.message_text ?? ""} onChange={(e) => setNodes((prev) => prev.map((n) => n.id === node.id ? { ...n, message_text: e.target.value } : n))} />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Podés usar placeholders del contexto, por ejemplo: {"{{producto}}"}, {"{{cantidad}}"}, {"{{monto}}"}.
+                  </p>
                 </div>
               )}
 
@@ -647,6 +684,9 @@ export default function FlowEditorPage() {
                           <div className={`text-[11px] ${(mediaBlock.content_text ?? "").length > MAX_WHATSAPP_IMAGE_CAPTION ? "text-red-600" : "text-slate-500"}`}>
                             Texto: {(mediaBlock.content_text ?? "").length}/{MAX_WHATSAPP_IMAGE_CAPTION}
                           </div>
+                          <p className="text-[11px] text-slate-500">
+                            Este texto también acepta placeholders, por ejemplo {"{{opcion_label}}"} o {"{{monto}}"}.
+                          </p>
                         </div>
                       );
                     })()
@@ -843,8 +883,8 @@ export default function FlowEditorPage() {
                     {node.node_type === "list" ? "Opciones de lista del cliente" : "Botones del cliente"}
                   </div>
                   {node.options.map((opt) => (
-                    <div key={opt.id} className="grid grid-cols-1 md:grid-cols-4 gap-2 items-center">
-                      <div className="md:col-span-2">
+                    <div key={opt.id} className="grid grid-cols-1 md:grid-cols-4 gap-2 items-start">
+                      <div>
                         <label className="block text-xs text-slate-500 mb-1">
                           {node.node_type === "list" ? "Texto de la opción" : "Texto del botón"}
                         </label>
@@ -859,7 +899,7 @@ export default function FlowEditorPage() {
                           ))}
                         </select>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 pt-5">
                         <button
                           type="button"
                           onClick={async () => {
@@ -888,6 +928,23 @@ export default function FlowEditorPage() {
                         >
                           Eliminar
                         </button>
+                      </div>
+                      <div className="md:col-span-4">
+                        <label className="block text-xs text-slate-500 mb-1">Variables guardadas (JSON)</label>
+                        <textarea
+                          className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-mono w-full min-h-[82px]"
+                          value={optionPayloadDrafts[opt.id] ?? stringifyOptionPayload(opt.option_payload)}
+                          placeholder={'{\n  "cantidad": 1,\n  "producto": "1 boleto",\n  "monto": 20000,\n  "opcion_label": "1 boleto a 20.000"\n}'}
+                          onChange={(e) =>
+                            setOptionPayloadDrafts((prev) => ({
+                              ...prev,
+                              [opt.id]: e.target.value,
+                            }))
+                          }
+                        />
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          Se guardan en contexto al elegir este botón. Usá placeholders: {"{{cantidad}}"}, {"{{producto}}"}, {"{{monto}}"}.
+                        </p>
                       </div>
                       <div className="md:col-span-4 text-xs text-slate-500 bg-white border border-slate-200 rounded px-2 py-1">
                         {node.node_type === "list" ? "Opción" : "Botón"}: "{opt.label}" → va a: "{nextStepLabel(opt.next_node_code)}"
