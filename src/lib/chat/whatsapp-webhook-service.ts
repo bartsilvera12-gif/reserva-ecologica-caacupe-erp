@@ -4,8 +4,13 @@ import {
 } from "@/lib/chat/channel-provision";
 import { createFlowEngine } from "@/lib/chat/flow-engine-service";
 import {
+  CONV_LOG,
   getFirstActiveNodeCodeForFlow,
+  isFlowKnownAndActiveInCatalog,
+  isNodeActiveInFlow,
   listActiveWhatsappFlowsForEmpresa,
+  matchesConversationRestartKeyword,
+  restartWhatsappConversationToFlowStart,
   syncWhatsappConversationFlowFromCatalog,
 } from "@/lib/chat/resolve-whatsapp-active-flow";
 import { saveProspectoFromWebhook } from "@/lib/crm/storage";
@@ -334,6 +339,99 @@ export async function processInboundWebhookValue(
         ...existingConv,
         flow_code: syncedFlow.flow_code,
         flow_current_node: syncedFlow.flow_current_node,
+      };
+
+      /**
+       * Reanudar / reiniciar flujo con el mismo contacto+canal (sin duplicar conversación):
+       * - Palabras clave → primer nodo del flujo activo (o del flujo actual si hay varios activos).
+       * - Puntero roto (sin flow, flujo inactivo en catálogo, nodo inválido) → reinicio seguro.
+       * - Si todo válido → conversation_resumed (solo log).
+       */
+      let convFlow = (existingConv as { flow_code?: string | null }).flow_code ?? null;
+      let convNode = (existingConv as { flow_current_node?: string | null }).flow_current_node ?? null;
+      let convHuman = (existingConv as { human_taken_over?: boolean | null }).human_taken_over ?? false;
+      let convFlowStatus = (existingConv as { flow_status?: string | null }).flow_status ?? "bot";
+
+      let restartedThisMessage = false;
+
+      if (message_type === "text" && matchesConversationRestartKeyword(content)) {
+        console.info(CONV_LOG, "restart_keyword_detected", {
+          conversationId,
+          preview: content.slice(0, 120),
+        });
+        const rrKw = await restartWhatsappConversationToFlowStart(supabase, empresaId, conversationId, {
+          preferFlowCode: convFlow,
+          trigger: "restart_keyword",
+        });
+        if (rrKw.restarted) {
+          convFlow = rrKw.flow_code;
+          convNode = rrKw.flow_current_node;
+          convHuman = false;
+          convFlowStatus = "bot";
+          restartedThisMessage = true;
+        }
+      }
+
+      if (!restartedThisMessage) {
+        const fc = convFlow?.trim() || null;
+        const nc = convNode?.trim() || null;
+        let mustRestart = false;
+        let restartTrigger = "";
+        let prefer: string | null = null;
+
+        if (!fc) {
+          mustRestart = true;
+          restartTrigger = "missing_flow_code";
+          console.warn(CONV_LOG, "invalid_current_node", {
+            conversationId,
+            detail: "missing_flow_code",
+          });
+        } else if (!(await isFlowKnownAndActiveInCatalog(supabase, empresaId, fc))) {
+          mustRestart = true;
+          restartTrigger = "inactive_flow_reassigned";
+          prefer = null;
+          console.warn(CONV_LOG, "inactive_flow_reassigned", {
+            conversationId,
+            flow_code: fc,
+            detail: "not_in_catalog_or_inactive",
+          });
+        } else if (!nc || !(await isNodeActiveInFlow(supabase, empresaId, fc, nc))) {
+          mustRestart = true;
+          restartTrigger = "invalid_current_node";
+          prefer = fc;
+          console.warn(CONV_LOG, "invalid_current_node", {
+            conversationId,
+            flow_code: fc,
+            flow_current_node: nc,
+          });
+        }
+
+        if (mustRestart) {
+          const rrFix = await restartWhatsappConversationToFlowStart(supabase, empresaId, conversationId, {
+            preferFlowCode: prefer,
+            trigger: restartTrigger,
+          });
+          if (rrFix.restarted) {
+            convFlow = rrFix.flow_code;
+            convNode = rrFix.flow_current_node;
+            convHuman = false;
+            convFlowStatus = "bot";
+          }
+        } else {
+          console.info(CONV_LOG, "conversation_resumed", {
+            conversationId,
+            flow_code: fc,
+            flow_current_node: nc,
+          });
+        }
+      }
+
+      existingConv = {
+        ...existingConv,
+        flow_code: convFlow,
+        flow_current_node: convNode,
+        human_taken_over: convHuman,
+        flow_status: convFlowStatus,
       };
 
       const logW = "[webhook/whatsapp][inbound]";

@@ -1,6 +1,7 @@
 import type { SupabaseAdmin } from "@/lib/chat/types";
 
 const LOG = "[webhook/whatsapp][flow-resolve]" as const;
+export const CONV_LOG = "[webhook/whatsapp][conversation]" as const;
 
 export type ActiveFlowsCatalogResult =
   | { kind: "single"; flowCode: string }
@@ -161,4 +162,158 @@ export async function syncWhatsappConversationFlowFromCatalog(
   });
 
   return { flow_code: targetFlow, flow_current_node: firstNode, changed: true };
+}
+
+/** Fila en catálogo y activa (si no hay fila → false = flujo inexistente en catálogo). */
+export async function isFlowKnownAndActiveInCatalog(
+  supabase: SupabaseAdmin,
+  empresaId: string,
+  flowCode: string
+): Promise<boolean> {
+  const fc = flowCode.trim();
+  if (!fc) return false;
+  const { data, error } = await supabase
+    .from("chat_flows")
+    .select("activo")
+    .eq("empresa_id", empresaId)
+    .eq("flow_code", fc)
+    .maybeSingle();
+  if (error || !data) return false;
+  return (data as { activo?: boolean }).activo === true;
+}
+
+/** Nodo activo en ese flujo. */
+export async function isNodeActiveInFlow(
+  supabase: SupabaseAdmin,
+  empresaId: string,
+  flowCode: string,
+  nodeCode: string
+): Promise<boolean> {
+  const nc = nodeCode.trim();
+  const fc = flowCode.trim();
+  if (!fc || !nc) return false;
+  const { data, error } = await supabase
+    .from("chat_flow_nodes")
+    .select("id")
+    .eq("empresa_id", empresaId)
+    .eq("flow_code", fc)
+    .eq("node_code", nc)
+    .eq("is_active", true)
+    .maybeSingle();
+  return !error && Boolean((data as { id?: string } | null)?.id);
+}
+
+/**
+ * Palabras que fuerzan reinicio al primer nodo del flujo activo (primer token o mensaje exacto).
+ */
+export function matchesConversationRestartKeyword(text: string): boolean {
+  const raw = text
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (!raw) return false;
+  const keywords = new Set([
+    "hola",
+    "menu",
+    "menú",
+    "comenzar",
+    "iniciar",
+    "reiniciar",
+    "inicio",
+  ]);
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  const first = tokens[0] ?? "";
+  if (keywords.has(first)) return true;
+  if (tokens.length === 1 && keywords.has(raw)) return true;
+  return false;
+}
+
+export type RestartToFlowStartResult = {
+  flow_code: string | null;
+  flow_current_node: string | null;
+  restarted: boolean;
+  reason: string;
+};
+
+/**
+ * Reinicia conversación al primer nodo de un flujo activo.
+ * - Un solo flujo activo en catálogo → ese.
+ * - Varios: solo si `preferFlowCode` está en la lista activa; si no, no elige al azar.
+ * Pone flow_status=bot y human_taken_over=false.
+ */
+export async function restartWhatsappConversationToFlowStart(
+  supabase: SupabaseAdmin,
+  empresaId: string,
+  conversationId: string,
+  opts: { preferFlowCode?: string | null; trigger: string }
+): Promise<RestartToFlowStartResult> {
+  const catalog = await listActiveWhatsappFlowsForEmpresa(supabase, empresaId);
+  if (catalog.kind === "none") {
+    console.warn(CONV_LOG, "conversation_restarted", {
+      conversationId,
+      ok: false,
+      detail: "no_active_flow_found",
+      trigger: opts.trigger,
+    });
+    return { flow_code: null, flow_current_node: null, restarted: false, reason: "no_active_flow" };
+  }
+
+  let targetFlow: string | null = null;
+  if (catalog.kind === "single") {
+    targetFlow = catalog.flowCode;
+  } else {
+    const pref = opts.preferFlowCode?.trim() || null;
+    if (pref && catalog.flowCodes.includes(pref)) {
+      targetFlow = pref;
+    } else {
+      console.error(CONV_LOG, "conversation_restarted", {
+        conversationId,
+        ok: false,
+        detail: "multiple_active_flows_need_explicit_flow",
+        activeFlowCodes: catalog.flowCodes,
+        preferFlowCode: pref,
+        trigger: opts.trigger,
+      });
+      return { flow_code: null, flow_current_node: null, restarted: false, reason: "multiple_ambiguous" };
+    }
+  }
+
+  const firstNode = (await getFirstActiveNodeCodeForFlow(supabase, empresaId, targetFlow)) ?? "inicio";
+
+  const { error: updErr } = await supabase
+    .from("chat_conversations")
+    .update({
+      flow_code: targetFlow,
+      flow_current_node: firstNode,
+      flow_status: "bot",
+      human_taken_over: false,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", conversationId)
+    .eq("empresa_id", empresaId);
+
+  if (updErr) {
+    console.error(CONV_LOG, "conversation_restarted", {
+      conversationId,
+      ok: false,
+      message: updErr.message,
+      trigger: opts.trigger,
+    });
+    return { flow_code: null, flow_current_node: null, restarted: false, reason: "update_failed" };
+  }
+
+  console.info(CONV_LOG, "conversation_restarted", {
+    conversationId,
+    flow_code: targetFlow,
+    flow_current_node: firstNode,
+    trigger: opts.trigger,
+  });
+
+  return {
+    flow_code: targetFlow,
+    flow_current_node: firstNode,
+    restarted: true,
+    reason: opts.trigger,
+  };
 }
