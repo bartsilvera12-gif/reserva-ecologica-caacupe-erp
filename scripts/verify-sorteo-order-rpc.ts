@@ -61,6 +61,7 @@ async function main() {
     cedula: "1234567",
     ciudad: "Asunción",
     cantidad_boletos: 1,
+    // Opcional (promo): monto_compra, promo_nombre, precio_regular_referencia
     comprobante_url: "https://example.com/comprobante-test.pdf",
     validado_por: "rpc_verify_script",
   };

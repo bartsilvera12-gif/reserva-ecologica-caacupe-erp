@@ -83,6 +83,9 @@ export interface SorteoEntrada {
   chat_conversation_id?: string | null;
   flow_code?: string | null;
   idempotency_key?: string | null;
+  promo_nombre?: string | null;
+  precio_fuente?: "lista" | "promo" | null;
+  precio_regular_referencia?: number | null;
   sorteos?: { nombre: string } | null;
 }
 
@@ -93,6 +96,9 @@ export type SorteoCuponOrdenRow = {
   nombre_participante: string;
   whatsapp_numero: string;
   cantidad_boletos: number;
+  monto_total: number;
+  promo_nombre: string | null;
+  precio_fuente: "lista" | "promo" | null;
   estado_pago: SorteoEntradaEstadoPago;
   created_at: string;
   chat_conversation_id: string | null;

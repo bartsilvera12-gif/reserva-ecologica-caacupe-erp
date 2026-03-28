@@ -5,6 +5,7 @@ import { GripVertical, Trash2 } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { getSorteos } from "@/lib/sorteos/actions";
+import { parseMoneyPy } from "@/lib/sorteos/parse-money-py";
 
 type FlowNodeOption = {
   id: string;
@@ -21,6 +22,8 @@ type OptionSimpleDraft = {
   cantidad: string;
   producto: string;
   monto: string;
+  promo_nombre: string;
+  precio_regular: string;
   opcion_label: string;
 };
 
@@ -72,7 +75,15 @@ const NODE_TYPE_OPTIONS = [
 ] as const;
 
 const MAX_WHATSAPP_IMAGE_CAPTION = 1024;
-const CONTEXT_VAR_KEYS = ["opcion_label", "cantidad", "producto", "monto"] as const;
+const CONTEXT_VAR_KEYS = [
+  "opcion_label",
+  "cantidad",
+  "producto",
+  "monto",
+  "promo_nombre",
+  "precio_fuente",
+  "precio_regular",
+] as const;
 
 function isValidHttpUrl(value: string): boolean {
   try {
@@ -168,10 +179,15 @@ function stringifyOptionPayload(value: Record<string, unknown> | undefined): str
 
 function toSimpleDraftFromPayload(option: FlowNodeOption): OptionSimpleDraft {
   const p = option.option_payload ?? {};
+  const regRaw =
+    p.precio_regular ?? p.precio_regular_referencia ?? p.precio_lista ?? "";
   return {
     cantidad: p.cantidad === undefined || p.cantidad === null ? "" : String(p.cantidad),
     producto: p.producto === undefined || p.producto === null ? "" : String(p.producto),
     monto: p.monto === undefined || p.monto === null ? "" : String(p.monto),
+    promo_nombre:
+      p.promo_nombre === undefined || p.promo_nombre === null ? "" : String(p.promo_nombre),
+    precio_regular: regRaw === undefined || regRaw === null ? "" : String(regRaw),
     opcion_label:
       p.opcion_label === undefined || p.opcion_label === null
         ? option.label
@@ -188,14 +204,32 @@ function buildPayloadFromSimple(
   const cantidad = draft.cantidad.trim();
   const producto = draft.producto.trim();
   const monto = draft.monto.trim();
+  const promoNombre = draft.promo_nombre.trim();
+  const precioRegular = draft.precio_regular.trim();
   const opcionLabel = (draft.opcion_label.trim() || fallbackLabel).trim();
 
   if (cantidad) base.cantidad = Number.isFinite(Number(cantidad)) ? Number(cantidad) : cantidad;
   else delete base.cantidad;
   if (producto) base.producto = producto;
   else delete base.producto;
-  if (monto) base.monto = Number.isFinite(Number(monto)) ? Number(monto) : monto;
-  else delete base.monto;
+  const montoParsed = monto ? parseMoneyPy(monto) : null;
+  if (montoParsed != null && montoParsed > 0) {
+    base.monto = Math.round(montoParsed);
+    base.precio_fuente = "promo";
+  } else {
+    delete base.monto;
+    delete base.precio_fuente;
+  }
+  if (promoNombre) base.promo_nombre = promoNombre;
+  else delete base.promo_nombre;
+  const regParsed = precioRegular ? parseMoneyPy(precioRegular) : null;
+  if (regParsed != null && regParsed > 0) {
+    base.precio_regular = Math.round(regParsed);
+  } else {
+    delete base.precio_regular;
+    delete base.precio_regular_referencia;
+    delete base.precio_lista;
+  }
   if (opcionLabel) base.opcion_label = opcionLabel;
   else delete base.opcion_label;
 
@@ -1574,12 +1608,50 @@ export default function FlowEditorPage() {
                                 placeholder={opt.label}
                               />
                             </div>
+                            <div className="md:col-span-2">
+                              <label className="block text-[11px] text-slate-500 mb-1">Nombre de la promo</label>
+                              <input
+                                className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm w-full"
+                                value={optionSimpleDrafts[opt.id]?.promo_nombre ?? ""}
+                                onChange={(e) =>
+                                  setOptionSimpleDrafts((prev) => ({
+                                    ...prev,
+                                    [opt.id]: {
+                                      ...(prev[opt.id] ?? toSimpleDraftFromPayload(opt)),
+                                      promo_nombre: e.target.value,
+                                    },
+                                  }))
+                                }
+                                placeholder="3 entradas por 50 mil"
+                              />
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="block text-[11px] text-slate-500 mb-1">
+                                Precio lista (opcional, referencia)
+                              </label>
+                              <input
+                                className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm w-full"
+                                value={optionSimpleDrafts[opt.id]?.precio_regular ?? ""}
+                                onChange={(e) =>
+                                  setOptionSimpleDrafts((prev) => ({
+                                    ...prev,
+                                    [opt.id]: {
+                                      ...(prev[opt.id] ?? toSimpleDraftFromPayload(opt)),
+                                      precio_regular: e.target.value,
+                                    },
+                                  }))
+                                }
+                                placeholder="60000"
+                              />
+                            </div>
                           </div>
                         ) : (
                           <textarea
                             className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-mono w-full min-h-[82px]"
                             value={optionPayloadDrafts[opt.id] ?? stringifyOptionPayload(opt.option_payload)}
-                            placeholder={'{\n  "cantidad": 1,\n  "producto": "1 boleto",\n  "monto": 20000,\n  "opcion_label": "1 boleto a 20.000"\n}'}
+                            placeholder={
+                              '{\n  "cantidad": 3,\n  "monto": 50000,\n  "promo_nombre": "3 entradas por 50 mil",\n  "precio_regular": 60000,\n  "precio_fuente": "promo",\n  "opcion_label": "3 por 50.000"\n}'
+                            }
                             onChange={(e) =>
                               setOptionPayloadDrafts((prev) => ({
                                 ...prev,
@@ -1589,7 +1661,9 @@ export default function FlowEditorPage() {
                           />
                         )}
                         <p className="text-[11px] text-slate-500 mt-1">
-                          Se guardan en contexto al elegir este botón. Usá placeholders: {"{{cantidad}}"}, {"{{producto}}"}, {"{{monto}}"}, {"{{opcion_label}}"}.
+                          Se guardan en contexto al elegir este botón. Con monto numérico se marca{" "}
+                          <code className="text-[10px]">precio_fuente=promo</code>. Placeholders:{" "}
+                          {`{{cantidad}}, {{producto}}, {{monto}}, {{promo_nombre}}, {{precio_regular}}, {{precio_fuente}}, {{opcion_label}}`}.
                         </p>
                       </div>
                       <div className="md:col-span-4 text-xs text-slate-500 bg-white border border-slate-200 rounded px-2 py-1">

@@ -10,6 +10,7 @@ import {
   buildChatFlowDataUpsertsForSorteoOrder,
   ensureSorteoOrderFromChat,
 } from "@/lib/sorteos/sorteo-order-from-chat";
+import { parseMoneyPy } from "@/lib/sorteos/parse-money-py";
 
 type ConversationFlowState = {
   id: string;
@@ -216,6 +217,33 @@ function augmentCantidadFromInteractiveOption(
     meta_button_id: selected.meta_button_id,
   });
   return entries;
+}
+
+/**
+ * Normaliza montos del option_payload y marca precio_fuente=promo cuando hay monto estructurado
+ * (sin depender del texto visible del botón).
+ */
+function augmentSorteoPricingFromInteractiveOption(
+  entries: [string, string][]
+): [string, string][] {
+  const lower = (k: string) => k.trim().toLowerCase();
+  const montoKeys = new Set(["monto", "monto_compra", "monto_promocional"]);
+  let rawMonto: string | null = null;
+  for (const [k, v] of entries) {
+    if (montoKeys.has(lower(k))) {
+      rawMonto = v;
+      break;
+    }
+  }
+  if (!rawMonto) return entries;
+  const parsed = parseMoneyPy(rawMonto);
+  if (parsed == null || parsed <= 0) return entries;
+  const normalized = String(Math.round(parsed));
+  const filtered = entries.filter(([k]) => !montoKeys.has(lower(k)));
+  const hasPf = filtered.some(([k]) => lower(k) === "precio_fuente");
+  const withMonto: [string, string][] = [...filtered, ["monto", normalized]];
+  if (hasPf) return withMonto;
+  return [...withMonto, ["precio_fuente", "promo"]];
 }
 
 export function createFlowEngine(ctx: FlowEngineContext) {
@@ -1032,6 +1060,7 @@ export function createFlowEngine(ctx: FlowEngineContext) {
       payloadEntries.push(["opcion_label", selected.label]);
     }
     payloadEntries = augmentCantidadFromInteractiveOption(payloadEntries, selected);
+    payloadEntries = augmentSorteoPricingFromInteractiveOption(payloadEntries);
     payloadEntries = dedupeChatFlowFieldEntries(payloadEntries);
     if (payloadEntries.length > 0 && state.flow_code) {
       const upserts = payloadEntries.map(([fieldName, fieldValue]) => ({
@@ -1493,6 +1522,9 @@ export function createFlowEngine(ctx: FlowEngineContext) {
           entrada_id: sorteoOrderResult.entradaId,
           numero_orden: sorteoOrderResult.numeroOrden,
           cantidad_boletos: sorteoOrderResult.cantidadBoletos,
+          monto_total: sorteoOrderResult.montoTotal,
+          precio_fuente: sorteoOrderResult.precioFuente,
+          promo_nombre: sorteoOrderResult.promoNombre,
           sorteo_id: sorteoOrderResult.sorteoId,
           sorteo_nombre: sorteoOrderResult.sorteoNombre,
           cupones: sorteoOrderResult.cupones.map((c) => c.numero_cupon),

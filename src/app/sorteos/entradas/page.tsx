@@ -30,6 +30,12 @@ function estadoPagoLabel(e: string) {
   return e;
 }
 
+function precioFuenteLabel(v: string | null | undefined) {
+  if (v === "promo") return "Promo";
+  if (v === "lista") return "Lista";
+  return "—";
+}
+
 export default async function SorteoEntradasPage() {
   const { data: rows, error: queryError } = await fetchSorteoEntradasServer();
 
@@ -70,6 +76,9 @@ export default async function SorteoEntradasPage() {
                   <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3">Documento</th>
                   <th className="text-right text-sm font-semibold text-slate-600 px-5 py-3">Cant.</th>
                   <th className="text-right text-sm font-semibold text-slate-600 px-5 py-3">Monto</th>
+                  <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3 min-w-[140px]">
+                    Promo / fuente
+                  </th>
                   <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3">Pago</th>
                   <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3">Fecha pago</th>
                   <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3">Validado</th>
@@ -89,6 +98,21 @@ export default async function SorteoEntradasPage() {
                     <td className="px-5 py-3 text-sm font-mono text-slate-600">{r.documento ?? "—"}</td>
                     <td className="px-5 py-3 text-sm text-right tabular-nums">{r.cantidad_boletos}</td>
                     <td className="px-5 py-3 text-sm text-right tabular-nums">{formatGs(r.monto_total)}</td>
+                    <td className="px-5 py-3 text-sm">
+                      <div className="text-xs font-medium text-slate-700">
+                        {precioFuenteLabel(r.precio_fuente ?? null)}
+                      </div>
+                      {r.promo_nombre ? (
+                        <div className="text-xs text-slate-500 mt-0.5 leading-snug">{r.promo_nombre}</div>
+                      ) : null}
+                      {typeof r.precio_regular_referencia === "number" &&
+                      r.precio_regular_referencia > 0 &&
+                      r.precio_fuente === "promo" ? (
+                        <div className="text-[11px] text-slate-400 mt-0.5 line-through tabular-nums">
+                          Ref. lista {formatGs(r.precio_regular_referencia)}
+                        </div>
+                      ) : null}
+                    </td>
                     <td className="px-5 py-3 text-sm">{estadoPagoLabel(r.estado_pago)}</td>
                     <td className="px-5 py-3 text-sm whitespace-nowrap">{formatFecha(r.fecha_pago)}</td>
                     <td className="px-5 py-3 text-sm">{r.validado_por ?? "—"}</td>

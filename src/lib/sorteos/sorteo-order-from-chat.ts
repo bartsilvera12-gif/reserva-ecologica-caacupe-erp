@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { parseMoneyPy } from "@/lib/sorteos/parse-money-py";
 
 /** Clave estable: mismo comprobante (media) en misma conversación y flujo → una sola orden. */
 export function buildSorteoIdempotencyKey(
@@ -128,6 +129,41 @@ export function parseSorteoParticipantFromFlowData(data: Record<string, string>)
   };
 }
 
+const MONTO_FLOW_KEYS = ["monto", "monto_compra", "monto_promocional"] as const;
+const PRECIO_REG_KEYS = ["precio_regular", "precio_regular_referencia", "precio_lista"] as const;
+
+/**
+ * Monto y metadatos comerciales guardados en chat_flow_data al elegir una opción (JSON estructurado).
+ */
+export function parseSorteoPricingFromFlowData(data: Record<string, string>): {
+  montoCompra: number | null;
+  promoNombre: string;
+  precioRegularReferencia: number | null;
+} {
+  let montoCompra: number | null = null;
+  for (const k of MONTO_FLOW_KEYS) {
+    const v = norm(data[k]);
+    if (!v) continue;
+    const n = parseMoneyPy(v);
+    if (n != null && n > 0) {
+      montoCompra = Math.round(n);
+      break;
+    }
+  }
+  const promoNombre = norm(data["promo_nombre"]);
+  let precioRegularReferencia: number | null = null;
+  for (const k of PRECIO_REG_KEYS) {
+    const v = norm(data[k]);
+    if (!v) continue;
+    const n = parseMoneyPy(v);
+    if (n != null && n > 0) {
+      precioRegularReferencia = Math.round(n);
+      break;
+    }
+  }
+  return { montoCompra, promoNombre, precioRegularReferencia };
+}
+
 export async function getSorteoIdForChatFlow(
   supabase: SupabaseClient,
   empresaId: string,
@@ -171,6 +207,9 @@ export type EnsureSorteoOrderCreatedData = {
   sorteoId: string;
   sorteoNombre: string;
   cantidadBoletos: number;
+  montoTotal: number;
+  promoNombre: string;
+  precioFuente: string;
 };
 
 export type EnsureSorteoOrderFromChatResult =
@@ -189,6 +228,11 @@ export const CHAT_FLOW_SORTEO_CONTEXT_FIELDS = {
   sorteo_nombre: "sorteo_nombre",
   /** Cantidad de boletos de la orden (desde fila `sorteo_entradas`, no del paso previo del flujo) */
   orden_cantidad_boletos: "orden_cantidad_boletos",
+  /** Monto total persistido en la orden (promo o lista) */
+  orden_monto_total: "orden_monto_total",
+  /** Promo asociada a la orden (si hubo) */
+  sorteo_promo_nombre: "sorteo_promo_nombre",
+  precio_fuente_orden: "precio_fuente_orden",
 } as const;
 
 /**
@@ -220,7 +264,12 @@ export function buildChatFlowDataUpsertsForSorteoOrder(
     [F.numeros_cupon_lineas, nums.join("\n")],
     [F.sorteo_nombre, data.sorteoNombre],
     [F.orden_cantidad_boletos, String(data.cantidadBoletos)],
+    [F.orden_monto_total, String(data.montoTotal)],
+    [F.precio_fuente_orden, data.precioFuente],
   ];
+  if (data.promoNombre.trim()) {
+    pairs.push([F.sorteo_promo_nombre, data.promoNombre]);
+  }
   return pairs.map(([field_name, field_value]) => ({
     empresa_id: empresaId,
     conversation_id: conversationId,
@@ -280,27 +329,40 @@ export async function ensureSorteoOrderFromChat(
     return { ok: true, skipped: true, reason: "datos_flujo_incompletos" };
   }
 
+  const pricing = parseSorteoPricingFromFlowData(input.flowData);
+
   const idempotencyKey = buildSorteoIdempotencyKey(
     input.conversationId,
     flowCode,
     input.mediaId
   );
 
+  const rpcPayload: Record<string, unknown> = {
+    empresa_id: input.empresaId,
+    sorteo_id: sorteoId,
+    chat_conversation_id: input.conversationId,
+    flow_code: flowCode,
+    idempotency_key: idempotencyKey,
+    whatsapp_numero: input.whatsappNumero,
+    nombre_completo: participant.nombre_completo,
+    cedula: participant.cedula || "",
+    ciudad: participant.ciudad || "",
+    cantidad_boletos: participant.cantidad_boletos,
+    comprobante_url: input.comprobanteUrl,
+    validado_por: "chat_flow",
+  };
+  if (pricing.montoCompra != null) {
+    rpcPayload.monto_compra = pricing.montoCompra;
+  }
+  if (pricing.promoNombre) {
+    rpcPayload.promo_nombre = pricing.promoNombre;
+  }
+  if (pricing.precioRegularReferencia != null) {
+    rpcPayload.precio_regular_referencia = pricing.precioRegularReferencia;
+  }
+
   const { data, error } = await supabase.rpc("sorteos_ensure_order_from_chat", {
-    p: {
-      empresa_id: input.empresaId,
-      sorteo_id: sorteoId,
-      chat_conversation_id: input.conversationId,
-      flow_code: flowCode,
-      idempotency_key: idempotencyKey,
-      whatsapp_numero: input.whatsappNumero,
-      nombre_completo: participant.nombre_completo,
-      cedula: participant.cedula || "",
-      ciudad: participant.ciudad || "",
-      cantidad_boletos: participant.cantidad_boletos,
-      comprobante_url: input.comprobanteUrl,
-      validado_por: "chat_flow",
-    },
+    p: rpcPayload,
   });
 
   if (error) {
@@ -399,6 +461,20 @@ export async function ensureSorteoOrderFromChat(
     cantidadBoletos = participant.cantidad_boletos;
   }
 
+  const montoRaw = entrada?.monto_total;
+  let montoTotal = typeof montoRaw === "number" ? montoRaw : Number(montoRaw);
+  if (!Number.isFinite(montoTotal) || montoTotal < 0) {
+    montoTotal = 0;
+  }
+
+  const promoNombre =
+    typeof entrada?.promo_nombre === "string" ? entrada.promo_nombre.trim() : "";
+  const precioFuenteRaw = entrada?.precio_fuente;
+  const precioFuente =
+    precioFuenteRaw === "promo" || precioFuenteRaw === "lista"
+      ? precioFuenteRaw
+      : "lista";
+
   const { data: sorteoRow, error: sorteoNomErr } = await supabase
     .from("sorteos")
     .select("nombre")
@@ -435,5 +511,8 @@ export async function ensureSorteoOrderFromChat(
     sorteoId,
     sorteoNombre,
     cantidadBoletos,
+    montoTotal,
+    promoNombre,
+    precioFuente,
   };
 }

@@ -3,6 +3,10 @@ import { fetchSorteoCuponesOrdenesServer } from "@/lib/sorteos/server-queries";
 
 export const dynamic = "force-dynamic";
 
+function formatGs(n: number) {
+  return `${n.toLocaleString("es-PY")} ₲`;
+}
+
 function formatFecha(iso: string) {
   try {
     return new Date(iso).toLocaleString("es-PY", {
@@ -64,6 +68,7 @@ export default async function SorteoCuponesPage() {
                   <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3">Cliente</th>
                   <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3">Teléfono</th>
                   <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3">Cantidad</th>
+                  <th className="text-right text-sm font-semibold text-slate-600 px-5 py-3">Monto</th>
                   <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3">Cupones</th>
                   <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3">Pago</th>
                   <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3">Fecha</th>
@@ -78,6 +83,12 @@ export default async function SorteoCuponesPage() {
                     <td className="px-5 py-3 text-sm text-slate-800">{r.nombre_participante}</td>
                     <td className="px-5 py-3 text-sm font-mono text-slate-700">{r.whatsapp_numero}</td>
                     <td className="px-5 py-3 text-sm text-slate-800">{r.cantidad_boletos}</td>
+                    <td className="px-5 py-3 text-sm text-right tabular-nums text-slate-800">
+                      {formatGs(r.monto_total)}
+                      {r.promo_nombre ? (
+                        <div className="text-[11px] font-normal text-slate-500 mt-0.5">{r.promo_nombre}</div>
+                      ) : null}
+                    </td>
                     <td className="px-5 py-3 text-sm font-mono text-slate-800">{r.numeros_cupon.join(", ")}</td>
                     <td className="px-5 py-3 text-sm text-slate-700">{estadoLabel(r.estado_pago)}</td>
                     <td className="px-5 py-3 text-sm text-slate-600 whitespace-nowrap">{formatFecha(r.created_at)}</td>
