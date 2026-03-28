@@ -4,6 +4,7 @@ import {
   sendWhatsAppText,
 } from "@/lib/chat/whatsapp-send-service";
 import type { SupabaseAdmin } from "@/lib/chat/types";
+import { FLOW_POINTER_RESET_EVENT } from "@/lib/chat/resolve-whatsapp-active-flow";
 import { normalizeWaPhone } from "@/lib/chat/whatsapp-webhook-service";
 import { ensureSorteoOrderFromChat } from "@/lib/sorteos/sorteo-order-from-chat";
 
@@ -302,15 +303,31 @@ export function createFlowEngine(ctx: FlowEngineContext) {
     flowCode: string,
     nodeCode: string
   ): Promise<boolean> {
-    const { data, error } = await supabase
+    const { data: resetRow, error: resetErr } = await supabase
+      .from("chat_flow_events")
+      .select("created_at")
+      .eq("conversation_id", conversationId)
+      .eq("flow_code", flowCode)
+      .eq("event_type", FLOW_POINTER_RESET_EVENT)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (resetErr) {
+      console.error("[flow-engine] wasNodeSentForCurrentStep(reset):", resetErr.message);
+    }
+    const since = (resetRow as { created_at?: string } | null)?.created_at ?? null;
+
+    let q = supabase
       .from("chat_flow_events")
       .select("id")
       .eq("conversation_id", conversationId)
       .eq("flow_code", flowCode)
       .eq("node_code", nodeCode)
-      .eq("event_type", "node_sent")
-      .limit(1)
-      .maybeSingle();
+      .eq("event_type", "node_sent");
+    if (since) {
+      q = q.gt("created_at", since);
+    }
+    const { data, error } = await q.limit(1).maybeSingle();
     if (error) {
       console.error("[flow-engine] wasNodeSentForCurrentStep:", error.message);
       return false;

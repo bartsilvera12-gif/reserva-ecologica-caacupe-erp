@@ -3,6 +3,9 @@ import type { SupabaseAdmin } from "@/lib/chat/types";
 const LOG = "[webhook/whatsapp][flow-resolve]" as const;
 export const CONV_LOG = "[webhook/whatsapp][conversation]" as const;
 
+/** Marca en `chat_flow_events` que el puntero del flujo se reinició (sesión nueva para re-envío del nodo). */
+export const FLOW_POINTER_RESET_EVENT = "flow_pointer_reset" as const;
+
 export type ActiveFlowsCatalogResult =
   | { kind: "single"; flowCode: string }
   | { kind: "none" }
@@ -249,6 +252,18 @@ export async function restartWhatsappConversationToFlowStart(
   opts: { preferFlowCode?: string | null; trigger: string }
 ): Promise<RestartToFlowStartResult> {
   const catalog = await listActiveWhatsappFlowsForEmpresa(supabase, empresaId);
+  console.info(CONV_LOG, "restart_attempt", {
+    conversationId,
+    trigger: opts.trigger,
+    preferFlowCode: opts.preferFlowCode ?? null,
+    catalogKind: catalog.kind,
+    activeFlowCodes:
+      catalog.kind === "multiple"
+        ? catalog.flowCodes
+        : catalog.kind === "single"
+          ? [catalog.flowCode]
+          : [],
+  });
   if (catalog.kind === "none") {
     console.warn(CONV_LOG, "conversation_restarted", {
       conversationId,
@@ -267,15 +282,15 @@ export async function restartWhatsappConversationToFlowStart(
     if (pref && catalog.flowCodes.includes(pref)) {
       targetFlow = pref;
     } else {
-      console.error(CONV_LOG, "conversation_restarted", {
+      targetFlow = catalog.flowCodes[0] ?? null;
+      console.warn(CONV_LOG, "restart_target_resolved", {
         conversationId,
-        ok: false,
-        detail: "multiple_active_flows_need_explicit_flow",
+        detail: "multiple_active_flows_fallback_first_sorted",
         activeFlowCodes: catalog.flowCodes,
         preferFlowCode: pref,
+        chosenFlow: targetFlow,
         trigger: opts.trigger,
       });
-      return { flow_code: null, flow_current_node: null, restarted: false, reason: "multiple_ambiguous" };
     }
   }
 
@@ -301,6 +316,24 @@ export async function restartWhatsappConversationToFlowStart(
       trigger: opts.trigger,
     });
     return { flow_code: null, flow_current_node: null, restarted: false, reason: "update_failed" };
+  }
+
+  const { error: resetEvErr } = await supabase.from("chat_flow_events").insert({
+    empresa_id: empresaId,
+    conversation_id: conversationId,
+    flow_code: targetFlow,
+    node_code: firstNode,
+    event_type: FLOW_POINTER_RESET_EVENT,
+    payload: { trigger: opts.trigger },
+  });
+  if (resetEvErr) {
+    console.error(CONV_LOG, "flow_pointer_reset_insert_failed", {
+      conversationId,
+      flow_code: targetFlow,
+      node_code: firstNode,
+      message: resetEvErr.message,
+      trigger: opts.trigger,
+    });
   }
 
   console.info(CONV_LOG, "conversation_restarted", {

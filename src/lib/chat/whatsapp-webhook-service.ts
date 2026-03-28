@@ -354,15 +354,40 @@ export async function processInboundWebhookValue(
 
       let restartedThisMessage = false;
 
-      if (message_type === "text" && matchesConversationRestartKeyword(content)) {
-        console.info(CONV_LOG, "restart_keyword_detected", {
+      const restartKeywordMatch =
+        message_type === "text" ? matchesConversationRestartKeyword(content) : false;
+      if (message_type === "text") {
+        console.info(CONV_LOG, "inbound_text_before_restart_check", {
           conversationId,
-          preview: content.slice(0, 120),
+          contentLength: content.length,
+          contentPreview: content.slice(0, 200),
+          contentJsonHead: JSON.stringify(content.slice(0, 120)),
+          matchesRestartKeyword: restartKeywordMatch,
+        });
+      }
+      if (restartKeywordMatch) {
+        console.info(CONV_LOG, "restart_keyword_branch_entered", {
+          conversationId,
+          preferFlowCode: convFlow,
         });
         const rrKw = await restartWhatsappConversationToFlowStart(supabase, empresaId, conversationId, {
           preferFlowCode: convFlow,
           trigger: "restart_keyword",
         });
+        console.info(CONV_LOG, "restart_keyword_result", {
+          conversationId,
+          restarted: rrKw.restarted,
+          reason: rrKw.reason,
+          flow_code: rrKw.flow_code,
+          flow_current_node: rrKw.flow_current_node,
+        });
+        if (!rrKw.restarted) {
+          console.warn(CONV_LOG, "restart_keyword_no_op", {
+            conversationId,
+            reason: rrKw.reason,
+            convFlowBefore: convFlow,
+          });
+        }
         if (rrKw.restarted) {
           convFlow = rrKw.flow_code;
           convNode = rrKw.flow_current_node;
