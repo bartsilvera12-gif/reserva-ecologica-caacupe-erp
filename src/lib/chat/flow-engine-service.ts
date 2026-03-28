@@ -6,7 +6,10 @@ import {
 import type { SupabaseAdmin } from "@/lib/chat/types";
 import { FLOW_POINTER_RESET_EVENT } from "@/lib/chat/resolve-whatsapp-active-flow";
 import { normalizeWaPhone } from "@/lib/chat/whatsapp-webhook-service";
-import { ensureSorteoOrderFromChat } from "@/lib/sorteos/sorteo-order-from-chat";
+import {
+  buildChatFlowDataUpsertsForSorteoOrder,
+  ensureSorteoOrderFromChat,
+} from "@/lib/sorteos/sorteo-order-from-chat";
 
 type ConversationFlowState = {
   id: string;
@@ -1457,6 +1460,28 @@ export function createFlowEngine(ctx: FlowEngineContext) {
       };
     }
     if (!sorteoOrderResult.skipped) {
+      const contextRows = buildChatFlowDataUpsertsForSorteoOrder(
+        state.empresa_id,
+        state.id,
+        state.flow_code as string,
+        sorteoOrderResult
+      );
+      const { error: sorteoCtxErr } = await supabase
+        .from("chat_flow_data")
+        .upsert(contextRows, { onConflict: "conversation_id,field_name" });
+      if (sorteoCtxErr) {
+        console.error(FLOW_SORTEO_LOG, "sorteo_order_context_upsert_failed", {
+          conversationId: state.id,
+          flowCode: state.flow_code,
+          message: sorteoCtxErr.message,
+        });
+        return {
+          ok: false,
+          status: "sorteo_context_persist_failed",
+          error: sorteoCtxErr.message,
+        };
+      }
+
       await insertFlowEvent({
         empresaId: state.empresa_id,
         conversationId: state.id,
@@ -1467,6 +1492,9 @@ export function createFlowEngine(ctx: FlowEngineContext) {
           idempotent: sorteoOrderResult.idempotent,
           entrada_id: sorteoOrderResult.entradaId,
           numero_orden: sorteoOrderResult.numeroOrden,
+          cantidad_boletos: sorteoOrderResult.cantidadBoletos,
+          sorteo_id: sorteoOrderResult.sorteoId,
+          sorteo_nombre: sorteoOrderResult.sorteoNombre,
           cupones: sorteoOrderResult.cupones.map((c) => c.numero_cupon),
         },
       });

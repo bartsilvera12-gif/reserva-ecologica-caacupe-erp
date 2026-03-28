@@ -162,17 +162,73 @@ export type EnsureSorteoOrderFromChatInput = {
   flowData: Record<string, string>;
 };
 
+/** Datos reales devueltos tras crear o reutilizar orden + cupones (para `chat_flow_data` y plantillas `{{...}}`). */
+export type EnsureSorteoOrderCreatedData = {
+  idempotent: boolean;
+  entradaId: string;
+  numeroOrden: number;
+  cupones: { id: string; numero_cupon: string }[];
+  sorteoId: string;
+  sorteoNombre: string;
+  cantidadBoletos: number;
+};
+
 export type EnsureSorteoOrderFromChatResult =
   | { ok: true; skipped: true; reason: string }
-  | {
-      ok: true;
-      skipped: false;
-      idempotent: boolean;
-      entradaId: string;
-      numeroOrden: number;
-      cupones: { id: string; numero_cupon: string }[];
-    }
+  | ({ ok: true; skipped: false } & EnsureSorteoOrderCreatedData)
   | { ok: false; message: string };
+
+/** Nombres de campo en `chat_flow_data` para el nodo de cierre tras comprobante (placeholders en texto). */
+export const CHAT_FLOW_SORTEO_CONTEXT_FIELDS = {
+  sorteo_entrada_id: "sorteo_entrada_id",
+  numero_orden: "numero_orden",
+  /** Cupones separados por coma (una línea) */
+  numeros_cupon: "numeros_cupon",
+  /** Un cupón por línea (mensaje multilínea en WhatsApp) */
+  numeros_cupon_lineas: "numeros_cupon_lineas",
+  sorteo_nombre: "sorteo_nombre",
+  /** Cantidad de boletos de la orden (desde fila `sorteo_entradas`, no del paso previo del flujo) */
+  orden_cantidad_boletos: "orden_cantidad_boletos",
+} as const;
+
+/**
+ * Filas para upsert en `chat_flow_data` después de `ensureSorteoOrderFromChat` exitoso.
+ * Orden: solo llamar cuando la orden ya exista en DB.
+ */
+export function buildChatFlowDataUpsertsForSorteoOrder(
+  empresaId: string,
+  conversationId: string,
+  flowCode: string,
+  data: EnsureSorteoOrderCreatedData
+): Array<{
+  empresa_id: string;
+  conversation_id: string;
+  flow_code: string;
+  field_name: string;
+  field_value: string;
+}> {
+  const fc = flowCode.trim();
+  const nums = data.cupones
+    .map((c) => c.numero_cupon)
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const F = CHAT_FLOW_SORTEO_CONTEXT_FIELDS;
+  const pairs: [string, string][] = [
+    [F.sorteo_entrada_id, data.entradaId],
+    [F.numero_orden, String(data.numeroOrden)],
+    [F.numeros_cupon, nums.join(", ")],
+    [F.numeros_cupon_lineas, nums.join("\n")],
+    [F.sorteo_nombre, data.sorteoNombre],
+    [F.orden_cantidad_boletos, String(data.cantidadBoletos)],
+  ];
+  return pairs.map(([field_name, field_value]) => ({
+    empresa_id: empresaId,
+    conversation_id: conversationId,
+    flow_code: fc,
+    field_name,
+    field_value,
+  }));
+}
 
 /**
  * Crea orden (sorteo_entradas) + cupones vía RPC atómica e idempotente.
@@ -336,14 +392,36 @@ export async function ensureSorteoOrderFromChat(
     return { ok: false, message: incompleteMsg };
   }
 
+  const cbRaw = entrada?.cantidad_boletos;
+  let cantidadBoletos =
+    typeof cbRaw === "number" ? cbRaw : Number(cbRaw);
+  if (!Number.isFinite(cantidadBoletos) || cantidadBoletos < 1) {
+    cantidadBoletos = participant.cantidad_boletos;
+  }
+
+  const { data: sorteoRow, error: sorteoNomErr } = await supabase
+    .from("sorteos")
+    .select("nombre")
+    .eq("id", sorteoId)
+    .maybeSingle();
+  if (sorteoNomErr) {
+    console.warn(FLOW_SORTEO_LOG, "sorteo_nombre_lookup_failed", {
+      sorteoId,
+      message: sorteoNomErr.message,
+    });
+  }
+  const sorteoNombre = String((sorteoRow as { nombre?: string } | null)?.nombre ?? "").trim();
+
   console.info(FLOW_SORTEO_LOG, "ensureSorteoOrderFromChat_outcome", {
     path: "success",
     conversationId: input.conversationId,
     flowCode,
     sorteo_id: sorteoId,
+    sorteo_nombre: sorteoNombre,
     idempotent: row.idempotent === true,
     entradaId,
     numeroOrden,
+    cantidadBoletos,
     cuponesCount: cupones.length,
   });
 
@@ -354,5 +432,8 @@ export async function ensureSorteoOrderFromChat(
     entradaId,
     numeroOrden,
     cupones,
+    sorteoId,
+    sorteoNombre,
+    cantidadBoletos,
   };
 }
