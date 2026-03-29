@@ -1,124 +1,17 @@
-"use client";
+import SorteosListClient from "./SorteosListClient";
+import { getSorteosVentasKpis } from "@/lib/sorteos/ventas-kpis";
 
-import Link from "next/link";
-import { useEffect, useState } from "react";
-import { getSorteos } from "@/lib/sorteos/actions";
-import type { Sorteo } from "@/lib/sorteos/types";
-
-function formatGs(n: number) {
-  return `${n.toLocaleString("es-PY")} ₲`;
-}
-
-function formatFecha(iso: string | null) {
-  if (!iso) return "—";
+export default async function SorteosPage() {
+  let ventasKpis = {
+    boletosHoy: 0,
+    boletosMes: 0,
+    montoHoy: 0,
+    montoMes: 0,
+  };
   try {
-    return new Date(iso).toLocaleString("es-PY", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    ventasKpis = await getSorteosVentasKpis();
   } catch {
-    return iso;
+    /* sin sesión o error de red: KPIs en cero */
   }
-}
-
-const estadoClass: Record<string, string> = {
-  activo: "bg-emerald-50 text-emerald-800",
-  pausado: "bg-amber-50 text-amber-800",
-  cerrado: "bg-slate-100 text-slate-700",
-  finalizado: "bg-blue-50 text-blue-800",
-};
-
-export default function SorteosListPage() {
-  const [rows, setRows] = useState<Sorteo[]>([]);
-  const [cargando, setCargando] = useState(true);
-
-  useEffect(() => {
-    getSorteos()
-      .then(setRows)
-      .catch(() => setRows([]))
-      .finally(() => setCargando(false));
-  }, []);
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-800">Sorteos</h1>
-          <p className="text-gray-500 text-sm mt-1">Gestión de sorteos y boletos</p>
-        </div>
-        <Link
-          href="/sorteos/nuevo"
-          className="shrink-0 bg-[#0EA5E9] hover:bg-[#0284C7] text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-sm"
-        >
-          Nuevo sorteo
-        </Link>
-      </div>
-
-      <nav className="flex flex-wrap gap-2 text-sm border-b border-slate-200 pb-3">
-        <span className="font-semibold text-[#0EA5E9]">Sorteos</span>
-        <Link href="/sorteos/entradas" className="text-slate-600 hover:text-[#0EA5E9]">
-          Entradas
-        </Link>
-        <Link href="/sorteos/cupones" className="text-slate-600 hover:text-[#0EA5E9]">
-          Cupones
-        </Link>
-      </nav>
-
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-        {cargando ? (
-          <div className="py-16 text-center text-gray-400 text-sm animate-pulse">Cargando…</div>
-        ) : rows.length === 0 ? (
-          <div className="py-16 text-center text-gray-400">
-            <p className="font-medium text-gray-600">No hay sorteos</p>
-            <Link href="/sorteos/nuevo" className="mt-3 inline-block text-sm text-[#0EA5E9] hover:underline">
-              Crear el primero
-            </Link>
-          </div>
-        ) : (
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50">
-                <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3">Nombre</th>
-                <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3">Estado</th>
-                <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3">Fecha sorteo</th>
-                <th className="text-right text-sm font-semibold text-slate-600 px-5 py-3">Precio / boleto</th>
-                <th className="text-right text-sm font-semibold text-slate-600 px-5 py-3">Máx.</th>
-                <th className="text-right text-sm font-semibold text-slate-600 px-5 py-3">Vendidos</th>
-                <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {rows.map((s) => (
-                <tr key={s.id} className="hover:bg-slate-50/80">
-                  <td className="px-5 py-3 text-sm text-slate-800 font-medium">{s.nombre}</td>
-                  <td className="px-5 py-3">
-                    <span
-                      className={`inline-flex text-xs font-medium px-2 py-0.5 rounded-full ${estadoClass[s.estado] ?? "bg-slate-100"}`}
-                    >
-                      {s.estado}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3 text-sm text-slate-600">{formatFecha(s.fecha_sorteo)}</td>
-                  <td className="px-5 py-3 text-sm text-right tabular-nums">{formatGs(s.precio_por_boleto)}</td>
-                  <td className="px-5 py-3 text-sm text-right tabular-nums">{s.max_boletos}</td>
-                  <td className="px-5 py-3 text-sm text-right tabular-nums">{s.total_boletos_vendidos}</td>
-                  <td className="px-5 py-3">
-                    <Link
-                      href={`/sorteos/${s.id}/editar`}
-                      className="text-sm text-[#0EA5E9] hover:underline"
-                    >
-                      Editar
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-    </div>
-  );
+  return <SorteosListClient ventasKpis={ventasKpis} />;
 }

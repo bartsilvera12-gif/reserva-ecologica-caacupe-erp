@@ -19,7 +19,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <div className="flex flex-1 flex-col min-w-0">
         <Header />
-        <main className="flex-1 p-6">{children}</main>
+        <main className="flex flex-1 flex-col min-h-0 min-w-0 p-6">{children}</main>
       </div>
     </div>
   );

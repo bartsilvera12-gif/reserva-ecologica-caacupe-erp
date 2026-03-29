@@ -376,7 +376,7 @@ export default function ConversacionesPage() {
   }, [requestedConversationId, conversations, selectedId, handleSelect]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)] min-h-[480px] gap-4">
+    <div className="flex flex-col flex-1 min-h-0 gap-3">
       {lightboxUrl ? (
         <button
           type="button"
@@ -394,7 +394,7 @@ export default function ConversacionesPage() {
         </button>
       ) : null}
 
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3 shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Conversaciones</h1>
           <p className="text-sm text-slate-500">
@@ -406,15 +406,9 @@ export default function ConversacionesPage() {
                 : "Historial completo"}
           </p>
         </div>
-        <Link
-          href="/dashboard/historial"
-          className="text-xs font-medium text-slate-500 hover:text-[#0EA5E9] underline"
-        >
-          Búsqueda omnicanal por contacto
-        </Link>
       </div>
 
-      <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-100/80 p-1 w-fit">
+      <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-100/80 p-1 w-fit shrink-0">
         <button type="button" className={tabClass(vista === "inbox")} onClick={() => setVista("inbox")}>
           Inbox
         </button>
@@ -431,13 +425,13 @@ export default function ConversacionesPage() {
       </div>
 
       {hasActiveChannel === false && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-900 text-sm rounded-lg px-4 py-3">
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 text-sm rounded-lg px-4 py-3 shrink-0">
           No hay un canal WhatsApp activo para tu empresa. Los mensajes no se registrarán hasta configurarlo.
         </div>
       )}
 
       {listError && (
-        <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-lg px-4 py-2">
+        <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-lg px-4 py-2 shrink-0">
           {listError}
         </div>
       )}

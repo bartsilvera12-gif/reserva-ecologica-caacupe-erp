@@ -47,12 +47,7 @@ const MENU_STRUCTURE: MenuItem[] = [
     label: "Conversaciones",
     href: "/dashboard/conversaciones",
     icon: MessageCircle,
-    children: [
-      { label: "Inbox", href: "/dashboard/conversaciones" },
-      { label: "Bot", href: "/dashboard/conversaciones?vista=bot" },
-      { label: "Historial chats", href: "/dashboard/conversaciones?vista=historial" },
-      { label: "Búsqueda omnicanal", href: "/dashboard/historial" },
-    ],
+    children: [{ label: "Historial omnicanal", href: "/dashboard/historial" }],
   },
   { slug: "ventas", label: "Ventas", href: "/ventas", icon: ShoppingCart },
   { slug: "inventario", label: "Inventario", href: "/inventario", icon: Package, children: [
@@ -69,17 +64,7 @@ const MENU_STRUCTURE: MenuItem[] = [
   { slug: "gestion-clientes", label: "Gestión Clientes", href: "/gestion-clientes", icon: Users },
   { slug: "crm", label: "CRM Funnel", href: "/crm", icon: Sparkles },
   { slug: "marketing", label: "Marketing Ops", href: "/marketing", icon: Megaphone },
-  {
-    slug: "sorteos",
-    label: "Sorteos",
-    href: "/sorteos",
-    icon: Ticket,
-    children: [
-      { label: "Sorteos", href: "/sorteos" },
-      { label: "Entradas", href: "/sorteos/entradas" },
-      { label: "Cupones", href: "/sorteos/cupones" },
-    ],
-  },
+  { slug: "sorteos", label: "Sorteos", href: "/sorteos", icon: Ticket },
 ];
 
 function NavItem({
