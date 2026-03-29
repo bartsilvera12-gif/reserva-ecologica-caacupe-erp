@@ -623,13 +623,14 @@ export function createFlowEngine(ctx: FlowEngineContext) {
     conversationId: string;
     flowCode: string | null;
   }): Promise<Record<string, string>> {
-    if (!input.flowCode) return {};
+    const fc = input.flowCode?.trim();
+    if (!fc) return {};
     const { data, error } = await supabase
       .from("chat_flow_data")
       .select("field_name, field_value")
       .eq("empresa_id", input.empresaId)
       .eq("conversation_id", input.conversationId)
-      .eq("flow_code", input.flowCode);
+      .eq("flow_code", fc);
     if (error) throw new Error(error.message);
     const out: Record<string, string> = {};
     for (const row of data ?? []) {
@@ -638,6 +639,109 @@ export function createFlowEngine(ctx: FlowEngineContext) {
       out[key] = String((row as { field_value?: unknown }).field_value ?? "");
     }
     return out;
+  }
+
+  function opcionTitleFromRawMeta(payload: Record<string, unknown>): string | null {
+    const raw = payload.raw;
+    if (!raw || typeof raw !== "object") return null;
+    const interactive = (raw as Record<string, unknown>).interactive;
+    if (!interactive || typeof interactive !== "object") return null;
+    const br = (interactive as Record<string, unknown>).button_reply;
+    const lr = (interactive as Record<string, unknown>).list_reply;
+    const fromBr =
+      br && typeof br === "object" && typeof (br as Record<string, unknown>).title === "string"
+        ? String((br as Record<string, unknown>).title).trim()
+        : "";
+    const fromLr =
+      lr && typeof lr === "object" && typeof (lr as Record<string, unknown>).title === "string"
+        ? String((lr as Record<string, unknown>).title).trim()
+        : "";
+    const title = fromBr || fromLr;
+    return title || null;
+  }
+
+  /**
+   * Reconstruye variables del flujo desde `chat_flow_events` tras un reinicio o si `chat_flow_data`
+   * quedó vacío: textos capturados y payloads de botones/listas quedan auditados ahí.
+   */
+  async function hydrateFlowDataFromSessionEvents(
+    conversationId: string,
+    flowCode: string,
+    base: Record<string, string>
+  ): Promise<Record<string, string>> {
+    const fc = flowCode.trim();
+    if (!fc) return base;
+    const { data: resetRow, error: resetErr } = await supabase
+      .from("chat_flow_events")
+      .select("created_at")
+      .eq("conversation_id", conversationId)
+      .eq("flow_code", fc)
+      .eq("event_type", FLOW_POINTER_RESET_EVENT)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (resetErr) {
+      console.warn(FLOW_SORTEO_LOG, "hydrate_reset_query_failed", { message: resetErr.message });
+    }
+    const since = (resetRow as { created_at?: string } | null)?.created_at ?? null;
+
+    let q = supabase
+      .from("chat_flow_events")
+      .select("event_type, payload, created_at")
+      .eq("conversation_id", conversationId)
+      .eq("flow_code", fc)
+      .in("event_type", ["text_captured", "button_selected"])
+      .order("created_at", { ascending: true });
+    if (since) q = q.gt("created_at", since);
+    const { data: rows, error } = await q;
+    if (error) {
+      console.warn(FLOW_SORTEO_LOG, "hydrate_events_failed", { message: error.message });
+      return base;
+    }
+
+    const merged: Record<string, string> = { ...base };
+    for (const row of rows ?? []) {
+      const et = String((row as { event_type?: string }).event_type ?? "");
+      const payload = ((row as { payload?: Record<string, unknown> }).payload ?? {}) as Record<
+        string,
+        unknown
+      >;
+      if (et === "text_captured") {
+        const field = typeof payload.save_as_field === "string" ? payload.save_as_field.trim() : "";
+        const tv = typeof payload.text_value === "string" ? payload.text_value.trim() : "";
+        if (field && tv) merged[field] = tv;
+      } else if (et === "button_selected") {
+        const op = payload.option_payload;
+        if (op && typeof op === "object" && !Array.isArray(op)) {
+          for (const [k, v] of Object.entries(op as Record<string, unknown>)) {
+            const kn = k.trim();
+            if (!kn) continue;
+            const sv =
+              typeof v === "string" || typeof v === "number" || typeof v === "boolean"
+                ? String(v)
+                : "";
+            if (sv) merged[kn] = sv;
+          }
+        }
+        const ov = typeof payload.option_value === "string" ? payload.option_value.trim() : "";
+        if (ov) merged["option_value"] = ov;
+        const ol =
+          (typeof payload.option_label === "string" ? payload.option_label.trim() : "") ||
+          opcionTitleFromRawMeta(payload) ||
+          "";
+        if (ol) merged["opcion_label"] = ol;
+      }
+    }
+    if ((rows?.length ?? 0) > 0) {
+      console.info(FLOW_SORTEO_LOG, "hydrate_flow_data_applied", {
+        conversationId,
+        flowCode: fc,
+        eventCount: rows?.length ?? 0,
+        sinceReset: Boolean(since),
+        keysAfter: Object.keys(merged).length,
+      });
+    }
+    return merged;
   }
 
   function interpolateTemplate(
@@ -1081,6 +1185,7 @@ export function createFlowEngine(ctx: FlowEngineContext) {
       metaButtonId: params.metaButtonId,
       payload: {
         option_value: selected.option_value,
+        option_label: selected.label,
         option_payload: selected.option_payload ?? {},
         raw: params.rawPayload,
       },
@@ -1528,11 +1633,16 @@ export function createFlowEngine(ctx: FlowEngineContext) {
       },
     });
 
-    const flowDataForSorteo = await getConversationFlowDataMap({
+    const rawFlowData = await getConversationFlowDataMap({
       empresaId: state.empresa_id,
       conversationId: state.id,
       flowCode: state.flow_code,
     });
+    const flowDataForSorteo = await hydrateFlowDataFromSessionEvents(
+      state.id,
+      state.flow_code as string,
+      rawFlowData
+    );
     const sorteoOrderResult = await ensureSorteoOrderFromChat(supabase, {
       empresaId: state.empresa_id,
       conversationId: state.id,
@@ -1553,7 +1663,7 @@ export function createFlowEngine(ctx: FlowEngineContext) {
       const detail =
         sorteoOrderResult.reason === "flow_sin_sorteo_id"
           ? "No pudimos registrar la participación: el flujo no está vinculado a un sorteo. Contactá al equipo."
-          : "No pudimos registrar la participación: faltan datos del flujo (nombre, cantidad u opción). Volvé a elegir tu opción y completá todos los pasos antes de enviar el comprobante, o escribí REINICIAR para empezar de nuevo.";
+          : "No pudimos registrar la participación: no encontramos nombre, cantidad ni la opción elegida en esta sesión. Tocá de nuevo el botón de tu compra (opción y monto) y enviá el comprobante después; o escribí reiniciar y recorré el flujo desde el inicio.";
       const send = await sendWhatsAppText({
         toDigits: sendCtx.toDigits,
         phoneNumberId: sendCtx.phoneNumberId,

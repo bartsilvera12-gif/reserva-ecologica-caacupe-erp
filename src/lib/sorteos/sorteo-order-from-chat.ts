@@ -84,6 +84,57 @@ export function extractQtyFromFlowText(s: string | undefined): number | null {
 }
 
 /**
+ * Si el flujo guardó `Nombre`, `Cédula`, etc., expone también `nombre`, `cedula` para el parser.
+ */
+export function expandFlowDataCanonicalKeys(data: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = { ...data };
+  for (const [k, v] of Object.entries(data)) {
+    const tk = k.trim();
+    if (!tk) continue;
+    const val = String(v ?? "");
+    if (!norm(val)) continue;
+    const lk = tk.toLowerCase();
+    if (!norm(out[lk])) out[lk] = val;
+  }
+  return out;
+}
+
+function flowDataHasResolvableQty(data: Record<string, string>): boolean {
+  const qtyKeys = ["sorteo_cantidad_opcion", "cantidad_boletos", "cantidad", "boletos", "qty"] as const;
+  for (const k of qtyKeys) {
+    const v = norm(data[k]);
+    if (!v) continue;
+    const n = Number(v);
+    if (Number.isFinite(n) && n >= 1) return true;
+  }
+  for (const k of ["producto", "opcion_label", "combo", "opcion", "descripcion"] as const) {
+    if (extractQtyFromFlowText(data[k]) != null) return true;
+  }
+  return false;
+}
+
+/**
+ * Completa cantidad desde el texto visible de la opción si el payload no trajo cantidad explícita.
+ */
+export function enrichFlowDataForSorteoParse(data: Record<string, string>): Record<string, string> {
+  if (flowDataHasResolvableQty(data)) return data;
+  const out = { ...data };
+  for (const k of ["opcion_label", "producto", "combo", "opcion", "descripcion"] as const) {
+    const q = extractQtyFromFlowText(out[k]);
+    if (q != null) {
+      out["sorteo_cantidad_opcion"] = String(q);
+      out["cantidad"] = String(q);
+      break;
+    }
+  }
+  return out;
+}
+
+export function prepareFlowDataForSorteoOrder(data: Record<string, string>): Record<string, string> {
+  return enrichFlowDataForSorteoParse(expandFlowDataCanonicalKeys(data));
+}
+
+/**
  * Lee campos típicos guardados vía save_as_field en el flujo (nombres flexibles).
  */
 export function parseSorteoParticipantFromFlowData(data: Record<string, string>): {
@@ -340,13 +391,15 @@ export async function ensureSorteoOrderFromChat(
   input: EnsureSorteoOrderFromChatInput
 ): Promise<EnsureSorteoOrderFromChatResult> {
   const flowCode = input.flowCode.trim();
+  const flowData = prepareFlowDataForSorteoOrder(input.flowData);
   console.info(FLOW_SORTEO_LOG, "ensureSorteoOrderFromChat_invoke", {
     conversationId: input.conversationId,
     flowCode,
     empresaId: input.empresaId,
     mediaId: input.mediaId,
-    flowDataKeys: Object.keys(input.flowData),
-    chat_flow_data: input.flowData,
+    flowDataKeysRaw: Object.keys(input.flowData),
+    flowDataKeysPrepared: Object.keys(flowData),
+    chat_flow_data: flowData,
   });
 
   const sorteoId = await getSorteoIdForChatFlow(supabase, input.empresaId, flowCode);
@@ -363,9 +416,9 @@ export async function ensureSorteoOrderFromChat(
     return { ok: true, skipped: true, reason: "flow_sin_sorteo_id" };
   }
 
-  const participant = parseSorteoParticipantFromFlowData(input.flowData);
+  const participant = parseSorteoParticipantFromFlowData(flowData);
   if (!participant) {
-    const parseDetail = explainParseSorteoParticipantFailure(input.flowData);
+    const parseDetail = explainParseSorteoParticipantFailure(flowData);
     console.warn(FLOW_SORTEO_LOG, "ensureSorteoOrderFromChat_outcome", {
       path: "skipped",
       reason: "datos_flujo_incompletos",
@@ -373,21 +426,21 @@ export async function ensureSorteoOrderFromChat(
       conversationId: input.conversationId,
       flowCode,
       sorteo_id: sorteoId,
-      chat_flow_data: input.flowData,
+      chat_flow_data: flowData,
       archivo: "src/lib/sorteos/sorteo-order-from-chat.ts",
       condicion: "parseSorteoParticipantFromFlowData === null",
     });
     return { ok: true, skipped: true, reason: "datos_flujo_incompletos" };
   }
 
-  const pricing = parseSorteoPricingFromFlowData(input.flowData);
+  const pricing = parseSorteoPricingFromFlowData(flowData);
   console.info(FLOW_SORTEO_LOG, "ensureSorteoOrderFromChat_pricing", {
     conversationId: input.conversationId,
     flowCode,
     montoCompra: pricing.montoCompra,
     promoNombre: pricing.promoNombre,
-    tiene_sorteo_monto_opcion: Boolean(input.flowData["sorteo_monto_opcion"]?.trim()),
-    tiene_precio_fuente: Boolean(input.flowData["precio_fuente"]?.trim()),
+    tiene_sorteo_monto_opcion: Boolean(flowData["sorteo_monto_opcion"]?.trim()),
+    tiene_precio_fuente: Boolean(flowData["precio_fuente"]?.trim()),
   });
 
   const idempotencyKey = buildSorteoIdempotencyKey(
