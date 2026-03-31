@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, usePathname, useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { getSorteoById, updateSorteo } from "@/lib/sorteos/actions";
 import type { SorteoEstado } from "@/lib/sorteos/types";
@@ -9,7 +9,6 @@ import type { SorteoEstado } from "@/lib/sorteos/types";
 export default function EditarSorteoPage() {
   const params = useParams();
   const id = String(params?.id ?? "");
-  const pathname = usePathname();
   const router = useRouter();
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
@@ -116,11 +115,6 @@ export default function EditarSorteoPage() {
     return <div className="py-16 text-center text-slate-400 text-sm animate-pulse">Cargando…</div>;
   }
 
-  const revendedoresHref =
-    pathname?.startsWith("/dashboard/")
-      ? `/dashboard/sorteos/${id}/revendedores`
-      : `/sorteos/${id}/revendedores`;
-
   return (
     <div className="space-y-6 max-w-2xl">
       <div className="flex items-center gap-2 text-sm text-slate-500">
@@ -133,7 +127,7 @@ export default function EditarSorteoPage() {
       <h1 className="text-2xl font-bold text-gray-800">Editar sorteo</h1>
       <div className="pt-1">
         <Link
-          href={revendedoresHref}
+          href={`/sorteos/${id}/revendedores`}
           className="inline-flex items-center rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-100"
         >
           Revendedores y enlaces de referido
