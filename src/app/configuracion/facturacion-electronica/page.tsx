@@ -176,7 +176,7 @@ export default function FacturacionElectronicaSifenPage() {
         setCfg(j.data!);
         setNuevaPassword("");
         setSuccess("Configuración SIFEN creada correctamente.");
-        if (isSifenConfigCompleta(j.data)) setEditarFormulario(false);
+        if (j.data != null && isSifenConfigCompleta(j.data)) setEditarFormulario(false);
       } else {
         const body: Record<string, unknown> = {
           ambiente,
@@ -206,7 +206,7 @@ export default function FacturacionElectronicaSifenPage() {
         setNuevaPassword("");
         setLimpiarPassword(false);
         setSuccess("Cambios guardados.");
-        if (isSifenConfigCompleta(j.data)) setEditarFormulario(false);
+        if (j.data != null && isSifenConfigCompleta(j.data)) setEditarFormulario(false);
       }
       await load();
     } catch {
