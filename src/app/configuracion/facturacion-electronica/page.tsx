@@ -82,12 +82,30 @@ export default function FacturacionElectronicaSifenPage() {
     load();
   }, [load]);
 
-  function certificadoVencimientoPayload(): string | null | undefined {
+  /**
+   * Vencimiento: obligatorio solo si ya hay .p12 en storage (certificado_path).
+   * Crear config sin certificado → no enviar fecha (omitir en POST).
+   * PATCH sin cert y fecha vacía → null en servidor.
+   */
+  function resolveCertificadoVencimiento(): { ok: true; iso: string | null } | { ok: false; message: string } {
     const t = certVenc.trim();
-    if (!t) return cfg ? null : undefined;
+    const tieneCertificado = Boolean(cfg?.certificado_path?.trim());
+
+    if (!t) {
+      if (tieneCertificado) {
+        return {
+          ok: false,
+          message: "Indicá la fecha de vencimiento del certificado .p12 cargado.",
+        };
+      }
+      return { ok: true, iso: null };
+    }
+
     const d = new Date(t + "T12:00:00");
-    if (Number.isNaN(d.getTime())) return undefined;
-    return d.toISOString();
+    if (Number.isNaN(d.getTime())) {
+      return { ok: false, message: "Fecha de vencimiento del certificado no válida" };
+    }
+    return { ok: true, iso: d.toISOString() };
   }
 
   async function guardar(e: React.FormEvent) {
@@ -96,12 +114,13 @@ export default function FacturacionElectronicaSifenPage() {
     setSuccess(null);
     setSaving(true);
     try {
-      const venc = certificadoVencimientoPayload();
-      if (venc === undefined) {
-        setError("Fecha de vencimiento del certificado no válida");
+      const vencRes = resolveCertificadoVencimiento();
+      if (!vencRes.ok) {
+        setError(vencRes.message);
         setSaving(false);
         return;
       }
+      const { iso: venc } = vencRes;
 
       if (!cfg) {
         const body: Record<string, unknown> = {
@@ -206,6 +225,7 @@ export default function FacturacionElectronicaSifenPage() {
     Boolean(puntoExpedicion.trim());
 
   const tieneCert = Boolean(cfg?.certificado_path);
+  const tieneCertificadoCargado = Boolean(cfg?.certificado_path?.trim());
   const tienePw = Boolean(cfg?.has_certificado_password);
 
   if (loading) {
@@ -347,6 +367,15 @@ export default function FacturacionElectronicaSifenPage() {
             <div>
               <label className={fLabel}>Vencimiento del certificado</label>
               <input type="date" className={fInput} value={certVenc} onChange={(e) => setCertVenc(e.target.value)} />
+              <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                {tieneCertificadoCargado ? (
+                  <>
+                    <span className="font-medium text-slate-600">Obligatorio</span> mientras tengas un .p12 cargado.
+                  </>
+                ) : (
+                  <>Opcional hasta que subas el certificado; podés guardar la configuración base antes.</>
+                )}
+              </p>
             </div>
             <div>
               <label className={fLabel}>Subir / reemplazar .p12</label>
