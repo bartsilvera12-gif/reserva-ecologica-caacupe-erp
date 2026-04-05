@@ -195,9 +195,17 @@ export async function POST(
     let nuevoError: string | null;
     let nuevoProt: string | null;
 
-    /** Misma condición que `loteRecibido` en el cliente + comprobación explícita por si el parseo de dCodRes varió. */
+    /** Aceptación del lote: flag del cliente, código 0300 (con o sin ceros iniciales) o 2xx + protocolo (p. ej. dCodRes no parseado pero SET devolvió dProtConsLote). */
     const codRecibe = String(resp.dCodRes ?? "").trim();
-    const loteAceptadoPorSet = resp.loteRecibido || codRecibe === "0300";
+    const codSinCerosIni = codRecibe.replace(/^0+/, "") || "";
+    const codigoEs0300 = codRecibe === "0300" || codSinCerosIni === "300";
+    const protTrim =
+      resp.dProtConsLote == null ? "" : String(resp.dProtConsLote).trim();
+    const http2xx = resp.httpStatus >= 200 && resp.httpStatus < 300;
+    const loteAceptadoPorSet =
+      resp.loteRecibido ||
+      codigoEs0300 ||
+      (http2xx && protTrim.length > 0 && !resp.loteNoEncolado);
 
     if (loteAceptadoPorSet) {
       nuevoEstado = "enviado";

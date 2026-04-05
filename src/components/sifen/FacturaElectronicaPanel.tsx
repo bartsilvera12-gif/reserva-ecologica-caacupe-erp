@@ -224,12 +224,16 @@ export function FacturaElectronicaPanel({
   >(null);
   const [flash, setFlash] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<Resumen | null> => {
     const res = await fetch(`/api/facturas/${facturaId}/sifen/resumen`, {
       cache: "no-store",
     });
     const j = (await res.json()) as { success?: boolean; data?: Resumen };
-    if (res.ok && j.success && j.data) onResumenLoaded(j.data);
+    if (res.ok && j.success && j.data) {
+      onResumenLoaded(j.data);
+      return j.data;
+    }
+    return null;
   }, [facturaId, onResumenLoaded]);
 
   const run = async (kind: "borrador" | "xml" | "firmar") => {
@@ -271,21 +275,68 @@ export function FacturaElectronicaPanel({
       const res = await fetch(`/api/facturas/${facturaId}/sifen/enviar-test`, { method: "POST" });
       const j = (await res.json()) as {
         success?: boolean;
-        data?: { factura_electronica?: FacturaElectronicaDTO };
+        data?: {
+          factura_electronica?: FacturaElectronicaDTO;
+          recibe_lote?: {
+            loteRecibido?: boolean;
+            loteNoEncolado?: boolean;
+            dCodRes?: string | null;
+            dProtConsLote?: string | null;
+            httpStatus?: number;
+          };
+        };
         error?: string;
       };
       if (!res.ok || !j.success) {
         setFlash({ kind: "err", text: j.error ?? `Error ${res.status}` });
         return;
       }
-      if (resumen != null && j.data?.factura_electronica) {
-        onResumenLoaded({
-          ...resumen,
-          factura_electronica: j.data.factura_electronica,
+
+      const feResp = j.data?.factura_electronica;
+      const rec = j.data?.recibe_lote;
+      const cod = String(rec?.dCodRes ?? "").trim();
+      const codSinCerosIni = cod.replace(/^0+/, "") || "";
+      const codigoEs0300 = cod === "0300" || codSinCerosIni === "300";
+      const prot =
+        rec?.dProtConsLote == null ? "" : String(rec.dProtConsLote).trim();
+      const http2xx =
+        rec?.httpStatus != null && rec.httpStatus >= 200 && rec.httpStatus < 300;
+
+      /** Solo éxito real: no mostrar verde si la API guardó error_envio / rechazo de lote. */
+      const loteAceptado =
+        feResp?.estado_sifen === "enviado" ||
+        rec?.loteRecibido === true ||
+        codigoEs0300 ||
+        (http2xx && prot.length > 0 && rec?.loteNoEncolado !== true);
+
+      if (!loteAceptado) {
+        if (resumen != null && feResp) {
+          onResumenLoaded({ ...resumen, factura_electronica: feResp });
+        }
+        setFlash({
+          kind: "err",
+          text:
+            feResp?.error?.trim() ??
+            "SET no aceptó el lote. Revisá el mensaje técnico abajo o reintentá el envío.",
         });
+        await refresh();
+        return;
+      }
+
+      if (resumen != null && feResp) {
+        onResumenLoaded({ ...resumen, factura_electronica: feResp });
       }
       setFlash({ kind: "ok", text: "Lote enviado correctamente a SET (TEST)" });
-      await refresh();
+
+      const loaded = await refresh();
+      if (
+        feResp &&
+        feResp.estado_sifen === "enviado" &&
+        loaded?.factura_electronica?.estado_sifen === "error_envio" &&
+        loaded.factura_electronica.id === feResp.id
+      ) {
+        onResumenLoaded({ ...loaded, factura_electronica: feResp });
+      }
     } catch (e) {
       setFlash({ kind: "err", text: e instanceof Error ? e.message : "Error de red" });
     } finally {

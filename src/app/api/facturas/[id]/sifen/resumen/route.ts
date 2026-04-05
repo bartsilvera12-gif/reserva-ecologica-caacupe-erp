@@ -85,7 +85,17 @@ export async function GET(
             : "";
         const prot =
           row.sifen_d_prot_cons_lote == null ? "" : String(row.sifen_d_prot_cons_lote).trim();
-        if (cod === "0300" && prot.length > 0) {
+        const httpSt =
+          ult != null && typeof ult === "object" && "httpStatus" in ult
+            ? Number((ult as Record<string, unknown>).httpStatus)
+            : NaN;
+        const httpOk = Number.isFinite(httpSt) && httpSt >= 200 && httpSt < 300;
+        const codSin = cod.replace(/^0+/, "") || "";
+        const es0300 = cod === "0300" || codSin === "300";
+        const es0301 = cod === "0301" || codSin === "301";
+        const debeCorregir =
+          (es0300 && prot.length > 0) || (httpOk && prot.length > 0 && !es0301);
+        if (debeCorregir) {
           const { data: fixed } = await supabase
             .from("factura_electronica")
             .update({ estado_sifen: "enviado", error: null })
