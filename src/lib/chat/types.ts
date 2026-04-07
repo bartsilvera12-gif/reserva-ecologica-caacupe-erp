@@ -23,7 +23,10 @@ export type ChatConversationRow = {
   empresa_id: string;
   channel_id: string;
   contact_id: string;
-  status: "nuevo" | "interesado" | "pendiente" | "cerrado";
+  status: "open" | "pending" | "closed";
+  queue_id?: string | null;
+  assigned_agent_id?: string | null;
+  priority?: "low" | "medium" | "high";
   flow_code: string | null;
   flow_current_node: string | null;
   flow_status: "bot" | "human";

@@ -350,7 +350,7 @@ async function main() {
       empresa_id: empresaId,
       channel_id: channelId,
       contact_id: contactId,
-      status: "nuevo",
+      status: "open",
       flow_code: flowCode,
       flow_current_node: firstNode,
       flow_status: "bot",

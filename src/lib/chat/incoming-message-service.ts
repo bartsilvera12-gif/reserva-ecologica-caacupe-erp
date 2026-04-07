@@ -3,6 +3,7 @@
  * WhatsApp en producción sigue pasando por `processInboundWebhookValue` (flujos, CRM, media);
  * este módulo concentra la escritura en BD reutilizable y el route genérico `/api/webhooks/[channel]`.
  */
+import { assignConversation } from "@/lib/chat/assign-conversation-service";
 import { createWhatsappConversationWithActiveFlow } from "@/lib/chat/whatsapp-conversation-bootstrap";
 import type { SupabaseAdmin } from "@/lib/chat/types";
 import { normalizeWaPhone } from "@/lib/chat/wa-phone";
@@ -171,8 +172,8 @@ export async function persistInboundChatMessageAndBump(
   const messageId = (insertedMsg as { id?: string } | null)?.id;
   if (!messageId) return { ok: false, error: "Insert mensaje sin id" };
 
-  const prevStatus = conversationState.status ?? "nuevo";
-  const nextStatus = prevStatus === "cerrado" ? "pendiente" : prevStatus;
+  const prevStatus = conversationState.status ?? "open";
+  const nextStatus = prevStatus === "closed" ? "pending" : prevStatus;
 
   await supabase
     .from("chat_conversations")
@@ -275,7 +276,7 @@ export async function saveIncomingMessage(params: SaveIncomingMessageParams): Pr
           empresa_id: empresaId,
           channel_id: channelId,
           contact_id: contactId,
-          status: "nuevo",
+          status: "open",
           flow_code: null,
           flow_current_node: null,
           flow_status: "human",
@@ -303,6 +304,12 @@ export async function saveIncomingMessage(params: SaveIncomingMessageParams): Pr
         return { ok: false, error: `Conversación: ${convErr.message}` };
       } else {
         existingConv = conv as ConversationRowLite;
+        if (existingConv?.id) {
+          const ar = await assignConversation(supabase, existingConv.id);
+          if (!ar.ok) {
+            console.warn("[saveIncomingMessage] assignConversation", ar.error);
+          }
+        }
       }
     }
   }

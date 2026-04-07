@@ -255,7 +255,7 @@ export async function getContactHistory(
         id: conversationId,
         channel_id: conv.channel_id as string,
         channel_name: channels.get(conv.channel_id as string) ?? "Canal",
-        status: (conv.status as string) ?? "nuevo",
+        status: (conv.status as string) ?? "open",
         last_message_at: msgs[msgs.length - 1]?.created_at ?? (conv.last_message_at as string | null) ?? null,
         unread_count: (conv.unread_count as number) ?? 0,
         messages: msgs,

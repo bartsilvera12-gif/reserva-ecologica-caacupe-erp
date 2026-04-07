@@ -1,6 +1,7 @@
 /**
  * Creación de conversación WhatsApp con flujo activo de la empresa (mismo criterio que el webhook Meta).
  */
+import { assignConversation } from "@/lib/chat/assign-conversation-service";
 import { insertActiveFlowSessionRow } from "@/lib/chat/flow-session-service";
 import { flowTrace } from "@/lib/chat/flow-trace-log";
 import {
@@ -56,13 +57,14 @@ export async function createWhatsappConversationWithActiveFlow(
     });
   }
 
+  let wasNewInsert = false;
   const { data: conv, error: convErr } = await supabase
     .from("chat_conversations")
     .insert({
       empresa_id: empresaId,
       channel_id: channelId,
       contact_id: contactId,
-      status: "nuevo",
+      status: "open",
       flow_code: flowCodeIns,
       flow_current_node: nodeIns,
       flow_status: "bot",
@@ -75,6 +77,8 @@ export async function createWhatsappConversationWithActiveFlow(
       "id, status, unread_count, flow_code, flow_current_node, flow_status, human_taken_over, active_flow_session_id"
     )
     .single();
+
+  if (conv && !convErr) wasNewInsert = true;
 
   let existingConv: WhatsappConversationRow | null = conv as WhatsappConversationRow | null;
 
@@ -104,6 +108,7 @@ export async function createWhatsappConversationWithActiveFlow(
       .maybeSingle();
     if (fresh) existingConv = fresh as WhatsappConversationRow;
   } else if (convErr?.code === "23505") {
+    wasNewInsert = false;
     const { data: again } = await supabase
       .from("chat_conversations")
       .select(
@@ -115,6 +120,13 @@ export async function createWhatsappConversationWithActiveFlow(
     existingConv = again as WhatsappConversationRow | null;
   } else if (convErr) {
     return { conv: null, error: convErr.message };
+  }
+
+  if (wasNewInsert && existingConv?.id) {
+    const ar = await assignConversation(supabase, existingConv.id);
+    if (!ar.ok) {
+      console.warn("[whatsapp-conversation-bootstrap] assignConversation", ar.error);
+    }
   }
 
   return { conv: existingConv, error: null };
