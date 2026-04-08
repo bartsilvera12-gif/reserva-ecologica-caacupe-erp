@@ -31,6 +31,11 @@ function extensionFromMime(mime: string): string {
   if (m.includes("jpeg") || m.includes("jpg")) return "jpg";
   if (m.includes("mp4")) return "mp4";
   if (m.includes("quicktime") || m.includes("mov")) return "mov";
+  if (m.includes("ogg") || m.includes("opus")) return "ogg";
+  if (m.includes("mpeg") || m.includes("mp3")) return "mp3";
+  if (m.includes("aac") || m.includes("m4a")) return "m4a";
+  if (m.includes("wav")) return "wav";
+  if (m.includes("webm")) return "webm";
   return "bin";
 }
 
@@ -38,7 +43,7 @@ export type InboundPreviewMedia = {
   mediaId: string;
   mimeType: string | null;
   filename: string | null;
-  sourceType: "image" | "document" | "sticker" | "video";
+  sourceType: "image" | "document" | "sticker" | "video" | "audio";
 };
 
 export function extractInboundPreviewMedia(msg: MetaInboundMessage): InboundPreviewMedia | null {
@@ -85,6 +90,16 @@ export function extractInboundPreviewMedia(msg: MetaInboundMessage): InboundPrev
           : null,
       filename: null,
       sourceType: "video",
+    };
+  }
+  if (t === "audio") {
+    const mediaId = msg.audio?.id?.trim();
+    if (!mediaId) return null;
+    return {
+      mediaId,
+      mimeType: msg.audio?.mime_type?.trim() || null,
+      filename: null,
+      sourceType: "audio",
     };
   }
   return null;

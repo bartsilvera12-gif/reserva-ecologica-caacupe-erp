@@ -36,9 +36,16 @@ type MenuItem = {
   label: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
-  children?: { label: string; href: string }[];
+  children?: { label: string; href: string; exactMatch?: boolean }[];
   showWhen?: string;
 };
+
+/** Inbox solo coincide con la ruta exacta (no operación ni historial). */
+function menuChildPathActive(path: string, childHref: string, exactMatch?: boolean): boolean {
+  if (path === childHref) return true;
+  if (exactMatch || childHref === "/dashboard/conversaciones") return false;
+  return path.startsWith(`${childHref}/`);
+}
 
 const MENU_STRUCTURE: MenuItem[] = [
   { slug: "dashboard", label: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -48,7 +55,8 @@ const MENU_STRUCTURE: MenuItem[] = [
     href: "/dashboard/conversaciones",
     icon: MessageCircle,
     children: [
-      { label: "Historial omnicanal", href: "/dashboard/historial" },
+      { label: "Inbox", href: "/dashboard/conversaciones", exactMatch: true },
+      { label: "Historial omnicanal", href: "/dashboard/conversaciones/historial" },
       { label: "Colas y agentes", href: "/dashboard/conversaciones/operacion" },
     ],
   },
@@ -96,34 +104,46 @@ function NavItem({
 
   if (!hasAccess && item.slug !== "dashboard") return null;
 
-  const childActive = item.children?.some((c) => p === c.href || p.startsWith(c.href + "/"));
+  const childActive = item.children?.some((c) => menuChildPathActive(p, c.href, c.exactMatch));
 
   if (item.children) {
+    const rowTone =
+      isActive || childActive
+        ? "bg-[#0EA5E9] text-white"
+        : "text-slate-700 hover:bg-[#E2E8F0]";
     return (
       <div className="space-y-0.5">
-        <span
-          className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all cursor-pointer ${
-            isActive || childActive
-              ? "bg-[#0EA5E9] text-white"
-              : "text-slate-700 hover:bg-[#E2E8F0]"
-          }`}
-          onClick={onToggleExpand}
-        >
-          <Icon className={`h-5 w-5 shrink-0 ${isActive || childActive ? "text-white" : "text-slate-500"}`} />
+        <div className={`flex items-center gap-0.5 rounded-lg text-sm font-medium transition-colors ${rowTone}`}>
+          <Link
+            href={item.href}
+            className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5"
+            title={item.label}
+          >
+            <Icon className={`h-5 w-5 shrink-0 ${isActive || childActive ? "text-white" : "text-slate-500"}`} />
+            {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
+          </Link>
           {!collapsed && (
             <>
-              <span className="flex-1 truncate">{item.label}</span>
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); onToggleFavorito(itemId); }}
-                className={`rounded p-0.5 ${isFavorito ? "text-amber-400" : "text-slate-400 hover:text-amber-400"}`}
+                onClick={() => onToggleFavorito(itemId)}
+                className={`shrink-0 rounded p-0.5 ${isFavorito ? "text-amber-400" : "text-slate-400 hover:text-amber-400"}`}
+                aria-label="Favorito"
               >
                 <Star className={`h-4 w-4 ${isFavorito ? "fill-current" : ""}`} />
               </button>
-              {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              <button
+                type="button"
+                onClick={() => onToggleExpand()}
+                className="shrink-0 rounded p-1 text-current hover:opacity-90"
+                aria-expanded={expanded}
+                aria-label={expanded ? "Contraer submenú" : "Expandir submenú"}
+              >
+                {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              </button>
             </>
           )}
-        </span>
+        </div>
         <AnimatePresence>
           {expanded && !collapsed && (
             <motion.div
@@ -137,7 +157,7 @@ function NavItem({
                   key={c.href}
                   href={c.href}
                   className={`block rounded-lg px-3 py-2 text-sm transition-all ${
-                    p === c.href || p.startsWith(c.href + "/")
+                    menuChildPathActive(p, c.href, c.exactMatch)
                       ? "bg-[#0EA5E9] text-white font-medium"
                       : "text-slate-600 hover:bg-[#E2E8F0]"
                   }`}

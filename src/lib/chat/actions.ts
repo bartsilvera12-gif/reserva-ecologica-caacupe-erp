@@ -171,6 +171,18 @@ export async function fetchChatConversations(
   });
 }
 
+/** True si la empresa tiene al menos un flujo de chat activo (tab Bot en inbox). */
+export async function hasEmpresaActiveChatFlows(): Promise<boolean> {
+  const { supabase, empresa_id } = await requireEmpresaUsuarioSession();
+  const { count, error } = await supabase
+    .from("chat_flows")
+    .select("id", { count: "exact", head: true })
+    .eq("empresa_id", empresa_id)
+    .eq("activo", true);
+  if (error) return false;
+  return (count ?? 0) > 0;
+}
+
 /**
  * Vuelve a modo bot (solo operador). No reinicia el flujo ni la sesión.
  */
