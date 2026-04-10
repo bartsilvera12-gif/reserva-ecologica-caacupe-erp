@@ -19,8 +19,8 @@ function esRolAdmin(rol?: string): boolean {
  * Obtiene el usuario autenticado, empresa_id y rol (para validación admin).
  * Usa JWT + RLS (sin depender de SUPABASE_SERVICE_ROLE_KEY).
  */
-export async function getAuthWithRol(): Promise<UsuarioConEmpresaYRol | null> {
-  const r = await resolveApiAuthContext(null);
+export async function getAuthWithRol(request?: Request | null): Promise<UsuarioConEmpresaYRol | null> {
+  const r = await resolveApiAuthContext(request);
   if (!r.ok || !r.ctx.empresa_id) return null;
 
   return {

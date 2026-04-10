@@ -56,7 +56,7 @@ async function buildPlanActivoMap(
 
 export async function GET(request: NextRequest) {
   try {
-    const ctx = await getTenantSupabaseFromAuthWithRol();
+    const ctx = await getTenantSupabaseFromAuthWithRol(request);
     if (!ctx) {
       return NextResponse.json(errorResponse(API_ERRORS.UNAUTHORIZED), { status: 401 });
     }
@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const ctx = await getTenantSupabaseFromAuthWithRol();
+    const ctx = await getTenantSupabaseFromAuthWithRol(request);
     if (!ctx) {
       return NextResponse.json(errorResponse(API_ERRORS.UNAUTHORIZED), { status: 401 });
     }

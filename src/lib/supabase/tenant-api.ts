@@ -18,11 +18,11 @@ export async function getTenantSupabaseFromAuth(): Promise<{
   return { auth, supabase };
 }
 
-export async function getTenantSupabaseFromAuthWithRol(): Promise<{
+export async function getTenantSupabaseFromAuthWithRol(request?: Request | null): Promise<{
   auth: UsuarioConEmpresaYRol;
   supabase: AppSupabaseClient;
 } | null> {
-  const auth = await getAuthWithRol();
+  const auth = await getAuthWithRol(request);
   if (!auth?.empresa_id) return null;
   const supabase = await createServiceRoleClientForEmpresa(auth.empresa_id);
   return { auth, supabase };
