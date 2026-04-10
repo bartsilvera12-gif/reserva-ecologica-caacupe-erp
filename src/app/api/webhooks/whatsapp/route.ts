@@ -4,7 +4,10 @@ import {
   handleWhatsAppWebhookPost,
 } from "@/lib/chat/webhooks/meta-whatsapp-webhook-handlers";
 
-/** Evita caché en Vercel/App Router: Meta debe recibir siempre el challenge en vivo. */
+/**
+ * GET: verificación pública Meta (sin auth). Excluido del middleware en `middleware.ts`.
+ * POST: firma `X-Hub-Signature-256` si existe `WHATSAPP_APP_SECRET`.
+ */
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {

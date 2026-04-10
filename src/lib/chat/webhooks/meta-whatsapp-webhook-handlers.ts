@@ -14,19 +14,21 @@ export function getSupabaseAdminForWebhooks(): AppSupabaseClient {
 
 /**
  * GET — verificación del webhook Meta (WhatsApp Cloud API).
+ * Debe ser público: sin cookies, sin JWT; solo hub.mode / hub.verify_token / hub.challenge.
+ * @see https://developers.facebook.com/docs/graph-api/webhooks/getting-started#verification-requests
  */
 export async function handleWhatsAppWebhookGet(request: NextRequest): Promise<NextResponse> {
   const url = new URL(request.url);
-  const mode = url.searchParams.get("hub.mode")?.trim() ?? "";
+  const mode = url.searchParams.get("hub.mode")?.trim().toLowerCase() ?? "";
   const token = url.searchParams.get("hub.verify_token")?.trim() ?? "";
-  const challenge = url.searchParams.get("hub.challenge");
+  const challengeRaw = url.searchParams.get("hub.challenge");
   const verifyEnv = process.env.WHATSAPP_VERIFY_TOKEN?.trim() ?? "";
 
   const logPrefix = "[webhooks/whatsapp][GET verify]";
   console.info(logPrefix, {
     mode: mode || "(vacío)",
-    hasChallenge: Boolean(challenge),
-    challengeLength: challenge?.length ?? 0,
+    hasChallenge: challengeRaw != null && challengeRaw !== "",
+    challengeLength: challengeRaw?.length ?? 0,
     hasVerifyEnv: Boolean(verifyEnv),
     tokenMatch: Boolean(verifyEnv && token && verifyEnv === token),
   });
@@ -49,11 +51,12 @@ export async function handleWhatsAppWebhookGet(request: NextRequest): Promise<Ne
     return new NextResponse("Forbidden", { status: 403 });
   }
 
-  if (challenge === null || challenge === "") {
+  if (challengeRaw === null || challengeRaw === "") {
     console.warn(logPrefix, "rechazado: falta hub.challenge");
     return new NextResponse("Forbidden", { status: 403 });
   }
 
+  const challenge = challengeRaw;
   console.info(logPrefix, "OK: respondiendo hub.challenge (200 text/plain)");
   return new NextResponse(challenge, {
     status: 200,
