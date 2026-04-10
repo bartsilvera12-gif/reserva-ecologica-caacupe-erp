@@ -6,7 +6,7 @@ import { apiCreateCliente, apiCreateFactura, apiCreateSuscripcion } from "@/lib/
 import { getProspecto, updateProspecto } from "@/lib/crm/storage";
 import { getConfig, saveConfig } from "@/lib/config/storage";
 import { getCurrentUser } from "@/lib/auth";
-import { supabase } from "@/lib/supabase";
+import { getBrowserSupabaseForEmpresaData } from "@/lib/supabase/browser-data-client";
 import MontoInput from "@/components/ui/MontoInput";
 import { getPlanes } from "@/lib/planes/storage";
 import type { TipoCliente, OrigenCliente, TipoServicioCliente } from "@/lib/clientes/types";
@@ -222,7 +222,8 @@ function NuevoClienteForm() {
               cantidad: 1,
               precioUnitario: monto,
             });
-            await supabase.from("factura_items").insert({
+            const sb = await getBrowserSupabaseForEmpresaData();
+            await sb.from("factura_items").insert({
               factura_id: factura.id,
               empresa_id: usuario.empresa_id,
               descripcion: formContado.descripcion.trim() || "Venta al contado",

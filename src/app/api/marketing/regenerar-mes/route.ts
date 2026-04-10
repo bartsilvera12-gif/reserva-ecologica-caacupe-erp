@@ -1,15 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { getAuthWithRol, isAdmin } from "@/lib/middleware/auth";
+import { isAdmin } from "@/lib/middleware/auth";
+import { getTenantSupabaseFromAuthWithRol } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { regenerarMesCompleto } from "@/lib/marketing/generador";
-
-function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Supabase no configurado");
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-}
 
 /**
  * POST /api/marketing/regenerar-mes
@@ -21,16 +14,16 @@ function getSupabaseAdmin() {
  */
 export async function POST(request: NextRequest) {
   try {
-    const auth = await getAuthWithRol();
-    if (!auth?.user?.email) {
+    const ctx = await getTenantSupabaseFromAuthWithRol();
+    if (!ctx?.auth?.user?.email) {
       return NextResponse.json(errorResponse("No autenticado"), { status: 401 });
     }
 
-    if (!isAdmin(auth)) {
+    if (!isAdmin(ctx.auth)) {
       return NextResponse.json(errorResponse("Solo administradores pueden regenerar el mes"), { status: 403 });
     }
 
-    const empresaId = auth.empresa_id;
+    const empresaId = ctx.auth.empresa_id;
     if (!empresaId) {
       return NextResponse.json(errorResponse("Usuario sin empresa asignada"), { status: 403 });
     }
@@ -47,7 +40,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(errorResponse("Formato mes inválido (usar YYYY-MM)"), { status: 400 });
     }
 
-    const supabaseAdmin = getSupabaseAdmin();
+    const supabaseAdmin = ctx.supabase;
     const resultado = await regenerarMesCompleto({
       empresa_id: empresaId,
       mes,

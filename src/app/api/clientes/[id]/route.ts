@@ -1,15 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { getAuthWithRol, isAdmin } from "@/lib/middleware/auth";
+import { isAdmin } from "@/lib/middleware/auth";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
+import { getTenantSupabaseFromAuthWithRol } from "@/lib/supabase/tenant-api";
 
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Supabase no configurado");
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-}
 
 /**
  * DELETE /api/clientes/:id
@@ -23,10 +17,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auth = await getAuthWithRol();
-    if (!auth) {
+    const ctx = await getTenantSupabaseFromAuthWithRol();
+    if (!ctx) {
       return NextResponse.json(errorResponse(API_ERRORS.UNAUTHORIZED), { status: 401 });
     }
+    const { auth, supabase } = ctx;
 
     if (!isAdmin(auth)) {
       return NextResponse.json(errorResponse("Solo usuarios administradores pueden eliminar clientes"), { status: 403 });
@@ -46,7 +41,6 @@ export async function DELETE(
       return NextResponse.json(errorResponse("El motivo de eliminación es obligatorio"), { status: 400 });
     }
 
-    const supabase = getSupabase();
 
     const { data: cliente, error: errCliente } = await supabase
       .from("clientes")

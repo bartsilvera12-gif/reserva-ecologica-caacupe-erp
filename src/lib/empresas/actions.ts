@@ -1,4 +1,5 @@
 import { createBrowserClient } from "@supabase/ssr";
+import { supabaseDbSchemaOption } from "@/lib/supabase/schema";
 
 export interface Empresa {
   id: string;
@@ -24,7 +25,8 @@ export interface ModuloEmpresa {
 export async function getModulosEmpresa(empresaId: string): Promise<ModuloEmpresa[]> {
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { ...supabaseDbSchemaOption }
   );
   const { data: emData, error: err1 } = await supabase
     .from("empresa_modulos")
@@ -92,6 +94,8 @@ export interface CrearEmpresaData {
   password: string;
   nombre: string;
   modulo_ids: string[];
+  /** Opcional: fragmento para nombre de schema (erp_<slug>_<8hex>); si no se envía se usa nombre_empresa. */
+  schema_slug?: string;
 }
 
 export async function crearEmpresa(data: CrearEmpresaData): Promise<{ empresa_id: string }> {

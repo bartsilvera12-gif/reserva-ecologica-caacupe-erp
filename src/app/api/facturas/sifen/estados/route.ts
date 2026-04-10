@@ -1,17 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { getUserAndEmpresa } from "@/lib/middleware/auth";
+import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 
 const MAX_IDS = 100;
 
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Supabase no configurado");
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-}
 
 function isUuidLike(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
@@ -29,10 +22,11 @@ export type FacturaSifenEstadoItem = {
  */
 export async function POST(request: NextRequest) {
   try {
-    const auth = await getUserAndEmpresa();
-    if (!auth) {
+    const ctx = await getTenantSupabaseFromAuth();
+    if (!ctx) {
       return NextResponse.json(errorResponse(API_ERRORS.UNAUTHORIZED), { status: 401 });
     }
+    const { auth, supabase } = ctx;
 
     let body: unknown;
     try {
@@ -54,7 +48,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(successResponse({ by_factura_id: {} as Record<string, FacturaSifenEstadoItem> }));
     }
 
-    const supabase = getSupabase();
 
     const { data: facturasPropias, error: errF } = await supabase
       .from("facturas")

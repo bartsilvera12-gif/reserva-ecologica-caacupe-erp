@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { getUserAndEmpresa } from "@/lib/middleware/auth";
+import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import {
@@ -12,12 +11,6 @@ import { mergeCertificadoPasswordEncryptedForInsert } from "@/lib/sifen/sifen-co
 import { toEmpresaSifenConfigPublicDto } from "@/lib/sifen/sifen-config-response";
 import { encryptSecret } from "@/lib/sifen/security";
 
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Supabase no configurado");
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-}
 
 /**
  * GET /api/configuracion/sifen
@@ -26,12 +19,12 @@ function getSupabase() {
  */
 export async function GET() {
   try {
-    const auth = await getUserAndEmpresa();
-    if (!auth) {
+    const ctx = await getTenantSupabaseFromAuth();
+    if (!ctx) {
       return NextResponse.json(errorResponse(API_ERRORS.UNAUTHORIZED), { status: 401 });
     }
+    const { auth, supabase } = ctx;
 
-    const supabase = getSupabase();
     const { data, error } = await supabase
       .from("empresa_sifen_config")
       .select("*")
@@ -55,10 +48,11 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
   try {
-    const auth = await getUserAndEmpresa();
-    if (!auth) {
+    const ctx = await getTenantSupabaseFromAuth();
+    if (!ctx) {
       return NextResponse.json(errorResponse(API_ERRORS.UNAUTHORIZED), { status: 401 });
     }
+    const { auth, supabase } = ctx;
 
     let body: unknown;
     try {
@@ -72,7 +66,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(errorResponse(validated.error), { status: 400 });
     }
 
-    const supabase = getSupabase();
 
     const { data: existing } = await supabase
       .from("empresa_sifen_config")
@@ -124,10 +117,11 @@ export async function POST(request: NextRequest) {
  */
 export async function PATCH(request: NextRequest) {
   try {
-    const auth = await getUserAndEmpresa();
-    if (!auth) {
+    const ctx = await getTenantSupabaseFromAuth();
+    if (!ctx) {
       return NextResponse.json(errorResponse(API_ERRORS.UNAUTHORIZED), { status: 401 });
     }
+    const { auth, supabase } = ctx;
 
     let body: unknown;
     try {
@@ -141,7 +135,6 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json(errorResponse(built.error), { status: 400 });
     }
 
-    const supabase = getSupabase();
 
     const { data: existing, error: errLoad } = await supabase
       .from("empresa_sifen_config")

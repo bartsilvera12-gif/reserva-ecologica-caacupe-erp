@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { getUserAndEmpresa } from "@/lib/middleware/auth";
+import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { emitEvent, EVENT_TYPES } from "@/lib/integrations/events";
@@ -8,12 +7,6 @@ import { montosFacturaItemParaInsert } from "@/lib/facturacion/factura-item-mont
 import { obtenerSiguienteNumeroFacturaEmpresa } from "@/lib/facturacion/factura-suscripcion-servidor";
 import { fechaVencimientoSuscripcion } from "@/lib/fechas/calendario";
 
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Supabase no configurado");
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-}
 
 /**
  * POST /api/clientes/:id/facturacion/emitir
@@ -27,10 +20,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auth = await getUserAndEmpresa();
-    if (!auth) {
+    const ctx = await getTenantSupabaseFromAuth();
+    if (!ctx) {
       return NextResponse.json(errorResponse(API_ERRORS.UNAUTHORIZED), { status: 401 });
     }
+    const { auth, supabase } = ctx;
 
     const { id: clienteId } = await params;
     if (!clienteId) {
@@ -46,7 +40,6 @@ export async function POST(
       );
     }
 
-    const supabase = getSupabase();
 
     const { data: suscripcion, error: errSusc } = await supabase
       .from("suscripciones")

@@ -1,14 +1,6 @@
-import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { registrarCompraSorteoN8n } from "@/lib/sorteos/raffles-service";
 import type { CreateRaffleEntryPayload } from "@/lib/sorteos/types";
-
-function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Supabase no configurado");
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-}
 
 function validarSecret(request: NextRequest): boolean {
   const secret = process.env.RAFFLES_N8N_SECRET;
@@ -100,8 +92,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = getSupabaseAdmin();
-    const result = await registrarCompraSorteoN8n(supabase, payload);
+    const result = await registrarCompraSorteoN8n(payload);
 
     if (!result.ok) {
       const status =

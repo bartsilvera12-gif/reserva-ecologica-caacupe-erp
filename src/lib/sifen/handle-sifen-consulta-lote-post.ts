@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import type { UsuarioConEmpresa } from "@/lib/middleware/auth";
+import { createServiceRoleClientForEmpresa } from "@/lib/supabase/empresa-data-schema";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { decryptSecret } from "@/lib/sifen/security";
 import {
@@ -17,13 +17,6 @@ import type {
   SifenConsultaLoteTestResponseData,
   SifenConsultaLoteUltimaPersistida,
 } from "@/lib/sifen/types";
-
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Supabase no configurado");
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-}
 
 function parseAmbiente(raw: string): AmbienteSifen | null {
   if (raw === "test" || raw === "produccion") return raw;
@@ -91,7 +84,7 @@ export async function handleSifenConsultaLotePost(
   options: HandleSifenConsultaLotePostOptions
 ): Promise<NextResponse> {
   const debugSoap = request.nextUrl.searchParams.get("debug") === "1";
-  const supabase = getSupabase();
+  const supabase = await createServiceRoleClientForEmpresa(auth.empresa_id);
   const { id: facturaId } = await params;
   if (!facturaId?.trim()) {
     return NextResponse.json(errorResponse("id de factura es obligatorio"), { status: 400 });

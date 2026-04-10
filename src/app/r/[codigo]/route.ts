@@ -1,6 +1,8 @@
 import { createHash, randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/service-admin";
+import { createServiceRoleClientWithDbSchema } from "@/lib/supabase/empresa-data-schema";
+import type { AppSupabaseClient } from "@/lib/supabase/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +11,7 @@ function digitsOnly(s: string): string {
 }
 
 async function resolveRedirectPhoneForEmpresa(
-  supabase: ReturnType<typeof createServiceRoleClient>,
+  supabase: AppSupabaseClient,
   empresaId: string
 ): Promise<{ ok: true; phone: string } | { ok: false; message: string }> {
   const envPhone = digitsOnly(
@@ -87,9 +89,9 @@ export async function GET(
     });
   }
 
-  let supabase;
+  let catalog;
   try {
-    supabase = createServiceRoleClient();
+    catalog = createServiceRoleClient();
   } catch {
     return new NextResponse("Servidor sin credenciales Supabase (service role).", {
       status: 503,
@@ -97,30 +99,59 @@ export async function GET(
     });
   }
 
-  const { data: rev, error: rErr } = await supabase
-    .from("sorteo_revendedores")
-    .select("id, empresa_id, sorteo_id, codigo_referido, activo")
-    .eq("sorteo_id", sorteoId)
-    .ilike("codigo_referido", codigo)
-    .eq("activo", true)
-    .maybeSingle();
+  const { data: resolved, error: rpcErr } = await catalog.rpc("neura_resolve_sorteo_revendedor_public", {
+    p_sorteo_id: sorteoId,
+    p_codigo: codigo,
+  });
 
-  if (rErr || !rev) {
-    return new NextResponse("Enlace inválido o revendedor inactivo.", {
-      status: 404,
-      headers: { "content-type": "text/plain; charset=utf-8" },
-    });
-  }
-
-  const row = rev as {
+  type ResolvedRow = { empresa_id?: string; data_schema?: string; revendedor_id?: string };
+  type RevRow = {
     id: string;
     empresa_id: string;
     sorteo_id: string;
     codigo_referido: string;
     activo: boolean;
   };
+  const hit = (resolved as ResolvedRow | null) ?? null;
 
-  const redirectPhoneResult = await resolveRedirectPhoneForEmpresa(supabase, row.empresa_id);
+  let dataSupabase: AppSupabaseClient = catalog;
+  let row: RevRow | null = null;
+
+  if (!rpcErr && hit?.empresa_id && hit?.data_schema && hit?.revendedor_id) {
+    dataSupabase = createServiceRoleClientWithDbSchema(hit.data_schema) as AppSupabaseClient;
+    row = {
+      id: hit.revendedor_id,
+      empresa_id: hit.empresa_id,
+      sorteo_id: sorteoId,
+      codigo_referido: codigo,
+      activo: true,
+    };
+  } else {
+    const { data: rev, error: rErr } = await catalog
+      .from("sorteo_revendedores")
+      .select("id, empresa_id, sorteo_id, codigo_referido, activo")
+      .eq("sorteo_id", sorteoId)
+      .ilike("codigo_referido", codigo)
+      .eq("activo", true)
+      .maybeSingle();
+
+    if (rErr || !rev) {
+      return new NextResponse("Enlace inválido o revendedor inactivo.", {
+        status: 404,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      });
+    }
+    row = rev as RevRow;
+  }
+
+  if (!row) {
+    return new NextResponse("Enlace inválido o revendedor inactivo.", {
+      status: 404,
+      headers: { "content-type": "text/plain; charset=utf-8" },
+    });
+  }
+
+  const redirectPhoneResult = await resolveRedirectPhoneForEmpresa(dataSupabase, row.empresa_id);
   if (!redirectPhoneResult.ok) {
     return new NextResponse(redirectPhoneResult.message, {
       status: 503,
@@ -138,7 +169,7 @@ export async function GET(
 
   const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  const { error: insErr } = await supabase.from("sorteo_revendedor_clicks").insert({
+  const { error: insErr } = await dataSupabase.from("sorteo_revendedor_clicks").insert({
     empresa_id: row.empresa_id,
     sorteo_id: row.sorteo_id,
     revendedor_id: row.id,

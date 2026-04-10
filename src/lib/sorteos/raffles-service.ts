@@ -1,4 +1,6 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { AppSupabaseClient } from "@/lib/supabase/schema";
+import { createServiceRoleClient } from "@/lib/supabase/service-admin";
+import { createServiceRoleClientForEmpresa } from "@/lib/supabase/empresa-data-schema";
 import type {
   CreateRaffleEntryPayload,
   CreateRaffleEntryResponse,
@@ -27,7 +29,7 @@ function payloadToJsonb(p: CreateRaffleEntryPayload): Record<string, unknown> {
  * Usa cliente con permisos de servicio (bypass RLS).
  */
 export async function empresaTieneModuloSorteos(
-  supabaseAdmin: SupabaseClient,
+  supabaseAdmin: AppSupabaseClient,
   empresaId: string
 ): Promise<boolean> {
   const { data: modulo, error: e1 } = await supabaseAdmin
@@ -53,10 +55,10 @@ export async function empresaTieneModuloSorteos(
  * Registro atómico de compra vía RPC sorteos_registrar_compra_n8n (SECURITY DEFINER).
  */
 export async function registrarCompraSorteoN8n(
-  supabaseAdmin: SupabaseClient,
   payload: CreateRaffleEntryPayload
 ): Promise<CreateRaffleEntryResponse> {
-  const tiene = await empresaTieneModuloSorteos(supabaseAdmin, payload.empresa_id);
+  const catalog = createServiceRoleClient();
+  const tiene = await empresaTieneModuloSorteos(catalog, payload.empresa_id);
   if (!tiene) {
     return {
       ok: false,
@@ -64,7 +66,8 @@ export async function registrarCompraSorteoN8n(
     };
   }
 
-  const { data, error } = await supabaseAdmin.rpc("sorteos_registrar_compra_n8n", {
+  const tenant = await createServiceRoleClientForEmpresa(payload.empresa_id);
+  const { data, error } = await tenant.rpc("sorteos_registrar_compra_n8n", {
     p: payloadToJsonb(payload),
   });
 

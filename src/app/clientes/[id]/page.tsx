@@ -25,7 +25,7 @@ import { getUsuariosActivosEmpresa } from "@/lib/usuarios/empresa";
 import { apiCreateFactura, apiCreatePago, apiCreateSuscripcion } from "@/lib/api/client";
 import { getConfig, saveConfig } from "@/lib/config/storage";
 import { getCurrentUser } from "@/lib/auth";
-import { supabase } from "@/lib/supabase";
+import { getBrowserSupabaseForEmpresaData } from "@/lib/supabase/browser-data-client";
 import { SifenEstadoBadge } from "@/components/sifen/SifenEstadoBadge";
 import { useFacturaSifenEstados } from "@/hooks/useFacturaSifenEstados";
 import MontoInput from "@/components/ui/MontoInput";
@@ -340,7 +340,8 @@ export default function ClienteDetailPage() {
               cantidad: 1,
               precioUnitario: monto,
             });
-            await supabase.from("factura_items").insert({
+            const sb = await getBrowserSupabaseForEmpresaData();
+            await sb.from("factura_items").insert({
               factura_id: factura.id,
               empresa_id: usuario.empresa_id,
               descripcion: formContadoEdit.descripcion.trim() || "Venta al contado",

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { getUserAndEmpresa } from "@/lib/middleware/auth";
+import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import {
@@ -14,12 +13,6 @@ import { toEmpresaSifenConfigPublicDto } from "@/lib/sifen/sifen-config-response
 
 const MAX_BYTES = 5 * 1024 * 1024;
 
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Supabase no configurado");
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-}
 
 /**
  * POST /api/configuracion/sifen/certificado
@@ -28,10 +21,11 @@ function getSupabase() {
  */
 export async function POST(request: NextRequest) {
   try {
-    const auth = await getUserAndEmpresa();
-    if (!auth) {
+    const ctx = await getTenantSupabaseFromAuth();
+    if (!ctx) {
       return NextResponse.json(errorResponse(API_ERRORS.UNAUTHORIZED), { status: 401 });
     }
+    const { auth, supabase } = ctx;
 
     const form = await request.formData().catch(() => null);
     const file = form?.get("file");
@@ -47,7 +41,6 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const supabase = getSupabase();
 
     const { data: configRow, error: errCfg } = await supabase
       .from("empresa_sifen_config")

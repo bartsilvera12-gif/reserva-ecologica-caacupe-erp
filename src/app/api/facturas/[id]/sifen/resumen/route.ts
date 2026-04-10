@@ -1,17 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { getUserAndEmpresa } from "@/lib/middleware/auth";
+import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { toFacturaElectronicaDto } from "@/lib/sifen/to-factura-electronica-dto";
 import type { FacturaElectronicaDTO } from "@/lib/sifen/types";
 
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Supabase no configurado");
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-}
 
 export type FacturaSifenResumenData = {
   sifen_config_exists: boolean;
@@ -30,10 +23,11 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auth = await getUserAndEmpresa();
-    if (!auth) {
+    const ctx = await getTenantSupabaseFromAuth();
+    if (!ctx) {
       return NextResponse.json(errorResponse(API_ERRORS.UNAUTHORIZED), { status: 401 });
     }
+    const { auth, supabase } = ctx;
 
     const { id } = await params;
     const fid = id?.trim();
@@ -41,7 +35,6 @@ export async function GET(
       return NextResponse.json(errorResponse("id de factura es obligatorio"), { status: 400 });
     }
 
-    const supabase = getSupabase();
 
     const { data: factura, error: errFactura } = await supabase
       .from("facturas")

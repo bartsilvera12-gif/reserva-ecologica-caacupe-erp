@@ -1,28 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { getAuthWithRol } from "@/lib/middleware/auth";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { emitEvent, EVENT_TYPES } from "@/lib/integrations/events";
 import type { TipoServicioCliente } from "@/lib/clientes/types";
-
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Supabase no configurado");
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
-}
+import { getTenantSupabaseFromAuthWithRol } from "@/lib/supabase/tenant-api";
 
 const TIPOS_SERVICIO_VALIDOS: TipoServicioCliente[] = ["marketing", "saas", "branding", "web", "otro"];
 
 export async function GET() {
   try {
-    const auth = await getAuthWithRol();
-    if (!auth) {
+    const ctx = await getTenantSupabaseFromAuthWithRol();
+    if (!ctx) {
       return NextResponse.json(errorResponse(API_ERRORS.UNAUTHORIZED), { status: 401 });
     }
-
-    const supabase = getSupabase();
+    const { auth, supabase } = ctx;
     const { data, error } = await supabase
       .from("clientes")
       .select("*")
@@ -43,10 +34,11 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = await getAuthWithRol();
-    if (!auth) {
+    const ctx = await getTenantSupabaseFromAuthWithRol();
+    if (!ctx) {
       return NextResponse.json(errorResponse(API_ERRORS.UNAUTHORIZED), { status: 401 });
     }
+    const { auth, supabase } = ctx;
 
     const body = await request.json();
     const { tipo_cliente, empresa, nombre_contacto, ruc, documento, telefono, email, direccion, ciudad, pais, condicion_pago, moneda_preferida, estado, tipo_servicio_cliente, plan_comercial_id } = body;
@@ -84,8 +76,6 @@ export async function POST(request: NextRequest) {
       moneda_preferida:     moneda_preferida === "USD" ? "USD" : "GS",
       estado:               estado === "inactivo" ? "inactivo" : "activo",
     };
-
-    const supabase = getSupabase();
 
     const rowWithPlan =
       planComercial ? { ...insertBase, plan_comercial_id: planComercial } : insertBase;

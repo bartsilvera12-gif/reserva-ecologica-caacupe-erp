@@ -14,6 +14,7 @@ export async function POST(req: Request) {
       password,
       nombre,
       modulo_ids,
+      schema_slug,
     } = body;
 
     if (!nombre_empresa?.trim() || !email?.trim() || !password?.trim() || !nombre?.trim()) {
@@ -52,9 +53,14 @@ export async function POST(req: Request) {
 
     const empresaId = empresa.id;
 
+    const slugFuente =
+      typeof schema_slug === "string" && schema_slug.trim()
+        ? schema_slug.trim()
+        : nombre_empresa.trim();
+
     const { data: provisionJson, error: provErr } = await supabase.rpc(
       "neura_provision_empresa_data_schema",
-      { p_empresa_id: empresaId }
+      { p_empresa_id: empresaId, p_schema_slug: slugFuente }
     );
 
     if (provErr) {

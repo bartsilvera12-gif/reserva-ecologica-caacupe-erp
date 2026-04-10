@@ -8,7 +8,8 @@ import { createServiceRoleClient } from "@/lib/supabase/service-admin";
 
 /**
  * Lee `empresas.data_schema` (catálogo en zentra_erp).
- * NULL o vacío → el ERP usa el esquema plantilla `zentra_erp` para omnicanal.
+ * NULL o vacío → datos de negocio en plantilla `zentra_erp` (empresas legadas).
+ * Valor `erp_*` → schema tenant clonado desde zentra_erp.
  */
 export async function fetchDataSchemaForEmpresaId(empresaId: string): Promise<string> {
   const catalog = createServiceRoleClient();

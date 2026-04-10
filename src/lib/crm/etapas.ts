@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { getBrowserSupabaseForEmpresaData } from "@/lib/supabase/browser-data-client";
 import { getCurrentUser } from "@/lib/auth";
 
 export interface EtapaCrm {
@@ -44,6 +44,7 @@ export async function getEtapas(): Promise<EtapaCrm[]> {
   const usuario = await getCurrentUser();
   if (!usuario?.empresa_id) return [];
 
+  const supabase = await getBrowserSupabaseForEmpresaData();
   const { data, error } = await supabase
     .from("crm_etapas")
     .select("*")
@@ -63,6 +64,7 @@ export async function getEtapasParaConfig(): Promise<EtapaCrm[]> {
   const usuario = await getCurrentUser();
   if (!usuario?.empresa_id) return [];
 
+  const supabase = await getBrowserSupabaseForEmpresaData();
   const { data, error } = await supabase
     .from("crm_etapas")
     .select("*")
@@ -95,6 +97,7 @@ export async function createEtapa(datos: {
     activo: true,
   };
 
+  const supabase = await getBrowserSupabaseForEmpresaData();
   const { data, error } = await supabase
     .from("crm_etapas")
     .insert([insert])
@@ -119,6 +122,7 @@ export async function updateEtapa(
   if (datos.orden !== undefined) patch.orden = datos.orden;
   if (datos.activo !== undefined) patch.activo = datos.activo;
 
+  const supabase = await getBrowserSupabaseForEmpresaData();
   const { data, error } = await supabase
     .from("crm_etapas")
     .update(patch)
@@ -135,6 +139,7 @@ export async function updateEtapa(
 
 /** Elimina etapa (o la desactiva si tiene prospectos). */
 export async function deleteEtapa(id: string): Promise<boolean> {
+  const supabase = await getBrowserSupabaseForEmpresaData();
   const { error } = await supabase.from("crm_etapas").delete().eq("id", id);
   if (error) {
     console.error("[crm] deleteEtapa:", error.message);

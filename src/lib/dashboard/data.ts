@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { getBrowserSupabaseForEmpresaData } from "@/lib/supabase/browser-data-client";
 import { getProspectos } from "@/lib/crm/storage";
 import { toCalendarDateStr } from "@/lib/fechas/calendario";
 
@@ -211,6 +211,7 @@ async function fetchProspectos(): Promise<ProspectoRaw[]> {
  */
 export async function getDashboardData(): Promise<DashboardData> {
   const prospectos = await fetchProspectos();
+  const supabase = await getBrowserSupabaseForEmpresaData();
 
   let clientes: ClienteRaw[] = [];
   let facturas: FacturaRaw[] = [];

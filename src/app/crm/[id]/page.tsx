@@ -10,7 +10,7 @@ import PlanSelector from "@/components/crm/PlanSelector";
 import type { EtapaCrm } from "@/lib/crm/etapas";
 import type { Nota, Prospecto } from "@/lib/crm/types";
 import type { Plan } from "@/lib/planes/types";
-import { supabase } from "@/lib/supabase";
+import { getBrowserSupabaseForEmpresaData } from "@/lib/supabase/browser-data-client";
 
 // ── Estilos ────────────────────────────────────────────────────────────────────
 
@@ -119,7 +119,8 @@ export default function EditProspectoPage() {
         return;
       }
       try {
-        const { data: chatContact, error: cErr } = await supabase
+        const sb = await getBrowserSupabaseForEmpresaData();
+        const { data: chatContact, error: cErr } = await sb
           .from("chat_contacts")
           .select("id")
           .eq("crm_prospecto_id", prospecto.id)
@@ -135,7 +136,7 @@ export default function EditProspectoPage() {
           return;
         }
 
-        const { data: conv, error: convErr } = await supabase
+        const { data: conv, error: convErr } = await sb
           .from("chat_conversations")
           .select("id")
           .eq("contact_id", contactId)

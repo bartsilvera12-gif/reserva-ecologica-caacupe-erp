@@ -1,15 +1,11 @@
-import { createClient } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase";
+import { getBrowserSupabaseForEmpresaData } from "@/lib/supabase/browser-data-client";
+import { createServiceRoleClientForEmpresa } from "@/lib/supabase/empresa-data-schema";
 import { getCurrentUser } from "@/lib/auth";
 import type { Prospecto, Nota } from "./types";
 import { generarNumeroControlFromSupabase } from "@/lib/crm/numero-control";
 
-/** Cliente Supabase con service role (bypass RLS). Solo para uso en API routes. */
-function getServiceSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Supabase no configurado");
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+async function browserDataClient() {
+  return getBrowserSupabaseForEmpresaData();
 }
 
 // ─── Tipos de fila Supabase ───────────────────────────────────────────────────
@@ -85,6 +81,7 @@ function rowToProspecto(row: ProspectoRow, notas: Nota[]): Prospecto {
 
 /** Lista prospectos con sus notas. RLS filtra por empresa. */
 export async function getProspectos(): Promise<Prospecto[]> {
+  const supabase = await browserDataClient();
   const { data: prospectosData, error: errP } = await supabase
     .from("crm_prospectos")
     .select("*")
@@ -123,6 +120,7 @@ export async function getProspectos(): Promise<Prospecto[]> {
 
 /** Obtiene un prospecto por ID con sus notas. */
 export async function getProspecto(id: string): Promise<Prospecto | null> {
+  const supabase = await browserDataClient();
   const { data: pData, error: errP } = await supabase
     .from("crm_prospectos")
     .select("*")
@@ -156,6 +154,7 @@ export async function saveProspecto(
   const usuario = await getCurrentUser();
   if (!usuario?.empresa_id) throw new Error("Usuario no autenticado o sin empresa");
 
+  const supabase = await browserDataClient();
   const numeroControl = await generarNumeroControlFromSupabase(supabase);
   const creadoPor = (usuario as { nombre?: string; email?: string }).nombre?.trim()
     || (usuario as { email?: string }).email
@@ -205,7 +204,7 @@ export async function saveProspectoFromWebhook(datos: {
   origen_detalle?: string | null;
   servicio?: string;
 }): Promise<Prospecto | null> {
-  const sb = getServiceSupabase();
+  const sb = await createServiceRoleClientForEmpresa(datos.empresa_id);
 
   const numeroControl = await generarNumeroControlFromSupabase(sb);
 
@@ -274,6 +273,7 @@ export async function updateProspecto(
   if (datos.cliente_creado !== undefined) patch.cliente_creado = datos.cliente_creado;
   patch.fecha_actualizacion = new Date().toISOString();
 
+  const supabase = await browserDataClient();
   const { data, error } = await supabase
     .from("crm_prospectos")
     .update(patch)
@@ -314,6 +314,7 @@ export async function addNota(
     texto: texto.trim(),
   };
 
+  const supabase = await browserDataClient();
   const { data, error } = await supabase
     .from("crm_notas")
     .insert([insert])
@@ -330,6 +331,7 @@ export async function addNota(
 
 /** Elimina un prospecto (y sus notas por CASCADE). */
 export async function deleteProspecto(id: string): Promise<void> {
+  const supabase = await browserDataClient();
   const { error } = await supabase.from("crm_prospectos").delete().eq("id", id);
   if (error) console.error("[crm] deleteProspecto:", error.message);
 }

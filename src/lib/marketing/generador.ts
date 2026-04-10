@@ -1,5 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase";
+import type { AppSupabaseClient } from "@/lib/supabase/schema";
 import { getCurrentUser } from "@/lib/auth";
 import type { PlanMarketingItem, PlanMarketingPlantilla } from "@/lib/planes/types";
 import { TIPOS_CONTENIDO } from "./types";
@@ -106,8 +105,8 @@ export interface PreviewSync {
 export async function previewSyncMarketing(opts: {
   empresa_id: string;
   mes: string;
-  /** Cliente Supabase (ej. service role) para contexto servidor/API */
-  supabaseClient?: SupabaseClient;
+  /** Cliente service role en el schema de datos de la empresa */
+  supabaseClient: AppSupabaseClient;
 }): Promise<PreviewSync> {
   const [anoStr, mesStr] = opts.mes.split("-").map(Number);
   const ano = Number(anoStr);
@@ -116,9 +115,7 @@ export async function previewSyncMarketing(opts: {
   const ultimoDia = new Date(ano, mes, 0);
   const ultimoDiaStr = `${opts.mes}-${String(ultimoDia.getDate()).padStart(2, "0")}`;
 
-  const supabaseClient = opts.supabaseClient ?? supabase;
-
-  const { data: suscripciones } = await supabaseClient
+  const { data: suscripciones } = await opts.supabaseClient
     .from("suscripciones")
     .select("id, cliente_id, plan_id")
     .eq("empresa_id", opts.empresa_id)
@@ -131,7 +128,7 @@ export async function previewSyncMarketing(opts: {
 
   const planIds = [...new Set(suscripciones.map((s) => s.plan_id).filter(Boolean))] as string[];
 
-  const { data: planes } = await supabaseClient
+  const { data: planes } = await opts.supabaseClient
     .from("planes")
     .select("id, nombre, es_plan_marketing, plantilla_operativa")
     .in("id", planIds);
@@ -143,7 +140,7 @@ export async function previewSyncMarketing(opts: {
 
   const clienteIds = [...new Set(suscripciones.map((s) => s.cliente_id))];
 
-  const { data: clientes } = await supabaseClient
+  const { data: clientes } = await opts.supabaseClient
     .from("clientes")
     .select("id, empresa, nombre_contacto, tipo_servicio_cliente")
     .in("id", clienteIds)
@@ -154,7 +151,7 @@ export async function previewSyncMarketing(opts: {
   const clienteNombre = (cid: string) =>
     clienteMap.get(cid)?.empresa ?? clienteMap.get(cid)?.nombre_contacto ?? "Cliente";
 
-  const { data: existentes } = await supabaseClient
+  const { data: existentes } = await opts.supabaseClient
     .from("marketing_tasks")
     .select("cliente_id, fecha_entrega, tipo_contenido")
     .in("cliente_id", clienteIds)
@@ -230,9 +227,9 @@ export async function previewSyncMarketing(opts: {
 /** Marca clientes con suscripción activa a plan marketing como tipo_servicio_cliente = marketing */
 export async function sincronizarClientesMarketing(
   empresa_id: string,
-  supabaseClient?: SupabaseClient
+  supabaseClient: AppSupabaseClient
 ): Promise<number> {
-  const client = supabaseClient ?? supabase;
+  const client = supabaseClient;
   const { data: suscripciones } = await client
     .from("suscripciones")
     .select("cliente_id, plan_id")
@@ -276,10 +273,10 @@ export async function generarTareasMarketing(opts: {
   mes: string; // YYYY-MM
   /** Si true, omite validación getCurrentUser (para llamadas desde API con auth ya verificado) */
   skipAuthCheck?: boolean;
-  /** Cliente Supabase (ej. service role) para contexto servidor/API */
-  supabaseClient?: SupabaseClient;
+  /** Cliente service role en el schema de datos de la empresa */
+  supabaseClient: AppSupabaseClient;
 }): Promise<GenerarResultado> {
-  const client = opts.supabaseClient ?? supabase;
+  const client = opts.supabaseClient;
 
   if (!opts.skipAuthCheck) {
     const usuario = await getCurrentUser();
@@ -425,10 +422,10 @@ export async function regenerarTareasClienteMes(opts: {
   empresa_id: string;
   mes: string; // YYYY-MM
   cliente_id: string;
-  /** Cliente Supabase (service role) para API */
-  supabaseClient?: SupabaseClient;
+  /** Cliente service role en el schema de datos de la empresa */
+  supabaseClient: AppSupabaseClient;
 }): Promise<RegenerarResultado> {
-  const client = opts.supabaseClient ?? supabase;
+  const client = opts.supabaseClient;
 
   const [anoStr, mesStr] = opts.mes.split("-").map(Number);
   const ano = Number(anoStr);
@@ -548,10 +545,10 @@ export interface RegenerarMesCompletoResultado {
 export async function regenerarMesCompleto(opts: {
   empresa_id: string;
   mes: string; // YYYY-MM
-  /** Cliente Supabase (service role) para API */
-  supabaseClient?: SupabaseClient;
+  /** Cliente service role en el schema de datos de la empresa */
+  supabaseClient: AppSupabaseClient;
 }): Promise<RegenerarMesCompletoResultado> {
-  const client = opts.supabaseClient ?? supabase;
+  const client = opts.supabaseClient;
 
   const [anoStr, mesStr] = opts.mes.split("-").map(Number);
   const mes = Number(mesStr);
