@@ -1,3 +1,4 @@
+import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { getCurrentUser } from "@/lib/auth";
 import { getBrowserSupabaseForEmpresaData } from "@/lib/supabase/browser-data-client";
 import type { Plan, EstadoPlan, PlanMarketingPlantilla } from "./types";
@@ -67,8 +68,25 @@ async function generarCodigoPlan(
 
 // ─── API pública ──────────────────────────────────────────────────────────────
 
-/** Lista planes. RLS filtra por empresa. */
+/** Lista planes del tenant (API + service role; evita RLS del navegador). */
 export async function getPlanes(): Promise<Plan[]> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetchWithSupabaseSession("/api/planes", { cache: "no-store" });
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        console.error("[planes] getPlanes API:", res.status, t);
+        return [];
+      }
+      const json = (await res.json()) as { success?: boolean; data?: PlanRow[] };
+      if (!json.success || !Array.isArray(json.data)) return [];
+      return json.data.map(rowToPlan);
+    } catch (e) {
+      console.error("[planes] getPlanes:", e);
+      return [];
+    }
+  }
+
   const supabase = await getBrowserSupabaseForEmpresaData();
   const { data, error } = await supabase
     .from("planes")

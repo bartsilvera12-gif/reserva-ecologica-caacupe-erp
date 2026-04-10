@@ -250,20 +250,26 @@ export function ConversacionesClient({
     const silent = opts?.silent ?? false;
     if (!silent) setLoadingMsg(true);
     try {
-      const { data, error: err } = await supabaseChat
-        .from("chat_messages")
-        .select("id, from_me, message_type, content, raw_payload, created_at")
-        .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true });
-
-      if (err) throw new Error(err.message);
-      setMessages((data ?? []) as ChatMessage[]);
+      const qs = new URLSearchParams({ conversation_id: conversationId });
+      const res = await fetchWithSupabaseSession(`/api/chat/messages?${qs.toString()}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(t || `Error ${res.status}`);
+      }
+      const json = (await res.json()) as { success?: boolean; data?: Record<string, unknown>[] };
+      if (!json.success || !Array.isArray(json.data)) {
+        setMessages([]);
+        return;
+      }
+      setMessages(json.data.map(mapRowToMessage));
     } catch (e) {
       setListError(e instanceof Error ? e.message : "Error al cargar mensajes");
     } finally {
       if (!silent) setLoadingMsg(false);
     }
-  }, [supabaseChat]);
+  }, []);
 
   loadConversationsRef.current = loadConversations;
 

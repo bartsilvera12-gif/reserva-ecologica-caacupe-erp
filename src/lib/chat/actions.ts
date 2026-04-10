@@ -5,7 +5,6 @@ import {
   SORTEO_COMPROBANTE_MOTIVO_VALIDACION_FIELD,
 } from "@/lib/chat/comprobante-validation-types";
 import { requireEmpresaTenantServiceRole } from "@/lib/chat/empresa-tenant-service-role";
-import { requireEmpresaChatSession } from "@/lib/chat/empresa-session";
 import {
   deleteOmnichannelRouteByMetaPhone,
   syncOmnichannelRouteForWhatsappChannel,
@@ -53,9 +52,11 @@ export async function fetchChatConversations(
   vista: ConversacionesVista = "inbox",
   filters?: ChatInboxFilters
 ): Promise<InboxConversation[]> {
-  const { supabase, catalogSupabase, empresa_id, usuario_id } = await requireEmpresaChatSession();
-  let q = supabase.from("chat_conversations").select(
-    `
+  const { supabase, catalogSr, empresa_id, usuario_id } = await requireEmpresaTenantServiceRole();
+  let q = supabase
+    .from("chat_conversations")
+    .select(
+      `
       id,
       status,
       priority,
@@ -72,7 +73,8 @@ export async function fetchChatConversations(
       chat_queues ( id, nombre ),
       chat_agents ( id, usuario_id, queue_id, is_online, max_conversations )
     `
-  );
+    )
+    .eq("empresa_id", empresa_id);
 
   if (vista === "inbox") {
     q = q.in("status", ["open", "pending"]);
@@ -139,7 +141,7 @@ export async function fetchChatConversations(
 
   let usuarioNombreById: Record<string, { nombre: string | null; email: string | null }> = {};
   if (agentUserIds.length > 0) {
-    const { data: urows, error: uErr } = await catalogSupabase
+    const { data: urows, error: uErr } = await catalogSr
       .from("usuarios")
       .select("id, nombre, email")
       .in("id", agentUserIds);
@@ -209,7 +211,7 @@ export async function fetchChatConversations(
 
 /** True si la empresa tiene al menos un flujo de chat activo (tab Bot en inbox). */
 export async function hasEmpresaActiveChatFlows(): Promise<boolean> {
-  const { supabase, empresa_id } = await requireEmpresaChatSession();
+  const { supabase, empresa_id } = await requireEmpresaTenantServiceRole();
   const { count, error } = await supabase
     .from("chat_flows")
     .select("id", { count: "exact", head: true })
@@ -223,7 +225,7 @@ export async function hasEmpresaActiveChatFlows(): Promise<boolean> {
  * Vuelve a modo bot (solo operador). No reinicia el flujo ni la sesión.
  */
 export async function releaseConversationToBot(conversationId: string): Promise<void> {
-  const { supabase, empresa_id } = await requireEmpresaChatSession();
+  const { supabase, empresa_id } = await requireEmpresaTenantServiceRole();
   const id = conversationId.trim();
   if (!id) throw new Error("ID inválido");
 
@@ -241,7 +243,7 @@ export async function releaseConversationToBot(conversationId: string): Promise<
 }
 
 export async function markConversationRead(conversationId: string): Promise<void> {
-  const { supabase, empresa_id } = await requireEmpresaChatSession();
+  const { supabase, empresa_id } = await requireEmpresaTenantServiceRole();
   const { error } = await supabase
     .from("chat_conversations")
     .update({ unread_count: 0, updated_at: new Date().toISOString() })
@@ -460,13 +462,26 @@ export type ComprobanteValidacionListRow = {
 export async function fetchComprobanteValidacionesForConversation(
   conversationId: string
 ): Promise<ComprobanteValidacionListRow[]> {
-  const { supabase } = await requireEmpresaChatSession();
+  const { supabase, empresa_id } = await requireEmpresaTenantServiceRole();
+  const cid = conversationId.trim();
+  if (!cid) return [];
+
+  const { data: conv, error: cErr } = await supabase
+    .from("chat_conversations")
+    .select("id")
+    .eq("id", cid)
+    .eq("empresa_id", empresa_id)
+    .maybeSingle();
+  if (cErr) throw new Error(cErr.message);
+  if (!conv) return [];
+
   const { data, error } = await supabase
     .from("chat_comprobante_validaciones")
     .select(
       "id, estado_validacion, motivo_validacion, comprobante_url, flow_code, created_at, ocr_referencia, ocr_monto, monto_validacion_esperado_gs, monto_validacion_ocr_gs, monto_validacion_diferencia_gs, monto_validacion_status, bank_val_titular_esperado, bank_val_cuenta_esperada, bank_val_alias_esperado, bank_val_titular_ocr, bank_val_cuenta_ocr, bank_val_alias_ocr, bank_val_coincidencias, bank_val_min_requeridas, bank_val_status"
     )
-    .eq("conversation_id", conversationId)
+    .eq("conversation_id", cid)
+    .eq("empresa_id", empresa_id)
     .order("created_at", { ascending: false });
 
   if (error) throw new Error(error.message);
@@ -474,7 +489,7 @@ export async function fetchComprobanteValidacionesForConversation(
 }
 
 export async function approveComprobanteValidacion(validacionId: string): Promise<void> {
-  const { supabase, empresa_id } = await requireEmpresaChatSession();
+  const { supabase, empresa_id } = await requireEmpresaTenantServiceRole();
   const id = validacionId.trim();
   if (!id) throw new Error("ID de validación inválido");
 

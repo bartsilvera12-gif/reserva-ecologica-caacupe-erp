@@ -1,3 +1,4 @@
+import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { getBrowserSupabaseForEmpresaData } from "@/lib/supabase/browser-data-client";
 import { getCurrentUser } from "@/lib/auth";
 
@@ -41,6 +42,23 @@ function rowToEtapa(row: EtapaRow): EtapaCrm {
 
 /** Lista etapas activas de la empresa del usuario. Ordenadas por orden. */
 export async function getEtapas(): Promise<EtapaCrm[]> {
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetchWithSupabaseSession("/api/crm/etapas", { cache: "no-store" });
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        console.error("[crm] getEtapas API:", res.status, t);
+        return [];
+      }
+      const json = (await res.json()) as { success?: boolean; data?: EtapaRow[] };
+      if (!json.success || !Array.isArray(json.data)) return [];
+      return json.data.map(rowToEtapa);
+    } catch (e) {
+      console.error("[crm] getEtapas:", e);
+      return [];
+    }
+  }
+
   const usuario = await getCurrentUser();
   if (!usuario?.empresa_id) return [];
 

@@ -1,5 +1,4 @@
-import SorteosModuleGuard from "@/components/sorteos/SorteosModuleGuard";
-
+/** El acceso al módulo lo resuelve AuthGuard + /api/empresas/module-access (slug sorteos). */
 export default function SorteosLayout({ children }: { children: React.ReactNode }) {
-  return <SorteosModuleGuard>{children}</SorteosModuleGuard>;
+  return <>{children}</>;
 }

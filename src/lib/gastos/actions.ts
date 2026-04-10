@@ -1,3 +1,4 @@
+import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { getEmpresaId } from "@/lib/db/empresa";
 import { getBrowserSupabaseForEmpresaData } from "@/lib/supabase/browser-data-client";
 
@@ -39,8 +40,19 @@ function mapRow(r: Record<string, unknown>): Gasto {
   };
 }
 
-/** Obtiene todos los gastos de la empresa, ordenados por fecha desc. RLS filtra por empresa. */
+/** Obtiene todos los gastos de la empresa, ordenados por fecha desc. */
 export async function getGastos(): Promise<Gasto[]> {
+  if (typeof window !== "undefined") {
+    const res = await fetchWithSupabaseSession("/api/gastos", { cache: "no-store" });
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(t || `Error ${res.status}`);
+    }
+    const json = (await res.json()) as { success?: boolean; data?: Record<string, unknown>[] };
+    if (!json.success || !Array.isArray(json.data)) return [];
+    return json.data.map(mapRow);
+  }
+
   const supabase = await getBrowserSupabaseForEmpresaData();
   const { data, error } = await supabase
     .from("gastos")
