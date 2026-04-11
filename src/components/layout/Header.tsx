@@ -33,7 +33,7 @@ export default function Header() {
   }, []);
 
   return (
-    <header className="sticky top-0 z-40 flex h-16 items-center justify-between gap-4 border-b border-slate-200 bg-white px-6">
+    <header className="z-40 flex h-16 shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-white px-6">
       {/* Buscador global */}
       <div className="flex flex-1 max-w-md">
         <div className="relative w-full">

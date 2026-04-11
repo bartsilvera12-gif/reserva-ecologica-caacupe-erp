@@ -352,10 +352,10 @@ export default function Sidebar() {
       initial={false}
       animate={{ width: collapsed ? 80 : 260 }}
       transition={{ duration: 0.2 }}
-      className="flex shrink-0 flex-col border-r border-slate-200 bg-[#F1F5F9]"
+      className="flex h-svh min-h-0 shrink-0 flex-col border-r border-slate-200 bg-[#F1F5F9]"
     >
       {/* Logo — casi del tamaño de la sección lateral, sin texto duplicado */}
-      <div className="flex h-36 items-center justify-between gap-2 border-b border-slate-200 px-3 py-3">
+      <div className="flex h-36 shrink-0 items-center justify-between gap-2 border-b border-slate-200 px-3 py-3">
         <Link href="/" className={`flex items-center justify-center min-w-0 flex-1 overflow-hidden`}>
           <div className={`relative flex items-center justify-center ${collapsed ? "h-14 w-14" : "h-28 w-full max-w-[240px]"}`}>
             <Image
@@ -378,7 +378,7 @@ export default function Sidebar() {
         </button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto p-3">
+      <nav className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain p-3">
         {/* Favoritos */}
         {favoritos.length > 0 && !collapsed && (
           <div className="mb-4">
