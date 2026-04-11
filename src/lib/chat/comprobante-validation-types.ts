@@ -269,19 +269,25 @@ export function parseComprobanteValidationConfig(config: unknown): ComprobanteVa
       ? Math.min(3, Math.max(1, Math.trunc(minCoinRaw)))
       : base.min_coincidencias_bancarias;
 
+  const boolOr = (v: unknown, fallback: boolean): boolean =>
+    typeof v === "boolean" ? v : fallback;
+
   return {
-    enabled: r.enabled === true,
+    enabled: boolOr(r.enabled, base.enabled),
     validar_monto_vs_flujo: r.validar_monto_vs_flujo === true,
     monto_tolerancia_absoluta_gs: tolerancia,
     monto_fields_prioridad: montoFields,
     validar_datos_bancarios_ocr: r.validar_datos_bancarios_ocr === true,
     datos_bancarios_esperados: datosBancarios,
     min_coincidencias_bancarias: minCoin,
-    deteccion_duplicados_hash: r.deteccion_duplicados_hash !== false,
-    ocr_obligatorio: r.ocr_obligatorio !== false,
-    bloquear_por_hash_duplicado: r.bloquear_por_hash_duplicado !== false,
-    bloquear_por_ocr_duplicado: r.bloquear_por_ocr_duplicado !== false,
-    revision_manual_si_sospecha_ocr: r.revision_manual_si_sospecha_ocr !== false,
+    deteccion_duplicados_hash: boolOr(r.deteccion_duplicados_hash, base.deteccion_duplicados_hash),
+    ocr_obligatorio: boolOr(r.ocr_obligatorio, base.ocr_obligatorio),
+    bloquear_por_hash_duplicado: boolOr(r.bloquear_por_hash_duplicado, base.bloquear_por_hash_duplicado),
+    bloquear_por_ocr_duplicado: boolOr(r.bloquear_por_ocr_duplicado, base.bloquear_por_ocr_duplicado),
+    revision_manual_si_sospecha_ocr: boolOr(
+      r.revision_manual_si_sospecha_ocr,
+      base.revision_manual_si_sospecha_ocr
+    ),
     revision_manual_activar_takeover: r.revision_manual_activar_takeover === true,
     ocr_min_chars_sospecha:
       typeof r.ocr_min_chars_sospecha === "number" && r.ocr_min_chars_sospecha >= 0

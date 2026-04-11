@@ -1,21 +1,26 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 type ConfigCollapsibleSectionProps = {
   title: string;
   description?: string;
-  /** Panel abierto al montar (solo UI; independiente del switch). */
+  /** Panel abierto al montar (modo no controlado). */
   defaultExpanded?: boolean;
-  /** Switch “activo” al montar (solo indicador visual; independiente de abierto/cerrado). */
+  /** Switch “activo” al montar (modo no controlado). */
   defaultActive?: boolean;
+  /** Modo controlado: `active` / `expanded` y sus callbacks deben ir juntos. */
+  active?: boolean;
+  expanded?: boolean;
+  onActiveChange?: (next: boolean) => void;
+  onExpandedChange?: (next: boolean) => void;
   children: React.ReactNode;
 };
 
 /**
  * Sección de configuración estilo SaaS:
- * - **Switch**: solo indica estado visual activo/inactivo (no abre ni cierra).
+ * - **Switch**: indica estado activo/inactivo (persistible vía modo controlado).
  * - **Cabecera** (título + chevron): expande/contrae el contenido.
  */
 export function ConfigCollapsibleSection({
@@ -23,18 +28,47 @@ export function ConfigCollapsibleSection({
   description,
   defaultExpanded = false,
   defaultActive = true,
+  active: activeProp,
+  expanded: expandedProp,
+  onActiveChange,
+  onExpandedChange,
   children,
 }: ConfigCollapsibleSectionProps) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
-  const [isActive, setIsActive] = useState(defaultActive);
+  const controlled =
+    typeof activeProp === "boolean" &&
+    typeof expandedProp === "boolean" &&
+    typeof onActiveChange === "function" &&
+    typeof onExpandedChange === "function";
+
+  const [internalExpanded, setInternalExpanded] = useState(defaultExpanded);
+  const [internalActive, setInternalActive] = useState(defaultActive);
+
+  useEffect(() => {
+    if (controlled) return;
+    setInternalExpanded(defaultExpanded);
+    setInternalActive(defaultActive);
+  }, [controlled, defaultExpanded, defaultActive]);
+
+  const expanded = controlled ? expandedProp : internalExpanded;
+  const isActive = controlled ? activeProp : internalActive;
+
+  const setExpanded = (next: boolean) => {
+    if (controlled) onExpandedChange(next);
+    else setInternalExpanded(next);
+  };
+
+  const setActive = (next: boolean) => {
+    if (controlled) onActiveChange(next);
+    else setInternalActive(next);
+  };
+
   const headingId = useId();
   const panelId = useId();
   const switchId = useId();
 
-  const shellClass =
-    isActive
-      ? "border-emerald-200/90 bg-white shadow-md ring-1 ring-emerald-100/50"
-      : "border-slate-300/90 bg-slate-100/60 shadow-sm ring-0";
+  const shellClass = isActive
+    ? "border-emerald-200/90 bg-white shadow-md ring-1 ring-emerald-100/50"
+    : "border-slate-300/90 bg-slate-100/60 shadow-sm ring-0";
 
   return (
     <div
@@ -46,7 +80,7 @@ export function ConfigCollapsibleSection({
           id={headingId}
           aria-expanded={expanded}
           aria-controls={panelId}
-          onClick={() => setExpanded((v) => !v)}
+          onClick={() => setExpanded(!expanded)}
           className="flex min-w-0 flex-1 items-start gap-2 rounded-lg text-left outline-none transition-colors hover:bg-slate-50/80 focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 sm:gap-3 sm:pr-1"
         >
           <span
@@ -76,14 +110,14 @@ export function ConfigCollapsibleSection({
 
         <div className="flex shrink-0 flex-row items-center justify-end gap-3 border-t border-slate-200/60 pt-3 sm:flex-col sm:items-end sm:justify-start sm:border-t-0 sm:pt-0.5 sm:gap-1.5">
           <label htmlFor={switchId} className="inline-flex cursor-pointer items-center gap-2 select-none">
-            <span className="sr-only">Marcar sección como activa o inactiva (solo visual)</span>
+            <span className="sr-only">Activar o desactivar esta sección</span>
             <input
               id={switchId}
               type="checkbox"
               role="switch"
               aria-checked={isActive}
               checked={isActive}
-              onChange={(e) => setIsActive(e.target.checked)}
+              onChange={(e) => setActive(e.target.checked)}
               className="peer sr-only"
             />
             <span

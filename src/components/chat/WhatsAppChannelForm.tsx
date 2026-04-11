@@ -26,6 +26,13 @@ import {
   type ChatChannelFormInput,
   type ChatChannelRow,
 } from "@/lib/chat/actions";
+import {
+  defaultChannelFormSectionState,
+  formSectionStateForPersistence,
+  parseFormSectionStateFromChannelConfig,
+  type ChannelFormSectionKey,
+  type ChannelFormSectionStateMap,
+} from "@/lib/chat/channel-form-section-state";
 
 export function emptyWhatsAppChannelForm(): ChatChannelFormInput {
   return {
@@ -112,6 +119,11 @@ export function WhatsAppChannelForm({
       ? parseBusinessAutomationFromChannelConfig(initialRow.config)
       : defaultBusinessAutomationSettings()
   );
+  const [sectionUi, setSectionUi] = useState<ChannelFormSectionStateMap>(() =>
+    mode === "edit" && initialRow
+      ? parseFormSectionStateFromChannelConfig(initialRow.config)
+      : defaultChannelFormSectionState()
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -128,8 +140,13 @@ export function WhatsAppChannelForm({
       setForm(rowToForm(initialRow));
       setCvSettings(parseComprobanteValidationConfig(initialRow.config));
       setBaSettings(parseBusinessAutomationFromChannelConfig(initialRow.config));
+      setSectionUi(parseFormSectionStateFromChannelConfig(initialRow.config));
     }
   }, [mode, initialRow]);
+
+  function patchSection(key: ChannelFormSectionKey, patch: Partial<ChannelFormSectionStateMap[ChannelFormSectionKey]>) {
+    setSectionUi((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -146,6 +163,7 @@ export function WhatsAppChannelForm({
           id: channelId.trim(),
           comprobante_validation: comprobanteValidationSettingsForForm(cvSettings),
           business_automation: businessAutomationSettingsForPersistence(baSettings),
+          form_section_state: formSectionStateForPersistence(sectionUi),
         });
         setSuccess("Cambios guardados.");
         onSaved?.(id);
@@ -154,6 +172,7 @@ export function WhatsAppChannelForm({
           ...form,
           comprobante_validation: comprobanteValidationSettingsForForm(cvSettings),
           business_automation: businessAutomationSettingsForPersistence(baSettings),
+          form_section_state: formSectionStateForPersistence(sectionUi),
         });
         setSuccess("Canal creado.");
         onSaved?.(id);
@@ -174,7 +193,10 @@ export function WhatsAppChannelForm({
           <ConfigCollapsibleSection
             title="Credenciales y conexión"
             description="Identificadores Meta, token para enviar mensajes y estado del canal en el ERP."
-            defaultExpanded
+            active={sectionUi.credentials.active}
+            expanded={sectionUi.credentials.expanded}
+            onActiveChange={(v) => patchSection("credentials", { active: v })}
+            onExpandedChange={(v) => patchSection("credentials", { expanded: v })}
           >
             <div className="space-y-4">
               <div>
@@ -258,6 +280,10 @@ export function WhatsAppChannelForm({
           <ConfigCollapsibleSection
             title="Mensajes automáticos (estilo WhatsApp Business)"
             description="Bienvenida, horario de atención y aviso fuera de horario. Capa simple en el webhook, sin flujos."
+            active={sectionUi.business_automation.active}
+            expanded={sectionUi.business_automation.expanded}
+            onActiveChange={(v) => patchSection("business_automation", { active: v })}
+            onExpandedChange={(v) => patchSection("business_automation", { expanded: v })}
           >
             <BusinessAutomationConfigSection value={baSettings} onChange={setBaSettings} />
           </ConfigCollapsibleSection>
@@ -265,6 +291,10 @@ export function WhatsAppChannelForm({
           <ConfigCollapsibleSection
             title="Validación de comprobantes"
             description="Activación, monto vs flujo, duplicados, revisión manual y umbrales de OCR."
+            active={sectionUi.comprobantes_core.active}
+            expanded={sectionUi.comprobantes_core.expanded}
+            onActiveChange={(v) => patchSection("comprobantes_core", { active: v })}
+            onExpandedChange={(v) => patchSection("comprobantes_core", { expanded: v })}
           >
             <ComprobanteValidationPanelComprobantesCore value={cvSettings} onChange={setCvSettings} />
           </ConfigCollapsibleSection>
@@ -272,6 +302,10 @@ export function WhatsAppChannelForm({
           <ConfigCollapsibleSection
             title="Datos bancarios esperados"
             description="Titular, cuenta y alias esperados para comparar con el OCR del comprobante."
+            active={sectionUi.comprobantes_bank.active}
+            expanded={sectionUi.comprobantes_bank.expanded}
+            onActiveChange={(v) => patchSection("comprobantes_bank", { active: v })}
+            onExpandedChange={(v) => patchSection("comprobantes_bank", { expanded: v })}
           >
             <ComprobanteValidationPanelDatosBancarios value={cvSettings} onChange={setCvSettings} />
           </ConfigCollapsibleSection>
@@ -279,6 +313,10 @@ export function WhatsAppChannelForm({
           <ConfigCollapsibleSection
             title="Mensajes ante situaciones y reglas OCR"
             description="Textos para cada caso y tabla de reglas por campo OCR."
+            active={sectionUi.comprobantes_messages.active}
+            expanded={sectionUi.comprobantes_messages.expanded}
+            onActiveChange={(v) => patchSection("comprobantes_messages", { active: v })}
+            onExpandedChange={(v) => patchSection("comprobantes_messages", { expanded: v })}
           >
             <ComprobanteValidationPanelMensajesYOcr value={cvSettings} onChange={setCvSettings} />
           </ConfigCollapsibleSection>

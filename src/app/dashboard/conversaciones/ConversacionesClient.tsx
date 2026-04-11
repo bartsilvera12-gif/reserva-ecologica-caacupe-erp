@@ -36,6 +36,11 @@ import {
   getMetaInboundDocumentFilename,
   isImageMimeHint,
 } from "@/lib/chat/message-erp-display";
+import {
+  playInboxNotificationBeep,
+  readInboxNotificationSoundEnabled,
+  writeInboxNotificationSoundEnabled,
+} from "@/lib/chat/inbox-notification-preference";
 import { createBrowserClientForSchema } from "@/lib/supabase";
 import { ChannelBadge } from "@/components/chat/ChannelBadge";
 
@@ -209,6 +214,16 @@ export function ConversacionesClient({
   const stickBottomRef = useRef(true);
   const lastMessageIdRef = useRef<string | null>(null);
   const loadConversationsRef = useRef<(opts?: { silent?: boolean }) => Promise<void>>(async () => {});
+  /** Tras la primera carga visible del inbox, se permite el beep (evita sonido en hidratar inicial). */
+  const inboxSoundPrimedRef = useRef(false);
+  /** Dedupe de ids de mensaje entrante ya notificados con sonido. */
+  const inboundSoundMsgIdsRef = useRef<Set<string>>(new Set());
+
+  const [inboxSoundEnabled, setInboxSoundEnabled] = useState(false);
+
+  useEffect(() => {
+    setInboxSoundEnabled(readInboxNotificationSoundEnabled());
+  }, []);
 
   const loadConversations = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -222,7 +237,10 @@ export function ConversacionesClient({
       } catch (e) {
         setListError(e instanceof Error ? e.message : "Error al cargar conversaciones");
       } finally {
-        if (!silent) setLoadingList(false);
+        if (!silent) {
+          setLoadingList(false);
+          inboxSoundPrimedRef.current = true;
+        }
       }
     },
     [vista, inboxFilterKey]
@@ -342,7 +360,7 @@ export function ConversacionesClient({
     router.replace("/dashboard/conversaciones");
   }, [mode, botFlowsChecked, hasActiveBotFlows, router, searchParams]);
 
-  /** Lista: actualizar con Realtime (sin polling). */
+  /** Lista: Realtime sobre conversaciones + INSERT en mensajes (cubre preview/unread si el UPDATE de conversación no emite). */
   useEffect(() => {
     const channel = supabaseChat
       .channel("conversaciones-inbox-list")
@@ -359,6 +377,45 @@ export function ConversacionesClient({
       void supabaseChat.removeChannel(channel);
     };
   }, [chatDataSchema, supabaseChat]);
+
+  /** Mensajes entrantes: refresca inbox, beep opcional (dedupe por id de mensaje). */
+  useEffect(() => {
+    const channel = supabaseChat
+      .channel("conversaciones-inbox-inbound-messages")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: chatDataSchema, table: "chat_messages" },
+        (payload) => {
+          void loadConversationsRef.current?.({ silent: true });
+          const row = payload.new as Record<string, unknown>;
+          const mid = typeof row?.id === "string" ? row.id : "";
+          if (!mid || row.from_me === true) return;
+          if (inboundSoundMsgIdsRef.current.has(mid)) return;
+          inboundSoundMsgIdsRef.current.add(mid);
+          if (inboundSoundMsgIdsRef.current.size > 600) {
+            inboundSoundMsgIdsRef.current.clear();
+          }
+          if (!inboxSoundPrimedRef.current) return;
+          if (readInboxNotificationSoundEnabled()) {
+            playInboxNotificationBeep();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabaseChat.removeChannel(channel);
+    };
+  }, [chatDataSchema, supabaseChat]);
+
+  /** Respaldo si Realtime no llega (publicación RLS, pestaña en background, etc.). */
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void loadConversationsRef.current?.({ silent: true });
+    }, 14_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   /** Mensajes del hilo abierto: INSERT en tiempo real. */
   useEffect(() => {
@@ -416,29 +473,38 @@ export function ConversacionesClient({
     el.scrollTop = el.scrollHeight;
   }, [messages, selectedId]);
 
-  const handleSelect = useCallback(async (id: string) => {
-    stickBottomRef.current = true;
-    lastMessageIdRef.current = null;
-    setSelectedId(id);
-    await loadMessages(id);
-    setCompLoading(true);
-    try {
-      const rows = await fetchComprobanteValidacionesForConversation(id);
-      setCompVals(rows);
-    } catch {
-      setCompVals([]);
-    } finally {
-      setCompLoading(false);
-    }
-    try {
-      await markConversationRead(id);
-      setConversations((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, unread_count: 0 } : c))
+  const handleSelect = useCallback(
+    async (id: string) => {
+      stickBottomRef.current = true;
+      lastMessageIdRef.current = null;
+      setSelectedId(id);
+      await loadMessages(id);
+      const compOn = conversations.some(
+        (c) => c.id === id && c.channel.comprobante_validation_enabled === true
       );
-    } catch {
-      /* no bloquear UI */
-    }
-  }, [loadMessages]);
+      if (compOn) {
+        setCompLoading(true);
+        try {
+          const rows = await fetchComprobanteValidacionesForConversation(id);
+          setCompVals(rows);
+        } catch {
+          setCompVals([]);
+        } finally {
+          setCompLoading(false);
+        }
+      } else {
+        setCompVals([]);
+        setCompLoading(false);
+      }
+      try {
+        await markConversationRead(id);
+        setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, unread_count: 0 } : c)));
+      } catch {
+        /* no bloquear UI */
+      }
+    },
+    [loadMessages, conversations]
+  );
 
   async function handleSendFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -673,6 +739,19 @@ export function ConversacionesClient({
           <option value="medium">Prioridad media</option>
           <option value="high">Prioridad alta</option>
         </select>
+        <label className="inline-flex items-center gap-1.5 text-slate-600 cursor-pointer select-none shrink-0">
+          <input
+            type="checkbox"
+            className="rounded border-slate-300"
+            checked={inboxSoundEnabled}
+            onChange={(e) => {
+              const v = e.target.checked;
+              setInboxSoundEnabled(v);
+              writeInboxNotificationSoundEnabled(v);
+            }}
+          />
+          <span className="font-medium text-slate-600">Sonido al recibir mensajes</span>
+        </label>
       </div>
 
       {hasActiveChannel === false && (
@@ -980,104 +1059,106 @@ export function ConversacionesClient({
                 ) : null}
               </div>
 
-              <div className="border-b border-amber-100/90 bg-amber-50/30 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setCompValidacionesOpen((o) => !o)}
-                  aria-expanded={compValidacionesOpen}
-                  className="w-full text-left px-2 py-1 text-xs font-medium text-amber-900 flex items-center justify-between gap-2 hover:bg-amber-50/80"
-                >
-                  <span>
-                    ⚠️ Validaciones ({compLoading ? "…" : compVals.length})
-                  </span>
-                  <span className="text-slate-500 tabular-nums shrink-0" aria-hidden>
-                    {compValidacionesOpen ? "▲" : "▼"}
-                  </span>
-                </button>
-                {compValidacionesOpen ? (
-                  <div className="px-2 pb-2 max-h-48 overflow-y-auto overscroll-contain border-t border-amber-100/80">
-                    {compLoading ? (
-                      <p className="text-xs text-slate-500 pt-1">Cargando…</p>
-                    ) : compVals.length === 0 ? (
-                      <p className="text-xs text-slate-500 pt-1">
-                        No hay comprobantes registrados en esta conversación.
-                      </p>
-                    ) : (
-                      <ul className="space-y-1.5 pt-1">
-                        {compVals.map((v) => (
-                          <li
-                            key={v.id}
-                            className="flex flex-wrap items-center gap-1.5 text-[11px] bg-white border border-slate-200 rounded-md px-1.5 py-1"
-                          >
-                            <span className="font-mono text-slate-600">{v.estado_validacion}</span>
-                            {v.monto_validacion_status != null && v.monto_validacion_status !== "" ? (
-                              <span
-                                className="text-[10px] text-slate-500 max-w-[200px] truncate"
-                                title={v.motivo_validacion ?? ""}
-                              >
-                                monto: {v.monto_validacion_status}
-                                {v.monto_validacion_esperado_gs != null
-                                  ? ` · esp ${v.monto_validacion_esperado_gs}`
-                                  : ""}
-                                {v.monto_validacion_ocr_gs != null ? ` · ocr ${v.monto_validacion_ocr_gs}` : ""}
-                                {v.monto_validacion_diferencia_gs != null
-                                  ? ` · Δ ${v.monto_validacion_diferencia_gs}`
-                                  : ""}
-                              </span>
-                            ) : null}
-                            {v.bank_val_status != null && v.bank_val_status !== "" ? (
-                              <span
-                                className="text-[10px] text-slate-500 max-w-[220px] truncate"
-                                title={v.motivo_validacion ?? ""}
-                              >
-                                banco: {v.bank_val_status}
-                                {v.bank_val_coincidencias != null && v.bank_val_min_requeridas != null
-                                  ? ` · ${v.bank_val_coincidencias}/${v.bank_val_min_requeridas}`
-                                  : ""}
-                              </span>
-                            ) : null}
-                            {v.comprobante_url ? (
-                              <a
-                                href={v.comprobante_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-[#0EA5E9] hover:underline"
-                              >
-                                Ver archivo
-                              </a>
-                            ) : null}
-                            {v.estado_validacion !== "valido" ? (
-                              <button
-                                type="button"
-                                disabled={compActionId === v.id}
-                                onClick={async () => {
-                                  const convId = selectedId;
-                                  if (!convId) return;
-                                  setCompActionId(v.id);
-                                  try {
-                                    await approveComprobanteValidacion(v.id);
-                                    const rows = await fetchComprobanteValidacionesForConversation(convId);
-                                    setCompVals(rows);
-                                  } catch (e) {
-                                    setSendError(
-                                      e instanceof Error ? e.message : "No se pudo aprobar el comprobante"
-                                    );
-                                  } finally {
-                                    setCompActionId(null);
-                                  }
-                                }}
-                                className="text-emerald-700 font-medium hover:underline disabled:opacity-50"
-                              >
-                                Aprobar (cerrar compra)
-                              </button>
-                            ) : null}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                ) : null}
-              </div>
+              {selected?.channel.comprobante_validation_enabled ? (
+                <div className="border-b border-amber-100/90 bg-amber-50/30 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setCompValidacionesOpen((o) => !o)}
+                    aria-expanded={compValidacionesOpen}
+                    className="w-full text-left px-2 py-1 text-xs font-medium text-amber-900 flex items-center justify-between gap-2 hover:bg-amber-50/80"
+                  >
+                    <span>
+                      ⚠️ Validaciones ({compLoading ? "…" : compVals.length})
+                    </span>
+                    <span className="text-slate-500 tabular-nums shrink-0" aria-hidden>
+                      {compValidacionesOpen ? "▲" : "▼"}
+                    </span>
+                  </button>
+                  {compValidacionesOpen ? (
+                    <div className="px-2 pb-2 max-h-48 overflow-y-auto overscroll-contain border-t border-amber-100/80">
+                      {compLoading ? (
+                        <p className="text-xs text-slate-500 pt-1">Cargando…</p>
+                      ) : compVals.length === 0 ? (
+                        <p className="text-xs text-slate-500 pt-1">
+                          No hay comprobantes registrados en esta conversación.
+                        </p>
+                      ) : (
+                        <ul className="space-y-1.5 pt-1">
+                          {compVals.map((v) => (
+                            <li
+                              key={v.id}
+                              className="flex flex-wrap items-center gap-1.5 text-[11px] bg-white border border-slate-200 rounded-md px-1.5 py-1"
+                            >
+                              <span className="font-mono text-slate-600">{v.estado_validacion}</span>
+                              {v.monto_validacion_status != null && v.monto_validacion_status !== "" ? (
+                                <span
+                                  className="text-[10px] text-slate-500 max-w-[200px] truncate"
+                                  title={v.motivo_validacion ?? ""}
+                                >
+                                  monto: {v.monto_validacion_status}
+                                  {v.monto_validacion_esperado_gs != null
+                                    ? ` · esp ${v.monto_validacion_esperado_gs}`
+                                    : ""}
+                                  {v.monto_validacion_ocr_gs != null ? ` · ocr ${v.monto_validacion_ocr_gs}` : ""}
+                                  {v.monto_validacion_diferencia_gs != null
+                                    ? ` · Δ ${v.monto_validacion_diferencia_gs}`
+                                    : ""}
+                                </span>
+                              ) : null}
+                              {v.bank_val_status != null && v.bank_val_status !== "" ? (
+                                <span
+                                  className="text-[10px] text-slate-500 max-w-[220px] truncate"
+                                  title={v.motivo_validacion ?? ""}
+                                >
+                                  banco: {v.bank_val_status}
+                                  {v.bank_val_coincidencias != null && v.bank_val_min_requeridas != null
+                                    ? ` · ${v.bank_val_coincidencias}/${v.bank_val_min_requeridas}`
+                                    : ""}
+                                </span>
+                              ) : null}
+                              {v.comprobante_url ? (
+                                <a
+                                  href={v.comprobante_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-[#0EA5E9] hover:underline"
+                                >
+                                  Ver archivo
+                                </a>
+                              ) : null}
+                              {v.estado_validacion !== "valido" ? (
+                                <button
+                                  type="button"
+                                  disabled={compActionId === v.id}
+                                  onClick={async () => {
+                                    const convId = selectedId;
+                                    if (!convId) return;
+                                    setCompActionId(v.id);
+                                    try {
+                                      await approveComprobanteValidacion(v.id);
+                                      const rows = await fetchComprobanteValidacionesForConversation(convId);
+                                      setCompVals(rows);
+                                    } catch (e) {
+                                      setSendError(
+                                        e instanceof Error ? e.message : "No se pudo aprobar el comprobante"
+                                      );
+                                    } finally {
+                                      setCompActionId(null);
+                                    }
+                                  }}
+                                  className="text-emerald-700 font-medium hover:underline disabled:opacity-50"
+                                >
+                                  Aprobar (cerrar compra)
+                                </button>
+                              ) : null}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
 
               <div
                 ref={messagesScrollRef}

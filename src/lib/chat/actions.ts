@@ -3,6 +3,7 @@
 import {
   SORTEO_COMPROBANTE_ESTADO_VALIDACION_FIELD,
   SORTEO_COMPROBANTE_MOTIVO_VALIDACION_FIELD,
+  parseComprobanteValidationConfig,
 } from "@/lib/chat/comprobante-validation-types";
 import { requireEmpresaTenantServiceRole } from "@/lib/chat/empresa-tenant-service-role";
 import {
@@ -38,6 +39,8 @@ export type InboxConversation = {
     id: string;
     type: string;
     nombre: string | null;
+    /** Si el canal tiene activada la validación inteligente de comprobantes (UI inbox). */
+    comprobante_validation_enabled: boolean;
   };
   contact: {
     id: string;
@@ -139,11 +142,14 @@ export async function fetchChatConversations(
     ),
   ];
 
-  let channelById: Record<string, { type: string; nombre: string | null }> = {};
+  let channelById: Record<
+    string,
+    { type: string; nombre: string | null; comprobante_validation_enabled: boolean }
+  > = {};
   if (channelIds.length > 0) {
     const { data: chrows, error: chErr } = await supabase
       .from("chat_channels")
-      .select("id, type, nombre")
+      .select("id, type, nombre, config")
       .eq("empresa_id", empresa_id)
       .in("id", channelIds);
     if (chErr) {
@@ -151,12 +157,23 @@ export async function fetchChatConversations(
     } else {
       channelById = Object.fromEntries(
         (chrows ?? []).map((r) => {
-          const rec = r as { id: string; type?: string | null; nombre?: string | null };
+          const rec = r as {
+            id: string;
+            type?: string | null;
+            nombre?: string | null;
+            config?: unknown;
+          };
+          const cfg = rec.config;
+          const compOn =
+            cfg && typeof cfg === "object" && !Array.isArray(cfg)
+              ? parseComprobanteValidationConfig(cfg as Record<string, unknown>).enabled
+              : false;
           return [
             rec.id,
             {
               type: (rec.type as string) ?? "whatsapp",
               nombre: rec.nombre ?? null,
+              comprobante_validation_enabled: compOn,
             },
           ];
         })
@@ -275,6 +292,7 @@ export async function fetchChatConversations(
     const channelId = cid;
     const channelType = chMeta?.type ?? "whatsapp";
     const channelNombre = chMeta?.nombre ?? null;
+    const compValEnabled = chMeta?.comprobante_validation_enabled ?? false;
     const qid = (row.queue_id as string | null | undefined)?.trim() || null;
     const qRowNombre = qid ? queueNombreById[qid] : null;
     const aid = (row.assigned_agent_id as string | null | undefined)?.trim();
@@ -299,6 +317,7 @@ export async function fetchChatConversations(
         id: channelId,
         type: channelType,
         nombre: channelNombre,
+        comprobante_validation_enabled: compValEnabled,
       },
       contact: {
         id: c?.id ?? (row.contact_id as string),
@@ -430,6 +449,8 @@ export type ChatChannelFormInput = {
   comprobante_validation?: Record<string, unknown>;
   /** Mensajes automáticos livianos en `config.business_automation` (no es chat_flows). */
   business_automation?: Record<string, unknown>;
+  /** Estado UI de secciones del formulario en `config.form_section_state`. */
+  form_section_state?: Record<string, { active: boolean; expanded: boolean }>;
 };
 
 /** Crea o actualiza canal WhatsApp (Meta). Devuelve el id del canal. */
@@ -472,6 +493,9 @@ export async function saveChatChannel(input: ChatChannelFormInput): Promise<stri
   }
   if (input.business_automation !== undefined) {
     config.business_automation = input.business_automation;
+  }
+  if (input.form_section_state !== undefined) {
+    config.form_section_state = input.form_section_state;
   }
 
   const base = {
