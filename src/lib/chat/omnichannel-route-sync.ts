@@ -1,6 +1,12 @@
 import type { SupabaseAdmin } from "@/lib/chat/types";
+import { createServiceRoleClientWithDbSchema } from "@/lib/supabase/empresa-data-schema";
 import { createServiceRoleClient } from "@/lib/supabase/service-admin";
 import { SUPABASE_APP_SCHEMA } from "@/lib/supabase/schema";
+
+/** PostgREST con `db.schema=public`: los RPC omnicanal viven en `public`, no en `zentra_erp`. */
+function createPublicRpcClient(): SupabaseAdmin {
+  return createServiceRoleClientWithDbSchema("public") as SupabaseAdmin;
+}
 
 export type OmnichannelRouteRow = {
   empresa_id: string;
@@ -19,7 +25,8 @@ export async function fetchOmnichannelRouteByMetaPhone(
   const pid = phoneNumberId.trim();
   if (!pid) return null;
 
-  const { data, error } = await catalog.rpc("neura_get_omnichannel_route", {
+  const rpcCli = createPublicRpcClient();
+  const { data, error } = await rpcCli.rpc("neura_get_omnichannel_route", {
     p_meta_phone_number_id: pid,
   });
 
@@ -73,16 +80,17 @@ export async function syncOmnichannelRouteForWhatsappChannel(opts: {
   if (!pid) return;
 
   const catalog = createServiceRoleClient();
+  const rpcCli = createPublicRpcClient();
 
   const rpcDelete = async () => {
-    const { error } = await catalog.rpc("neura_delete_omnichannel_route", {
+    const { error } = await rpcCli.rpc("neura_delete_omnichannel_route", {
       p_meta_phone_number_id: pid,
     });
     return error;
   };
 
   const rpcSync = async () => {
-    const { error } = await catalog.rpc("neura_sync_omnichannel_route", {
+    const { error } = await rpcCli.rpc("neura_sync_omnichannel_route", {
       p_meta_phone_number_id: pid,
       p_empresa_id: opts.empresaId,
       p_channel_id: opts.channelId,
@@ -128,7 +136,8 @@ export async function deleteOmnichannelRouteByMetaPhone(metaPhoneNumberId: strin
   const pid = metaPhoneNumberId.trim();
   if (!pid) return;
   const catalog = createServiceRoleClient();
-  const { error: rpcErr } = await catalog.rpc("neura_delete_omnichannel_route", {
+  const rpcCli = createPublicRpcClient();
+  const { error: rpcErr } = await rpcCli.rpc("neura_delete_omnichannel_route", {
     p_meta_phone_number_id: pid,
   });
   if (!rpcErr) return;

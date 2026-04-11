@@ -169,12 +169,13 @@ type WhatsappChannelRow = {
 };
 
 /**
- * Si el canal vive en un esquema tenant (`er_*`) pero falta la fila en
- * `zentra_erp.omnichannel_routes` (migración antigua, sync fallido, etc.),
- * el webhook solo miraba `zentra_erp.chat_channels` y fallaba. Recorremos
- * empresas con `data_schema` y reparamos la ruta al encontrar coincidencia.
+ * Si el canal vive en un esquema tenant distinto de `zentra_erp` (`er_*`, `erp_*`, etc.) pero falta
+ * la fila en `zentra_erp.omnichannel_routes`, el webhook solo miraba `zentra_erp.chat_channels` y fallaba.
+ * Recorremos empresas con `data_schema` no vacío (valor real en `empresas`) y buscamos el canal ahí.
  */
-const TENANT_DATA_SCHEMA_RE = /^er_[0-9a-f]{32}$/i;
+const BLOCKED_DATA_SCHEMA_NAMES = new Set(
+  ["public", "pg_catalog", "information_schema"].map((s) => s.toLowerCase())
+);
 
 async function findWhatsappChannelInTenantSchemas(
   catalogSupabase: SupabaseAdmin,
@@ -193,8 +194,8 @@ async function findWhatsappChannelInTenantSchemas(
   for (const e of (empresas ?? []) as Array<{ id: string; data_schema: string | null }>) {
     const schema = resolveEmpresaDataSchema(e.data_schema);
     if (schema === SUPABASE_APP_SCHEMA) continue;
-    if (!TENANT_DATA_SCHEMA_RE.test(schema)) {
-      console.warn("[webhook] scan tenant: omitiendo data_schema no estándar (se espera er_<uuid>)", {
+    if (BLOCKED_DATA_SCHEMA_NAMES.has(schema.toLowerCase())) {
+      console.warn("[webhook] scan tenant: omitiendo data_schema reservado", {
         empresa_id: e.id,
         schema,
       });
@@ -409,7 +410,7 @@ export async function processInboundWebhookValue(
       processed: 0,
       skipped: 0,
       errors: [
-        `Canal ${channel.id} no existe en el schema PostgREST usado para chat_* (FK o data_schema inconsistente). Ejecutá migración supabase 20260411190000. ${chSanErr?.message ?? ""}`,
+        `Canal ${channel.id} no existe en el schema PostgREST usado para chat_* (FK o data_schema inconsistente). Revisá migración supabase 20260411190000 y coherencia de empresas.data_schema. ${chSanErr?.message ?? ""}`,
       ],
     };
   }
