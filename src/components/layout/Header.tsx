@@ -2,23 +2,11 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Bell, Moon, Sun, User, ChevronDown, LogOut } from "lucide-react";
-import { useTheme } from "@/components/ThemeProvider";
+import { Bell, User, ChevronDown, LogOut } from "lucide-react";
 import { signOut } from "@/lib/auth";
-
-const PERIOD_OPTIONS = [
-  { id: "hoy", label: "Hoy" },
-  { id: "7d", label: "7 días" },
-  { id: "30d", label: "30 días" },
-  { id: "mes", label: "Mes actual" },
-  { id: "anio", label: "Año" },
-];
 
 export default function Header() {
   const router = useRouter();
-  const { theme, toggleTheme } = useTheme();
-  const [search, setSearch] = useState("");
-  const [period, setPeriod] = useState("mes");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -33,52 +21,8 @@ export default function Header() {
   }, []);
 
   return (
-    <header className="z-40 flex h-16 shrink-0 items-center justify-between gap-4 border-b border-slate-200/90 bg-white/95 px-6 shadow-[inset_0_-1px_0_0_rgba(10,37,64,0.05)] backdrop-blur-sm">
-      {/* Buscador global */}
-      <div className="flex flex-1 max-w-md">
-        <div className="relative w-full">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-          <input
-            type="search"
-            placeholder="Buscar..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-10 pr-4 text-sm text-[#0F172A] outline-none transition-colors placeholder:text-[#475569] focus:ring-2 focus:ring-[#0EA5E9] focus:border-transparent"
-          />
-        </div>
-      </div>
-
+    <header className="z-40 flex h-16 shrink-0 items-center justify-end gap-3 border-b border-slate-200/90 bg-white/95 px-4 sm:px-6 shadow-[inset_0_-1px_0_0_rgba(10,37,64,0.05)] backdrop-blur-sm">
       <div className="flex items-center gap-2">
-        {/* Selector de periodo */}
-        <select
-          value={period}
-          onChange={(e) => setPeriod(e.target.value)}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-[#0F172A] outline-none transition-colors focus:ring-2 focus:ring-[#0EA5E9]"
-        >
-          {PERIOD_OPTIONS.map((opt) => (
-            <option key={opt.id} value={opt.id}>{opt.label}</option>
-          ))}
-        </select>
-
-        {/* Toggle dark mode */}
-        <button
-          type="button"
-          onClick={toggleTheme}
-          className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-[#475569] transition-colors hover:bg-slate-50"
-        >
-          {theme === "light" ? (
-            <>
-              <Moon className="h-4 w-4" />
-              <span className="hidden sm:inline">Oscuro</span>
-            </>
-          ) : (
-            <>
-              <Sun className="h-4 w-4" />
-              <span className="hidden sm:inline">Claro</span>
-            </>
-          )}
-        </button>
-
         {/* Notificaciones */}
         <button
           type="button"
