@@ -3,6 +3,7 @@ import { isAdmin } from "@/lib/middleware/auth";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { getTenantSupabaseFromAuthWithRol } from "@/lib/supabase/tenant-api";
+import { createServiceRoleClient } from "@/lib/supabase/service-admin";
 
 /**
  * GET /api/clientes/:id — un cliente de la empresa (mismo schema que el resto de APIs tenant).
@@ -46,7 +47,32 @@ export async function GET(
       return NextResponse.json(errorResponse("Cliente no encontrado"), { status: 404 });
     }
 
-    return NextResponse.json(successResponse(data));
+    const row = data as Record<string, unknown>;
+    const uid = typeof row.created_by_user_id === "string" ? row.created_by_user_id.trim() : "";
+    const nombreGuardado =
+      typeof row.created_by_nombre === "string" ? row.created_by_nombre.trim() : "";
+
+    if (!nombreGuardado && uid) {
+      try {
+        const catalog = createServiceRoleClient();
+        const { data: u } = await catalog
+          .from("usuarios")
+          .select("nombre, email")
+          .eq("auth_user_id", uid)
+          .maybeSingle();
+        const uo = u as { nombre?: string | null; email?: string | null } | null;
+        if (uo) {
+          const nom = typeof uo.nombre === "string" ? uo.nombre.trim() : "";
+          const em = typeof uo.email === "string" ? uo.email.trim() : "";
+          if (nom) row.created_by_nombre = nom;
+          else if (em) row.created_by_nombre = em;
+        }
+      } catch (e) {
+        console.warn("[api/clientes/[id]] GET enriquecer creador:", e);
+      }
+    }
+
+    return NextResponse.json(successResponse(row));
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Error";
     return NextResponse.json(errorResponse(msg), { status: 500 });
@@ -90,15 +116,20 @@ export async function DELETE(
     }
 
 
+    /** Sin `.is("deleted_at", null)` en el SELECT: en algunos tenants la columna no existe en PostgREST. */
     const { data: cliente, error: errCliente } = await supabase
       .from("clientes")
       .select("id, empresa_id, deleted_at")
       .eq("id", clienteId)
       .eq("empresa_id", auth.empresa_id)
-      .is("deleted_at", null)
-      .single();
+      .maybeSingle();
 
     if (errCliente || !cliente) {
+      return NextResponse.json(errorResponse("Cliente no encontrado o ya eliminado"), { status: 404 });
+    }
+
+    const delAt = (cliente as { deleted_at?: string | null }).deleted_at;
+    if (delAt != null && String(delAt).trim() !== "") {
       return NextResponse.json(errorResponse("Cliente no encontrado o ya eliminado"), { status: 404 });
     }
 
@@ -192,7 +223,7 @@ export async function DELETE(
         updated_at: now,
       })
       .eq("id", clienteId)
-      .is("deleted_at", null);
+      .eq("empresa_id", auth.empresa_id);
 
     if (errUpdate) {
       return NextResponse.json(errorResponse(errUpdate.message), { status: 500 });

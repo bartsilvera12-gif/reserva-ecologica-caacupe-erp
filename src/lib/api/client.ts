@@ -94,8 +94,16 @@ export async function apiBajaOperativaCliente(
 
 export type EliminarClientePreview = {
   suscripciones_activas: number;
+  /** Todas las suscripciones del cliente (cualquier estado). */
+  suscripciones_total: number;
   suscripciones: { id: string; precio: number; moneda: string }[];
   facturas_pendientes_count: number;
+  /** Facturas con estado Pagado. */
+  facturas_pagadas_count: number;
+  /** Facturas no anuladas (emitidas / vigentes en el libro). */
+  facturas_emitidas_count: number;
+  /** Pagos registrados contra facturas del cliente. */
+  pagos_registrados_count: number;
   factura_ejemplo: { id: string; numero_factura: string; monto: number } | null;
   puede_eliminar: boolean;
   bloqueos: string[];

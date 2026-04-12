@@ -118,10 +118,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(errorResponse(`tipo_servicio_cliente debe ser uno de: ${TIPOS_SERVICIO_VALIDOS.join(", ")}`), { status: 400 });
     }
 
+    const nombreCreador =
+      (typeof auth.nombre === "string" ? auth.nombre.trim() : "") ||
+      (typeof auth.user?.email === "string" ? auth.user.email.trim() : "") ||
+      null;
+
     const insertBase = {
       empresa_id:           auth.empresa_id,
       created_by_user_id:    auth.user.id,
-      created_by_nombre:     auth.nombre ?? null,
+      created_by_nombre:     nombreCreador,
       tipo_cliente:         tipo_cliente ?? "empresa",
       tipo_servicio_cliente: tipoServicio || null,
       empresa:              empresa?.trim() || null,

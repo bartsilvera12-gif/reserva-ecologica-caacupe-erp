@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   addNotaCliente,
   clienteNombre,
@@ -92,6 +92,38 @@ function PlaceholderTab({ icon, title, desc }: { icon: string; title: string; de
   );
 }
 
+function ClienteFichaSkeleton() {
+  const bar = "animate-pulse rounded-md bg-slate-200/90";
+  return (
+    <div className="space-y-6 max-w-5xl">
+      <div className={`h-3 w-28 ${bar}`} aria-hidden />
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="h-40 bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200 animate-pulse" aria-hidden />
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 divide-x divide-gray-100 border-t border-gray-100">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <div key={i} className="px-5 py-3 space-y-2">
+              <div className={`h-2.5 w-16 ${bar}`} />
+              <div className={`h-4 w-24 ${bar}`} />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="flex gap-2 px-3 py-3 border-b border-gray-100">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className={`h-8 flex-1 max-w-[7rem] ${bar}`} />
+          ))}
+        </div>
+        <div className="p-6 space-y-3">
+          <div className={`h-4 w-full max-w-md ${bar}`} />
+          <div className={`h-4 w-full max-w-sm ${bar}`} />
+          <div className={`h-32 w-full ${bar}`} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Componente principal ──────────────────────────────────────────────────────
 
 export default function ClienteDetailPage() {
@@ -104,6 +136,8 @@ export default function ClienteDetailPage() {
   const [cliente,   setCliente]   = useState<Cliente | null>(null);
   const [notFound,  setNotFound]  = useState(false);
   const [cargandoCliente, setCargandoCliente] = useState(true);
+  /** Planes, suscripciones y facturas (no bloquea el encabezado del cliente). */
+  const [cargandoDetalleCliente, setCargandoDetalleCliente] = useState(false);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("informacion");
   const [esAdmin, setEsAdmin] = useState(false);
@@ -198,6 +232,7 @@ export default function ClienteDetailPage() {
 
   const cargar = useCallback(async () => {
     setCargandoCliente(true);
+    setCargandoDetalleCliente(false);
     setErrorCarga(null);
     setNotFound(false);
     setCliente(null);
@@ -211,11 +246,10 @@ export default function ClienteDetailPage() {
         setFacturas([]);
         setNotFound(true);
         if (process.env.NODE_ENV === "development") console.warn("[cliente detalle] getCliente null", { id });
+        setCargandoCliente(false);
+        setCargandoDetalleCliente(false);
         return;
       }
-      // `notas` ya vienen en la fila desde GET /api/clientes/[id] (select *). Evitar
-      // getNotasCliente() aquí: usa getBrowserSupabaseForEmpresaData → /api/empresas/data-schema
-      // y si ese endpoint fallaba (p. ej. RLS en empresas) la ficha quedaba en error aunque el cliente existiera.
       setCliente(c);
       setForm({
         tipo_cliente:        c.tipo_cliente,
@@ -240,16 +274,22 @@ export default function ClienteDetailPage() {
         tipo_servicio_cliente: c.tipo_servicio_cliente ?? "",
         estado:               c.estado,
       });
-      const [planesL, susL, facL] = await Promise.all([
-        getPlanes(),
-        getSuscripciones(id),
-        getFacturas(id),
-      ]);
-      setPlanes(planesL);
-      setSuscripciones(susL);
-      setFacturas(facL);
-      if (process.env.NODE_ENV === "development") {
-        console.info("[cliente detalle] cargar ok", { id, planes: planesL.length, suscripciones: susL.length, facturas: facL.length });
+      setCargandoCliente(false);
+      setCargandoDetalleCliente(true);
+      try {
+        const [planesL, susL, facL] = await Promise.all([
+          getPlanes(),
+          getSuscripciones(id),
+          getFacturas(id),
+        ]);
+        setPlanes(planesL);
+        setSuscripciones(susL);
+        setFacturas(facL);
+        if (process.env.NODE_ENV === "development") {
+          console.info("[cliente detalle] cargar ok", { id, planes: planesL.length, suscripciones: susL.length, facturas: facL.length });
+        }
+      } finally {
+        setCargandoDetalleCliente(false);
       }
     } catch (e) {
       console.error("[cliente detalle] cargar excepción", { id, e });
@@ -259,8 +299,8 @@ export default function ClienteDetailPage() {
       setSuscripciones([]);
       setFacturas([]);
       setNotFound(false);
-    } finally {
       setCargandoCliente(false);
+      setCargandoDetalleCliente(false);
     }
   }, [id]);
 
@@ -275,7 +315,7 @@ export default function ClienteDetailPage() {
 
   useEffect(() => {
     getCurrentUser().then((u) => {
-      const rol = (u as { rol?: string })?.rol;
+      const rol = ((u as { rol?: string })?.rol ?? "").trim().toLowerCase();
       setEsAdmin(rol === "admin" || rol === "administrador" || rol === "super_admin");
     });
   }, []);
@@ -591,12 +631,7 @@ export default function ClienteDetailPage() {
   }
 
   if (cargandoCliente) {
-    return (
-      <div className="max-w-5xl py-24 flex flex-col items-center justify-center gap-2 text-slate-500">
-        <p className="text-sm font-medium text-slate-600">Cargando cliente…</p>
-        <p className="text-xs font-mono text-slate-400 break-all px-4 text-center">{id}</p>
-      </div>
-    );
+    return <ClienteFichaSkeleton />;
   }
 
   if (notFound) {
@@ -713,12 +748,13 @@ export default function ClienteDetailPage() {
                 <button
                   type="button"
                   onClick={() => void abrirModalEliminar()}
-                  className="text-red-300 hover:text-red-200 hover:bg-red-900/30 p-1.5 rounded-lg transition-colors"
-                  title="Eliminar cliente (administrativo)"
+                  className="text-red-200 hover:text-white hover:bg-red-900/40 border border-red-400/40 flex items-center gap-1.5 px-2 py-1.5 rounded-lg transition-colors text-xs font-medium"
+                  title="Eliminar cliente (baja lógica)"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 shrink-0" aria-hidden>
                     <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.52.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.5.06l.3 7.5a.75.75 0 1 0 1.5-.06l-.3-7.5Zm4.34.06a.75.75 0 1 0-1.5-.06l-.3 7.5a.75.75 0 1 0 1.5.06l.3-7.5Z" clipRule="evenodd" />
                   </svg>
+                  Eliminar
                 </button>
               )}
             </div>
@@ -764,23 +800,34 @@ export default function ClienteDetailPage() {
 
         {/* Estadísticas rápidas */}
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 divide-x divide-gray-100 border-t border-gray-100">
-          {[
-            { label: "Origen",        value: cliente.origen                                     },
-            { label: "Tipo servicio", value: cliente.tipo_servicio_cliente ? cliente.tipo_servicio_cliente.charAt(0).toUpperCase() + cliente.tipo_servicio_cliente.slice(1) : "—" },
-            { label: "Condición",    value: cliente.condicion_pago  ?? "—"                     },
-            {
-              label: "Plan activo",
-              value: suscripcionActiva
-                ? `${planes.find((p) => p.id === suscripcionActiva.plan_id)?.nombre ?? suscripcionActiva.plan_nombre ?? "Plan"} (${suscripcionActiva.moneda})`
-                : "—",
-            },
-            { label: "Moneda",       value: cliente.moneda_preferida ?? "GS"                    },
-            { label: "Vendedor",     value: cliente.vendedor_asignado ?? "—"                   },
-            { label: "Creado por",   value: cliente.created_by_nombre ?? cliente.created_by_user_id ?? "—" },
-          ].map((item) => (
+          {(
+            [
+              { label: "Origen", value: cliente.origen },
+              {
+                label: "Tipo servicio",
+                value: cliente.tipo_servicio_cliente
+                  ? cliente.tipo_servicio_cliente.charAt(0).toUpperCase() + cliente.tipo_servicio_cliente.slice(1)
+                  : "—",
+              },
+              { label: "Condición", value: cliente.condicion_pago ?? "—" },
+              {
+                label: "Plan activo",
+                value: cargandoDetalleCliente ? (
+                  <span className="inline-block h-4 w-36 max-w-full animate-pulse rounded-md bg-slate-200" aria-hidden />
+                ) : suscripcionActiva ? (
+                  `${planes.find((p) => p.id === suscripcionActiva.plan_id)?.nombre ?? suscripcionActiva.plan_nombre ?? "Plan"} (${suscripcionActiva.moneda})`
+                ) : (
+                  "—"
+                ),
+              },
+              { label: "Moneda", value: cliente.moneda_preferida ?? "GS" },
+              { label: "Vendedor", value: cliente.vendedor_asignado ?? "—" },
+              { label: "Creado por", value: cliente.created_by_nombre?.trim() || "—" },
+            ] as { label: string; value: ReactNode }[]
+          ).map((item) => (
             <div key={item.label} className="px-5 py-3">
               <p className="text-xs text-gray-400">{item.label}</p>
-              <p className="text-sm font-semibold text-gray-700 mt-0.5">{item.value}</p>
+              <div className="text-sm font-semibold text-gray-700 mt-0.5">{item.value}</div>
             </div>
           ))}
         </div>
@@ -878,115 +925,181 @@ export default function ClienteDetailPage() {
         </div>
       )}
 
-      {/* Confirmación de eliminación (baja administrativa) */}
+      {/* Confirmación de eliminación (baja lógica); modal centrado */}
       {confirmarEliminar && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
-          <p className="text-sm text-red-700 font-medium">
-            Eliminación administrativa (baja lógica). El cliente no aparecerá en listados pero se conserva el registro.
-          </p>
-          {eliminarCargandoPreview && (
-            <p className="text-xs text-red-800">Cargando vista previa…</p>
-          )}
-          {eliminarPreview && !eliminarPreview.puede_eliminar && (
-            <div className="bg-red-100/60 border border-red-300 rounded-lg p-3 text-sm text-red-900">
-              <p className="font-medium mb-1">No se puede eliminar este cliente</p>
-              <p className="text-xs">
-                Tiene {eliminarPreview.bloqueos.join(" y ")} asociados. Resuelva esas relaciones antes de eliminar.
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/45"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="eliminar-cliente-titulo"
+          onClick={() => {
+            if (eliminando) return;
+            setConfirmarEliminar(false);
+            setDeletionReason("");
+            setErrorEliminar(null);
+            setEliminarPreview(null);
+          }}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[min(90vh,640px)] overflow-y-auto border border-red-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-5 space-y-3 border-b border-slate-100">
+              <h2 id="eliminar-cliente-titulo" className="text-base font-semibold text-slate-900">
+                Eliminar cliente
+              </h2>
+              <p className="text-sm text-slate-600">
+                Eliminación administrativa (baja lógica): el registro se conserva por integridad contable; deja de listarse.
+                No es borrado físico salvo que en el futuro se habilite un proceso aparte de purga.
               </p>
             </div>
-          )}
-          {eliminarPreview?.puede_eliminar && eliminarPreview.suscripciones_activas > 0 && (
-            <div className="bg-red-100/40 border border-red-200 rounded-lg p-3">
-              <p className="text-sm text-red-900 font-medium mb-2">
-                Hay {eliminarPreview.suscripciones_activas} suscripción
-                {eliminarPreview.suscripciones_activas === 1 ? "" : "es"} activa
-                {eliminarPreview.suscripciones_activas === 1 ? "" : "s"}.
-              </p>
-              <p className="text-xs text-red-800 mb-2">¿Cancelarlas al eliminar el cliente?</p>
-              <div className="flex gap-3 flex-wrap">
+            <div className="p-5 space-y-3">
+              {eliminarCargandoPreview && (
+                <div className="space-y-2" aria-busy="true">
+                  <div className="h-3 w-40 animate-pulse rounded bg-slate-200" />
+                  <div className="h-3 w-full animate-pulse rounded bg-slate-100" />
+                  <div className="h-3 w-full max-w-xs animate-pulse rounded bg-slate-100" />
+                </div>
+              )}
+              {eliminarPreview && !eliminarCargandoPreview && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3 text-sm text-slate-800">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Resumen del cliente</p>
+                  <ul className="grid gap-1.5 text-sm">
+                    <li>
+                      Facturas con saldo pendiente:{" "}
+                      <span className="font-semibold">{eliminarPreview.facturas_pendientes_count}</span>
+                    </li>
+                    <li>
+                      Facturas pagadas:{" "}
+                      <span className="font-semibold">{eliminarPreview.facturas_pagadas_count ?? 0}</span>
+                    </li>
+                    <li>
+                      Facturas emitidas (no anuladas):{" "}
+                      <span className="font-semibold">{eliminarPreview.facturas_emitidas_count ?? 0}</span>
+                    </li>
+                    <li>
+                      Pagos registrados:{" "}
+                      <span className="font-semibold">{eliminarPreview.pagos_registrados_count ?? 0}</span>
+                    </li>
+                    <li>
+                      Suscripciones asociadas (total):{" "}
+                      <span className="font-semibold">{eliminarPreview.suscripciones_total ?? 0}</span>
+                      {eliminarPreview.suscripciones_activas > 0 && (
+                        <span className="text-slate-600">
+                          {" "}
+                          ({eliminarPreview.suscripciones_activas} activa
+                          {eliminarPreview.suscripciones_activas === 1 ? "" : "s"})
+                        </span>
+                      )}
+                    </li>
+                  </ul>
+                </div>
+              )}
+              {eliminarPreview && !eliminarPreview.puede_eliminar && (
+                <div className="bg-red-100/60 border border-red-300 rounded-lg p-3 text-sm text-red-900">
+                  <p className="font-medium mb-1">No se puede eliminar este cliente</p>
+                  <p className="text-xs">
+                    Tiene {eliminarPreview.bloqueos.join(" y ")} asociados. Resuelva esas relaciones antes de eliminar.
+                  </p>
+                </div>
+              )}
+              {eliminarPreview?.puede_eliminar && eliminarPreview.suscripciones_activas > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-sm text-red-900 font-medium mb-2">
+                    Hay {eliminarPreview.suscripciones_activas} suscripción
+                    {eliminarPreview.suscripciones_activas === 1 ? "" : "es"} activa
+                    {eliminarPreview.suscripciones_activas === 1 ? "" : "s"}.
+                  </p>
+                  <p className="text-xs text-red-800 mb-2">¿Cancelarlas al eliminar el cliente?</p>
+                  <div className="flex gap-3 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setEliminarCancelarSusc(true)}
+                      className={`text-xs px-3 py-1.5 rounded-lg font-medium ${eliminarCancelarSusc ? "bg-red-600 text-white" : "bg-white border border-red-300 text-red-800 hover:bg-red-50"}`}
+                    >
+                      Sí, cancelar suscripciones
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEliminarCancelarSusc(false)}
+                      className={`text-xs px-3 py-1.5 rounded-lg font-medium ${!eliminarCancelarSusc ? "bg-red-600 text-white" : "bg-white border border-red-300 text-red-800 hover:bg-red-50"}`}
+                    >
+                      No
+                    </button>
+                  </div>
+                </div>
+              )}
+              {eliminarPreview?.puede_eliminar && eliminarPreview.facturas_pendientes_count > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-sm text-red-900 font-medium mb-2">
+                    {eliminarPreview.facturas_pendientes_count === 1 && eliminarPreview.factura_ejemplo
+                      ? `Factura con saldo pendiente (${eliminarPreview.factura_ejemplo.numero_factura} — Gs. ${eliminarPreview.factura_ejemplo.monto?.toLocaleString("es-PY")}).`
+                      : `Hay ${eliminarPreview.facturas_pendientes_count} facturas con saldo pendiente${eliminarPreview.factura_ejemplo ? ` (ej.: ${eliminarPreview.factura_ejemplo.numero_factura})` : ""}.`}
+                  </p>
+                  <p className="text-xs text-red-800 mb-2">
+                    ¿Anularlas al eliminar? (estado Anulado, saldo 0 — no sumarán en cobranzas ni reportería de pendientes)
+                  </p>
+                  <div className="flex gap-3 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setEliminarAnularFacturas(true)}
+                      className={`text-xs px-3 py-1.5 rounded-lg font-medium ${eliminarAnularFacturas ? "bg-red-600 text-white" : "bg-white border border-red-300 text-red-800 hover:bg-red-50"}`}
+                    >
+                      Sí, anular facturas pendientes
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEliminarAnularFacturas(false)}
+                      className={`text-xs px-3 py-1.5 rounded-lg font-medium ${!eliminarAnularFacturas ? "bg-red-600 text-white" : "bg-white border border-red-300 text-red-800 hover:bg-red-50"}`}
+                    >
+                      No, conservar facturas
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Motivo obligatorio</label>
+                <textarea
+                  value={deletionReason}
+                  onChange={(e) => {
+                    setDeletionReason(e.target.value);
+                    setErrorEliminar(null);
+                  }}
+                  placeholder="Ej: Cliente duplicado, solicitud del interesado..."
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-red-400 min-h-[60px]"
+                  rows={2}
+                />
+                {errorEliminar && <p className="text-xs text-red-600 mt-1">{errorEliminar}</p>}
+              </div>
+              <div className="flex gap-2 shrink-0 pt-1">
                 <button
                   type="button"
-                  onClick={() => setEliminarCancelarSusc(true)}
-                  className={`text-xs px-3 py-1.5 rounded-lg font-medium ${eliminarCancelarSusc ? "bg-red-600 text-white" : "bg-white border border-red-300 text-red-800 hover:bg-red-50"}`}
+                  onClick={() => void handleEliminar()}
+                  disabled={
+                    eliminando ||
+                    eliminarCargandoPreview ||
+                    !eliminarPreview ||
+                    !eliminarPreview.puede_eliminar
+                  }
+                  className="bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50"
                 >
-                  Sí, cancelar suscripciones
+                  {eliminando ? "Eliminando…" : "Confirmar eliminación"}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setEliminarCancelarSusc(false)}
-                  className={`text-xs px-3 py-1.5 rounded-lg font-medium ${!eliminarCancelarSusc ? "bg-red-600 text-white" : "bg-white border border-red-300 text-red-800 hover:bg-red-50"}`}
+                  onClick={() => {
+                    setConfirmarEliminar(false);
+                    setDeletionReason("");
+                    setErrorEliminar(null);
+                    setEliminarPreview(null);
+                  }}
+                  disabled={eliminando}
+                  className="border border-slate-200 text-slate-700 px-3 py-2 rounded-lg text-sm hover:bg-slate-50 disabled:opacity-50"
                 >
-                  No
+                  Cancelar
                 </button>
               </div>
             </div>
-          )}
-          {eliminarPreview?.puede_eliminar && eliminarPreview.facturas_pendientes_count > 0 && (
-            <div className="bg-red-100/40 border border-red-200 rounded-lg p-3">
-              <p className="text-sm text-red-900 font-medium mb-2">
-                {eliminarPreview.facturas_pendientes_count === 1 && eliminarPreview.factura_ejemplo
-                  ? `Factura con saldo pendiente (${eliminarPreview.factura_ejemplo.numero_factura} — Gs. ${eliminarPreview.factura_ejemplo.monto?.toLocaleString("es-PY")}).`
-                  : `Hay ${eliminarPreview.facturas_pendientes_count} facturas con saldo pendiente${eliminarPreview.factura_ejemplo ? ` (ej.: ${eliminarPreview.factura_ejemplo.numero_factura})` : ""}.`}
-              </p>
-              <p className="text-xs text-red-800 mb-2">
-                ¿Anularlas al eliminar? (estado Anulado, saldo 0 — no sumarán en cobranzas ni reportería de pendientes)
-              </p>
-              <div className="flex gap-3 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => setEliminarAnularFacturas(true)}
-                  className={`text-xs px-3 py-1.5 rounded-lg font-medium ${eliminarAnularFacturas ? "bg-red-600 text-white" : "bg-white border border-red-300 text-red-800 hover:bg-red-50"}`}
-                >
-                  Sí, anular facturas pendientes
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEliminarAnularFacturas(false)}
-                  className={`text-xs px-3 py-1.5 rounded-lg font-medium ${!eliminarAnularFacturas ? "bg-red-600 text-white" : "bg-white border border-red-300 text-red-800 hover:bg-red-50"}`}
-                >
-                  No, conservar facturas
-                </button>
-              </div>
-            </div>
-          )}
-          <div>
-            <label className="block text-xs font-medium text-red-800 mb-1">Motivo obligatorio</label>
-            <textarea
-              value={deletionReason}
-              onChange={(e) => { setDeletionReason(e.target.value); setErrorEliminar(null); }}
-              placeholder="Ej: Cliente duplicado, solicitud del interesado..."
-              className="w-full border border-red-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-red-400 min-h-[60px]"
-              rows={2}
-            />
-            {errorEliminar && <p className="text-xs text-red-600 mt-1">{errorEliminar}</p>}
-          </div>
-          <div className="flex gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => void handleEliminar()}
-              disabled={
-                eliminando ||
-                eliminarCargandoPreview ||
-                !eliminarPreview ||
-                !eliminarPreview.puede_eliminar
-              }
-              className="bg-red-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-red-700 disabled:opacity-50"
-            >
-              {eliminando ? "Eliminando…" : "Confirmar eliminación"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setConfirmarEliminar(false);
-                setDeletionReason("");
-                setErrorEliminar(null);
-                setEliminarPreview(null);
-              }}
-              disabled={eliminando}
-              className="border border-red-200 text-red-600 px-3 py-1.5 rounded-lg text-xs hover:bg-red-100 disabled:opacity-50"
-            >
-              Cancelar
-            </button>
           </div>
         </div>
       )}
@@ -1017,7 +1130,20 @@ export default function ClienteDetailPage() {
         </div>
 
         {/* Tab content */}
-        <div className="p-6">
+        <div className="relative min-h-[220px]">
+          {cargandoDetalleCliente && (
+            <div
+              className="absolute inset-0 z-[1] rounded-b-xl bg-white/60 backdrop-blur-[0.5px] flex items-start justify-center pt-14 pointer-events-none"
+              aria-hidden
+            >
+              <div className="flex flex-col items-center gap-2 w-full max-w-md px-6">
+                <div className="h-2.5 w-3/4 max-w-xs rounded animate-pulse bg-slate-200" />
+                <div className="h-2.5 w-2/3 max-w-xs rounded animate-pulse bg-slate-200" />
+                <div className="h-28 w-full max-w-md rounded-lg animate-pulse bg-slate-100 mt-2" />
+              </div>
+            </div>
+          )}
+          <div className="p-6">
 
           {/* ── INFORMACIÓN ─────────────────────────────────────────────── */}
           {activeTab === "informacion" && (
@@ -1671,6 +1797,7 @@ export default function ClienteDetailPage() {
             </div>
           )}
 
+        </div>
         </div>
       </div>
 

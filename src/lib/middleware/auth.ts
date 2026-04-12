@@ -14,7 +14,8 @@ export interface UsuarioConEmpresaYRol extends UsuarioConEmpresa {
 }
 
 function esRolAdmin(rol?: string): boolean {
-  return rol === "admin" || rol === "administrador" || rol === "super_admin";
+  const r = (rol ?? "").trim().toLowerCase();
+  return r === "admin" || r === "administrador" || r === "super_admin";
 }
 
 /**
