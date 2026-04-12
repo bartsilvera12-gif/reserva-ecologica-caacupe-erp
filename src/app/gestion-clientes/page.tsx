@@ -7,6 +7,7 @@ import { SifenEstadoBadge } from "@/components/sifen/SifenEstadoBadge";
 import { useFacturaSifenEstados } from "@/hooks/useFacturaSifenEstados";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { getClientes, clienteNombre } from "@/lib/clientes/storage";
+import { toCalendarDateStr } from "@/lib/fechas/calendario";
 import { getFacturas } from "@/lib/gestion-clientes/storage";
 import type { Cliente } from "@/lib/clientes/types";
 import type { EstadoFactura, Factura } from "@/lib/gestion-clientes/types";
@@ -81,9 +82,11 @@ const KUDE_SOLO_APROBADO_TIP =
 
 function FacturaRowAccionesSifen({
   facturaId,
+  clienteId,
   sifenAprobado,
 }: {
   facturaId: string;
+  clienteId: string;
   sifenAprobado: boolean;
 }) {
   const kudeView = `/api/facturas/${facturaId}/sifen/kude`;
@@ -125,44 +128,54 @@ function FacturaRowAccionesSifen({
   );
 
   return (
-    <div className="flex items-center gap-0.5">
-      {sifenAprobado ? (
-        <button
-          type="button"
-          title="Ver KuDE (PDF) en nueva pestaña"
-          onClick={() => window.open(kudeView, "_blank", "noopener,noreferrer")}
-          className={`${btnBase} ${active}`}
-        >
-          {iconEye}
-        </button>
-      ) : (
-        <button type="button" disabled title={KUDE_SOLO_APROBADO_TIP} className={`${btnBase} ${disabledCls}`}>
-          {iconEye}
-        </button>
-      )}
-      {sifenAprobado ? (
-        <a
-          href={kudeDl}
-          download
-          title="Descargar KuDE (PDF)"
-          className={`${btnBase} ${activePrint}`}
-        >
-          {iconPrint}
-        </a>
-      ) : (
-        <button type="button" disabled title={KUDE_SOLO_APROBADO_TIP} className={`${btnBase} ${disabledCls}`}>
-          {iconPrint}
-        </button>
-      )}
-      {sifenAprobado ? (
-        <a href={kudeDl} download title="Descargar KuDE (PDF)" className={`${btnBase} ${activePdf}`}>
-          {iconPdf}
-        </a>
-      ) : (
-        <button type="button" disabled title={KUDE_SOLO_APROBADO_TIP} className={`${btnBase} ${disabledCls}`}>
-          {iconPdf}
-        </button>
-      )}
+    <div className="flex flex-col items-start gap-1.5 min-w-[7rem]">
+      <div className="flex items-center gap-0.5 flex-wrap">
+        {sifenAprobado ? (
+          <button
+            type="button"
+            title="Ver KuDE (PDF) en nueva pestaña"
+            onClick={() => window.open(kudeView, "_blank", "noopener,noreferrer")}
+            className={`${btnBase} ${active}`}
+          >
+            {iconEye}
+          </button>
+        ) : (
+          <button type="button" disabled title={KUDE_SOLO_APROBADO_TIP} className={`${btnBase} ${disabledCls}`}>
+            {iconEye}
+          </button>
+        )}
+        {sifenAprobado ? (
+          <a
+            href={kudeDl}
+            download
+            title="Descargar KuDE (PDF)"
+            className={`${btnBase} ${activePrint}`}
+          >
+            {iconPrint}
+          </a>
+        ) : (
+          <button type="button" disabled title={KUDE_SOLO_APROBADO_TIP} className={`${btnBase} ${disabledCls}`}>
+            {iconPrint}
+          </button>
+        )}
+        {sifenAprobado ? (
+          <a href={kudeDl} download title="Descargar KuDE (PDF)" className={`${btnBase} ${activePdf}`}>
+            {iconPdf}
+          </a>
+        ) : (
+          <button type="button" disabled title={KUDE_SOLO_APROBADO_TIP} className={`${btnBase} ${disabledCls}`}>
+            {iconPdf}
+          </button>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] font-semibold">
+        <Link href={`/facturas/${facturaId}`} className="text-[#0EA5E9] hover:underline whitespace-nowrap" title="Ver factura, SIFEN y cancelación">
+          Ver / SIFEN
+        </Link>
+        <Link href={`/clientes/${clienteId}`} className="text-slate-600 hover:underline whitespace-nowrap" title="Abrir ficha del cliente para registrar pago">
+          Cobrar
+        </Link>
+      </div>
     </div>
   );
 }
@@ -587,8 +600,20 @@ export default function GestionClientesPage() {
     getClientes().then(setClientes);
   }, []);
 
+  /** Al elegir cliente: misma API que la ficha (`/api/facturas?cliente_id=`) y filtros de período en blanco para no ocultar filas. */
   function selectCliente(c: Cliente) {
     setSelected(c);
+    setFilters((prev) => ({
+      ...prev,
+      cliente: clienteNombre(c),
+      fecha_desde: "",
+      fecha_hasta: "",
+      vencimiento_desde: "",
+      vencimiento_hasta: "",
+      moneda: "",
+      incluir_saldo_cero: true,
+      incluir_factura_contado: true,
+    }));
     getFacturas(c.id).then(setFacturas);
   }
 
@@ -614,7 +639,6 @@ export default function GestionClientesPage() {
   // Handlers del lookup
   function handleSelectFromLookup(c: Cliente) {
     selectCliente(c);
-    setFilters((prev) => ({ ...prev, cliente: clienteNombre(c) }));
   }
 
   function handleClearLookup() {
@@ -642,14 +666,23 @@ export default function GestionClientesPage() {
   // ── Filtrado de facturas (columna derecha) ───────────────────────────────
 
   const facturasFiltradas = useMemo(() => {
+    const fd = toCalendarDateStr(filters.fecha_desde) || filters.fecha_desde.trim();
+    const fh = toCalendarDateStr(filters.fecha_hasta) || filters.fecha_hasta.trim();
+    const vd = toCalendarDateStr(filters.vencimiento_desde) || filters.vencimiento_desde.trim();
+    const vh = toCalendarDateStr(filters.vencimiento_hasta) || filters.vencimiento_hasta.trim();
     return facturas.filter((f) => {
-      if (filters.fecha_desde       && f.fecha             < filters.fecha_desde)       return false;
-      if (filters.fecha_hasta       && f.fecha             > filters.fecha_hasta)        return false;
-      if (filters.vencimiento_desde && f.fecha_vencimiento < filters.vencimiento_desde)  return false;
-      if (filters.vencimiento_hasta && f.fecha_vencimiento > filters.vencimiento_hasta)  return false;
-      if (!filters.incluir_saldo_cero      && f.saldo === 0)             return false;
-      if (!filters.incluir_factura_contado && f.tipo === "contado")      return false;
-      if (filters.moneda && f.moneda !== filters.moneda)                  return false;
+      const fEmi = toCalendarDateStr(f.fecha) || String(f.fecha).slice(0, 10);
+      const fVen = toCalendarDateStr(f.fecha_vencimiento) || String(f.fecha_vencimiento).slice(0, 10);
+      if (fd && fEmi < fd) return false;
+      if (fh && fEmi > fh) return false;
+      if (vd && fVen < vd) return false;
+      if (vh && fVen > vh) return false;
+      if (!filters.incluir_saldo_cero && f.saldo === 0) return false;
+      if (!filters.incluir_factura_contado && f.tipo === "contado") return false;
+      if (filters.moneda) {
+        const mon = String(f.moneda ?? "").toUpperCase() === "USD" ? "USD" : "GS";
+        if (mon !== filters.moneda) return false;
+      }
       return true;
     });
   }, [facturas, filters.fecha_desde, filters.fecha_hasta, filters.vencimiento_desde, filters.vencimiento_hasta, filters.incluir_saldo_cero, filters.incluir_factura_contado, filters.moneda]);
@@ -665,13 +698,18 @@ export default function GestionClientesPage() {
 
   const facturasOrdenadas = useMemo(() => {
     return [...facturasFiltradas]
-      .sort((a, b) => b.fecha_vencimiento.localeCompare(a.fecha_vencimiento))
+      .sort((a, b) => {
+        const av = toCalendarDateStr(a.fecha_vencimiento) || String(a.fecha_vencimiento).slice(0, 10);
+        const bv = toCalendarDateStr(b.fecha_vencimiento) || String(b.fecha_vencimiento).slice(0, 10);
+        return bv.localeCompare(av);
+      })
       .map((f) => {
-        const estaVencida    = f.saldo > 0 && f.fecha_vencimiento < hoyStr;
+        const fv = toCalendarDateStr(f.fecha_vencimiento) || String(f.fecha_vencimiento).slice(0, 10);
+        const estaVencida = f.saldo > 0 && fv.length >= 10 && fv < hoyStr;
         const estadoEfectivo: EstadoFactura = estaVencida ? "Vencido" : f.estado;
-        const diasMora       = estaVencida
+        const diasMora = estaVencida
           ? Math.floor(
-              (new Date().getTime() - new Date(f.fecha_vencimiento + "T00:00:00").getTime()) /
+              (new Date().getTime() - new Date(`${fv}T00:00:00`).getTime()) /
               86_400_000
             )
           : 0;
@@ -707,12 +745,12 @@ export default function GestionClientesPage() {
         {/* ══════════════════════════════════════════════════════════════
             COLUMNA IZQUIERDA — Filtros + Lista de clientes
         ══════════════════════════════════════════════════════════════ */}
-        <div className="w-[340px] shrink-0 border-r border-gray-200 flex flex-col overflow-hidden bg-gray-50/40">
+        <div className="w-[340px] shrink-0 border-r border-gray-200 flex flex-col overflow-hidden bg-gray-50/40 min-h-0">
 
           <ColHeader>Filtros de búsqueda</ColHeader>
 
           {/* Formulario de filtros */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-y-auto">
             <div className="p-4 space-y-3">
 
               {/* Criterios de texto */}
@@ -873,7 +911,7 @@ export default function GestionClientesPage() {
         {/* ══════════════════════════════════════════════════════════════
             COLUMNA DERECHA — Información del cliente
         ══════════════════════════════════════════════════════════════ */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 flex flex-col overflow-hidden min-h-0">
 
           {selected === null ? (
             /* Empty state */
@@ -887,10 +925,10 @@ export default function GestionClientesPage() {
               </div>
             </div>
           ) : (
-            <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 flex flex-col overflow-hidden min-h-0">
 
               {/* ── Panel info del cliente ─────────────────────────── */}
-              <div className="shrink-0 border-b border-gray-200">
+              <div className="shrink-0 border-b border-gray-200 max-h-[min(52vh,520px)] overflow-y-auto">
                 <ColHeader>Información del cliente</ColHeader>
                 <div className="px-6 py-4">
                   <div className="flex items-start justify-between mb-4">
@@ -944,7 +982,7 @@ export default function GestionClientesPage() {
               </div>
 
               {/* ── Tabla de facturas ──────────────────────────────── */}
-              <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 flex flex-col overflow-hidden min-h-0">
                 <ColHeader>
                   Facturas del cliente
                   {facturasFiltradas.length !== facturas.length && (
@@ -989,16 +1027,21 @@ export default function GestionClientesPage() {
                 )}
 
                 {/* ── Tabla ────────────────────────────────────────── */}
-                <div className="flex-1 overflow-y-auto">
+                <div className="flex-1 min-h-0 overflow-y-auto">
                   {facturasOrdenadas.length === 0 ? (
-                    <div className="py-12 text-center text-sm text-gray-400">
-                      No hay facturas para los filtros seleccionados
+                    <div className="py-12 text-center text-sm text-gray-400 space-y-2 px-4">
+                      <p>No hay facturas para los filtros seleccionados.</p>
+                      {facturas.length > 0 && (
+                        <p className="text-xs text-amber-700">
+                          Hay {facturas.length} factura(s) cargadas; revisá período de emisión/vencimiento, moneda o «Incluir factura contado».
+                        </p>
+                      )}
                     </div>
                   ) : (
                     <table className="w-full text-sm">
                       <thead className="sticky top-0 bg-slate-50 border-b border-slate-200 shadow-sm">
                         <tr>
-                          {["Tipo", "Nro. Factura", "Fecha emisión", "Fecha vencimiento", "Monto", "Saldo", "Días mora", "Estado", "SIFEN", "Acciones"].map((h) => (
+                          {["Tipo", "Nro. Factura", "Fecha emisión", "Fecha vencimiento", "Monto", "Saldo", "Días mora", "Estado", "SIFEN", "Operación"].map((h) => (
                             <th key={h} className="text-left text-sm font-semibold text-slate-600 px-3 py-2.5 uppercase tracking-wide whitespace-nowrap">
                               {h}
                             </th>
@@ -1069,10 +1112,11 @@ export default function GestionClientesPage() {
                                 estadoSifen={sifenPorFactura[f.id]?.estado_sifen ?? null}
                               />
                             </td>
-                            {/* Acciones — KuDE (PDF SIFEN) solo si estado_sifen = aprobado */}
-                            <td className="px-3 py-2.5">
+                            {/* KuDE + enlaces a ficha factura (SIFEN/cancelar/NC) y cliente (pago) */}
+                            <td className="px-3 py-2.5 align-top">
                               <FacturaRowAccionesSifen
                                 facturaId={f.id}
+                                clienteId={selected.id}
                                 sifenAprobado={sifenPorFactura[f.id]?.estado_sifen === "aprobado"}
                               />
                             </td>
