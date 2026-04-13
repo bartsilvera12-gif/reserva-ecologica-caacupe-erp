@@ -65,6 +65,13 @@ export type NotaCreditoCreateBody = {
   observacion_interna?: string | null;
 };
 
+/** Resultado de `obtenerSifenPrevueloFacturaParaNcs` (listado por factura, sin NC concreta). */
+export type SifenPrevueloFacturaNcDTO = {
+  ok: boolean;
+  mensaje: string | null;
+  diagnostico: Record<string, unknown> | null;
+};
+
 /** Fila del listado global `/notas-credito`. */
 export type NotaCreditoGlobalListItemDTO = {
   id: string;

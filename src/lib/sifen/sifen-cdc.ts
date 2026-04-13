@@ -145,6 +145,11 @@ export function parseBase43DesdeCdc44(cdc44: string): {
   dEst3: string;
   dPunExp3: string;
   dNumDoc7: string;
+  /** AAAAMMDD (8 dígitos) embebidos en el CDC. */
+  fechaEmision8: string;
+  iTipCont1: string;
+  iTipEmi1: string;
+  dCodSeg9: string;
 } | null {
   const c = cdc44.replace(/\D/g, "");
   if (c.length !== 44) return null;
@@ -156,6 +161,10 @@ export function parseBase43DesdeCdc44(cdc44: string): {
     dEst3: b43.slice(11, 14),
     dPunExp3: b43.slice(14, 17),
     dNumDoc7: b43.slice(17, 24),
+    iTipCont1: b43.slice(24, 25),
+    fechaEmision8: b43.slice(25, 33),
+    iTipEmi1: b43.slice(33, 34),
+    dCodSeg9: b43.slice(34, 43),
   };
 }
 

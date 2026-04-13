@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
-import type { NotaCreditoListItemDTO } from "@/lib/nota-credito/types";
+import type { NotaCreditoListItemDTO, SifenPrevueloFacturaNcDTO } from "@/lib/nota-credito/types";
+
+const MSG_BLOQUEO_TIMBRADO_ORIGEN =
+  "No se puede generar la NC porque el timbrado de la factura origen es inválido o inconsistente.";
 
 type NcApiGet = {
   success?: boolean;
@@ -11,6 +14,7 @@ type NcApiGet = {
     items: NotaCreditoListItemDTO[];
     puede_crear: boolean;
     motivo_bloqueo_creacion: string | null;
+    sifen_prevuelo_factura?: SifenPrevueloFacturaNcDTO;
   };
   error?: string;
 };
@@ -64,7 +68,10 @@ function mensajeErrorPlano(html: string | null | undefined): string {
  * Siguiente paso SIFEN **real**: POST sin sufijo `-test`. El ambiente SET (producción vs pruebas)
  * lo resuelve el servidor según `empresa_sifen_config.ambiente`.
  */
-function nextNcSifenPasoReal(nc: NotaCreditoListItemDTO, opts: { deAprobado: boolean; puedeCancelarDe: boolean }): {
+function nextNcSifenPasoReal(
+  nc: NotaCreditoListItemDTO,
+  opts: { deAprobado: boolean; puedeCancelarDe: boolean; bloqueoTimbradoOrigen: boolean }
+): {
   url: string;
   label: string;
 } | null {
@@ -75,14 +82,15 @@ function nextNcSifenPasoReal(nc: NotaCreditoListItemDTO, opts: { deAprobado: boo
   const st = nc.estado_sifen ?? "sin_envio";
   if (st === "aprobado") return null;
   const base = NC_SIFEN_BASE(nc.id);
+  if (st === "enviado" || st === "en_proceso") {
+    return { url: `${base}/consulta-lote`, label: "Consultar estado del lote (SET)" };
+  }
+  if (opts.bloqueoTimbradoOrigen) return null;
   if (st === "rechazado") {
     return { url: `${base}/procesar`, label: "Corregir y reenviar" };
   }
   if (st === "firmado") {
     return { url: `${base}/enviar`, label: "Enviar lote a SET" };
-  }
-  if (st === "enviado" || st === "en_proceso") {
-    return { url: `${base}/consulta-lote`, label: "Consultar estado del lote (SET)" };
   }
   if (["sin_envio", "generado", "error_envio", "borrador"].includes(st)) {
     return {
@@ -94,7 +102,10 @@ function nextNcSifenPasoReal(nc: NotaCreditoListItemDTO, opts: { deAprobado: boo
 }
 
 /** Solo si el servidor tiene `ALLOW_TEST_MODE` y la empresa está en producción: fuerza SOAP contra SET TEST. */
-function nextNcSifenPasoTestOverride(nc: NotaCreditoListItemDTO, opts: { deAprobado: boolean; puedeCancelarDe: boolean }): {
+function nextNcSifenPasoTestOverride(
+  nc: NotaCreditoListItemDTO,
+  opts: { deAprobado: boolean; puedeCancelarDe: boolean; bloqueoTimbradoOrigen: boolean }
+): {
   url: string;
   label: string;
 } | null {
@@ -105,14 +116,15 @@ function nextNcSifenPasoTestOverride(nc: NotaCreditoListItemDTO, opts: { deAprob
   const st = nc.estado_sifen ?? "sin_envio";
   if (st === "aprobado") return null;
   const base = NC_SIFEN_BASE(nc.id);
+  if (st === "enviado" || st === "en_proceso") {
+    return { url: `${base}/consulta-lote-test`, label: "Consultar lote (SET TEST — override)" };
+  }
+  if (opts.bloqueoTimbradoOrigen) return null;
   if (st === "rechazado") {
     return { url: `${base}/procesar-test`, label: "Corregir y reenviar (SET TEST)" };
   }
   if (st === "firmado") {
     return { url: `${base}/enviar-test`, label: "Enviar lote (SET TEST — override)" };
-  }
-  if (st === "enviado" || st === "en_proceso") {
-    return { url: `${base}/consulta-lote-test`, label: "Consultar lote (SET TEST — override)" };
   }
   if (["sin_envio", "generado", "error_envio", "borrador"].includes(st)) {
     return { url: `${base}/procesar-test`, label: "Procesar (SET TEST — override)" };
@@ -162,6 +174,7 @@ export function FacturaCorreccionFiscalNC({
     empresaAmbiente: "produccion" | "test";
     allowTestOverride: boolean;
   } | null>(null);
+  const [sifenPrevueloFactura, setSifenPrevueloFactura] = useState<SifenPrevueloFacturaNcDTO | null>(null);
 
   const monedaLabel = moneda === "USD" ? "USD" : "Gs.";
 
@@ -197,15 +210,18 @@ export function FacturaCorreccionFiscalNC({
         setItems([]);
         setPuedeCrear(false);
         setBloqueo(j.error ?? "No se pudo cargar notas de crédito");
+        setSifenPrevueloFactura(null);
         return;
       }
       setItems(j.data.items);
       setPuedeCrear(j.data.puede_crear);
       setBloqueo(j.data.motivo_bloqueo_creacion ?? null);
+      setSifenPrevueloFactura(j.data.sifen_prevuelo_factura ?? null);
     } catch {
       setItems([]);
       setPuedeCrear(false);
       setBloqueo("Error de red");
+      setSifenPrevueloFactura(null);
     } finally {
       setLoading(false);
     }
@@ -302,10 +318,12 @@ export function FacturaCorreccionFiscalNC({
   const mostrarHerramientasTestOverride =
     Boolean(sifenCfg?.allowTestOverride && sifenCfg.empresaAmbiente === "produccion");
 
+  const bloqueoTimbradoOrigen = Boolean(sifenPrevueloFactura && !sifenPrevueloFactura.ok);
+  const sifenPasoOpts = { deAprobado, puedeCancelarDe, bloqueoTimbradoOrigen };
+
   const ncRechazoMasReciente = items.find((x) => x.estado_sifen === "rechazado");
   const pasoReenviarBanner =
-    ncRechazoMasReciente &&
-    nextNcSifenPasoReal(ncRechazoMasReciente, { deAprobado, puedeCancelarDe });
+    ncRechazoMasReciente && nextNcSifenPasoReal(ncRechazoMasReciente, sifenPasoOpts);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-5 sm:p-6 space-y-4 w-full min-w-0">
@@ -367,6 +385,24 @@ export function FacturaCorreccionFiscalNC({
         </div>
       )}
 
+      {!puedeCancelarDe && deAprobado && estado !== "Anulado" && bloqueoTimbradoOrigen && !loading && (
+        <div
+          className="rounded-lg border-2 border-amber-700 bg-amber-50 px-3 py-3 text-sm text-amber-950 shadow-sm"
+          role="alert"
+        >
+          <p className="font-bold">{MSG_BLOQUEO_TIMBRADO_ORIGEN}</p>
+          {sifenPrevueloFactura?.mensaje ? (
+            <p className="mt-2 text-xs text-amber-900/90 font-mono whitespace-pre-wrap break-words">
+              {sifenPrevueloFactura.mensaje}
+            </p>
+          ) : null}
+          <p className="mt-2 text-xs text-amber-900/80">
+            Corregí la configuración SIFEN o el documento electrónico de la factura origen; no se reintentará el envío
+            hasta que el sistema valide coherencia con el XML firmado.
+          </p>
+        </div>
+      )}
+
       {!puedeCancelarDe && deAprobado && estado !== "Anulado" && (
         <div className="space-y-2">
           {loading ? (
@@ -403,6 +439,9 @@ export function FacturaCorreccionFiscalNC({
             {mensajeErrorPlano(ncRechazoMasReciente.last_error) ||
               "La SET devolvió un rechazo. Revisá el detalle técnico en la NC correspondiente."}
           </p>
+          {bloqueoTimbradoOrigen ? (
+            <p className="text-sm font-semibold text-red-900">{MSG_BLOQUEO_TIMBRADO_ORIGEN}</p>
+          ) : null}
           {pasoReenviarBanner ? (
             <button
               type="button"
@@ -433,10 +472,9 @@ export function FacturaCorreccionFiscalNC({
           <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Notas de crédito</h4>
           <ul className="space-y-4 list-none p-0 m-0">
             {items.map((nc) => {
-              const pasoReal = nextNcSifenPasoReal(nc, { deAprobado, puedeCancelarDe });
+              const pasoReal = nextNcSifenPasoReal(nc, sifenPasoOpts);
               const pasoTestOv =
-                mostrarHerramientasTestOverride &&
-                nextNcSifenPasoTestOverride(nc, { deAprobado, puedeCancelarDe });
+                mostrarHerramientasTestOverride && nextNcSifenPasoTestOverride(nc, sifenPasoOpts);
               const errPlano = mensajeErrorPlano(nc.last_error);
               const jsonSet =
                 nc.sifen_respuestas_set != null ? JSON.stringify(nc.sifen_respuestas_set, null, 2) : null;

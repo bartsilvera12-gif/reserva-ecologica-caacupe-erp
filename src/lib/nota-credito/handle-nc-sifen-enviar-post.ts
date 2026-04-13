@@ -10,6 +10,8 @@ import { downloadSifenCertificadoObject } from "@/lib/sifen/sifen-certificados-s
 import type { AmbienteSifen } from "@/lib/sifen/types";
 import { isExplicitSifenTestOverrideEnabled } from "@/lib/env/allow-test-mode";
 import { assertNcSifenSinVentanaCancelacionDe } from "./assert-nc-sifen-cancelacion";
+import { obtenerSifenPrevueloFacturaParaNcs, validarNcFirmadoListoParaEnvioSet } from "./pre-vuelo-nc-sifen";
+import { MSG_USUARIO_BLOQUEO_NC_TIMBRADO } from "@/lib/sifen/gtimb-nc-coherencia";
 
 function parseAmbiente(raw: string): AmbienteSifen | null {
   if (raw === "test" || raw === "produccion") return raw;
@@ -73,6 +75,23 @@ export async function handleNcSifenEnviarPost(
     return NextResponse.json(errorResponse(gate.message), { status: gate.status });
   }
 
+  const prev = await obtenerSifenPrevueloFacturaParaNcs(supabase, auth.empresa_id, facturaId);
+  if (!prev.ok) {
+    await supabase.from("nota_credito_evento").insert({
+      empresa_id: auth.empresa_id,
+      nota_credito_id: nid,
+      actor_user_id: auth.user.id,
+      tipo_evento: "validacion",
+      detalle_json: {
+        subtipo: "prevuelo_factura_origen_envio",
+        resultado: "error",
+        mensaje_tecnico: prev.mensaje,
+        diagnostico: prev.diagnostico,
+      },
+    });
+    return NextResponse.json(errorResponse(MSG_USUARIO_BLOQUEO_NC_TIMBRADO), { status: 400 });
+  }
+
   const { data: neRow, error: errNe } = await supabase
     .from("nota_credito_electronica")
     .select(
@@ -130,7 +149,7 @@ export async function handleNcSifenEnviarPost(
   /** Siempre contra URLs de SET TEST cuando se usa ruta *-test. */
   const ambienteSoap: AmbienteSifen = options.soloAmbienteTest ? "test" : ambiente;
 
-  if (!cfg.activo) {
+  if (cfg.activo === false) {
     return NextResponse.json(errorResponse("La configuración SIFEN está inactiva."), { status: 400 });
   }
 
@@ -159,6 +178,30 @@ export async function handleNcSifenEnviarPost(
     });
   }
 
+  const xmlUtf8 = xmlDl.data.toString("utf8");
+  const gateSend = await validarNcFirmadoListoParaEnvioSet({
+    supabase,
+    empresaId: auth.empresa_id,
+    ncId: nid,
+    xmlFirmadoUtf8: xmlUtf8,
+    ambienteDeXml: ambienteSoap,
+  });
+  if (!gateSend.ok) {
+    await supabase.from("nota_credito_evento").insert({
+      empresa_id: auth.empresa_id,
+      nota_credito_id: nid,
+      actor_user_id: auth.user.id,
+      tipo_evento: "validacion",
+      detalle_json: {
+        subtipo: "timbrado_previo_envio_set",
+        resultado: "error",
+        error: gateSend.message,
+        xml_firmado_path: signedPath,
+      },
+    });
+    return NextResponse.json(errorResponse(gateSend.message), { status: 400 });
+  }
+
   const p12Dl = await downloadSifenCertificadoObject(supabase, certPath);
   if (!p12Dl.ok) {
     return NextResponse.json(errorResponse(`No se pudo descargar el .p12: ${p12Dl.message}`), { status: 500 });
@@ -167,7 +210,7 @@ export async function handleNcSifenEnviarPost(
   let resp: RecibeLoteRespuestaParsed;
   try {
     resp = await enviarLoteSifen({
-      xmlFirmado: xmlDl.data.toString("utf8"),
+      xmlFirmado: xmlUtf8,
       empresaConfig: {
         ambiente: ambienteSoap,
         certificadoP12: p12Dl.data,
@@ -222,7 +265,7 @@ export async function handleNcSifenEnviarPost(
     let detalleRecibeSync = "";
     try {
       const sync = await recibirDeSifenSync({
-        xmlFirmadoRde: xmlDl.data.toString("utf8"),
+        xmlFirmadoRde: xmlUtf8,
         empresaConfig: {
           ambiente: ambienteSoap,
           certificadoP12: p12Dl.data,

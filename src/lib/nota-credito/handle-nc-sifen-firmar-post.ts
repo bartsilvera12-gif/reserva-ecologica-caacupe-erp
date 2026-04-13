@@ -19,6 +19,8 @@ import { parseAmbiente } from "@/lib/sifen/config-validation";
 import type { AmbienteSifen } from "@/lib/sifen/types";
 import { isExplicitSifenTestOverrideEnabled } from "@/lib/env/allow-test-mode";
 import { assertNcSifenSinVentanaCancelacionDe } from "./assert-nc-sifen-cancelacion";
+import { obtenerSifenPrevueloFacturaParaNcs } from "./pre-vuelo-nc-sifen";
+import { MSG_USUARIO_BLOQUEO_NC_TIMBRADO } from "@/lib/sifen/gtimb-nc-coherencia";
 
 const ESTADOS_BLOQUEADOS_FIRMAR = new Set<string>(["aprobado", "rechazado", "cancelado", "enviado", "en_proceso"]);
 
@@ -55,6 +57,23 @@ export async function handleNcSifenFirmarPost(opts: {
   const gate = await assertNcSifenSinVentanaCancelacionDe(supabase, auth.empresa_id, facturaId);
   if (!gate.ok) {
     return NextResponse.json(errorResponse(gate.message), { status: gate.status });
+  }
+
+  const prev = await obtenerSifenPrevueloFacturaParaNcs(supabase, auth.empresa_id, facturaId);
+  if (!prev.ok) {
+    await supabase.from("nota_credito_evento").insert({
+      empresa_id: auth.empresa_id,
+      nota_credito_id: nid,
+      actor_user_id: auth.user.id,
+      tipo_evento: "validacion",
+      detalle_json: {
+        subtipo: "prevuelo_factura_origen_firma",
+        resultado: "error",
+        mensaje_tecnico: prev.mensaje,
+        diagnostico: prev.diagnostico,
+      },
+    });
+    return NextResponse.json(errorResponse(MSG_USUARIO_BLOQUEO_NC_TIMBRADO), { status: 400 });
   }
 
   const { data: neRow, error: errNe } = await supabase

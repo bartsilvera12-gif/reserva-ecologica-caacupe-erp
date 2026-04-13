@@ -14,6 +14,13 @@ import {
   uploadSifenXml,
 } from "@/lib/sifen/sifen-storage";
 import { assertNcSifenSinVentanaCancelacionDe } from "./assert-nc-sifen-cancelacion";
+import { extractOrigenFiscalDesdeRdeXml } from "@/lib/sifen/parse-kude-from-signed-xml";
+import {
+  assertGtimbradoNcCoincideConPayloadOrThrow,
+  assertItideNotaCredito,
+  MSG_USUARIO_BLOQUEO_NC_TIMBRADO,
+} from "@/lib/sifen/gtimb-nc-coherencia";
+import { obtenerSifenPrevueloFacturaParaNcs } from "./pre-vuelo-nc-sifen";
 
 /**
  * Igual criterio que FE: `error_envio` permite regenerar y reintentar envío.
@@ -60,6 +67,23 @@ export async function handleNcSifenXmlPost(opts: {
   const gate = await assertNcSifenSinVentanaCancelacionDe(supabase, auth.empresa_id, facturaId);
   if (!gate.ok) {
     return NextResponse.json(errorResponse(gate.message), { status: gate.status });
+  }
+
+  const prev = await obtenerSifenPrevueloFacturaParaNcs(supabase, auth.empresa_id, facturaId);
+  if (!prev.ok) {
+    await supabase.from("nota_credito_evento").insert({
+      empresa_id: auth.empresa_id,
+      nota_credito_id: nid,
+      actor_user_id: auth.user.id,
+      tipo_evento: "validacion",
+      detalle_json: {
+        subtipo: "prevuelo_factura_origen_xml",
+        resultado: "error",
+        mensaje_tecnico: prev.mensaje,
+        diagnostico: prev.diagnostico,
+      },
+    });
+    return NextResponse.json(errorResponse(MSG_USUARIO_BLOQUEO_NC_TIMBRADO), { status: 400 });
   }
 
   const { data: neRow, error: errNe } = await supabase
@@ -117,6 +141,30 @@ export async function handleNcSifenXmlPost(opts: {
     return NextResponse.json(errorResponse(msg), { status: 400 });
   }
 
+  try {
+    const parsedNc = extractOrigenFiscalDesdeRdeXml(xmlString);
+    assertItideNotaCredito(parsedNc);
+    assertGtimbradoNcCoincideConPayloadOrThrow(parsedNc, loaded.payload.emisor);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Error al validar gTimb del XML generado";
+    await supabase.from("nota_credito_evento").insert({
+      empresa_id: auth.empresa_id,
+      nota_credito_id: nid,
+      actor_user_id: auth.user.id,
+      tipo_evento: "validacion",
+      detalle_json: {
+        subtipo: "timbrado_xml_generado_vs_payload",
+        resultado: "error",
+        error: msg,
+        timbrado_payload: loaded.payload.emisor.timbrado_numero,
+        establecimiento_payload: loaded.payload.emisor.establecimiento,
+        punto_payload: loaded.payload.emisor.punto_expedicion,
+        ruc_payload: loaded.payload.emisor.ruc,
+      },
+    });
+    return NextResponse.json(errorResponse(msg), { status: 400 });
+  }
+
   const cdcMatch = /\bId="(\d{44})"/.exec(xmlString);
   const cdc = cdcMatch?.[1] ?? null;
   const objectPath = buildSifenNcXmlObjectPath(auth.empresa_id, nid);
@@ -168,6 +216,14 @@ export async function handleNcSifenXmlPost(opts: {
       cdc,
       factura_id: facturaId,
       nota_credito_electronica_id: feSnap.id,
+      verificacion_timbrado: {
+        subtipo: "xml_generado_vs_payload",
+        resultado: "ok",
+        timbrado_payload: loaded.payload.emisor.timbrado_numero,
+        establecimiento_payload: loaded.payload.emisor.establecimiento,
+        punto_payload: loaded.payload.emisor.punto_expedicion,
+        ruc_payload: loaded.payload.emisor.ruc,
+      },
     },
   });
 

@@ -6,6 +6,7 @@ import type { AppSupabaseClient } from "@/lib/supabase/schema";
 import { downloadSifenObject } from "./sifen-storage";
 import { extractOrigenFiscalDesdeRdeXml, type OrigenFiscalDesdeRdeXml } from "./parse-kude-from-signed-xml";
 import {
+  fechaEmisionCdc,
   normalizarCodigoTres,
   normalizarNumeroDocumentoSifen,
   normalizarNumeroTimbrado,
@@ -146,6 +147,32 @@ export async function validarXmlFirmadoFacturaOrigenParaNc(
       ok: false,
       status: 400,
       message: `${MSG_CONFIG_TIMBRADO_INVALIDA}: el documento origen no es factura electrónica (iTiDE distinto de 1).`,
+    };
+  }
+
+  try {
+    const raw = orig.fecha_emision_de.trim();
+    if (!raw) {
+      return {
+        ok: false,
+        status: 400,
+        message: `${MSG_XML_INCONSISTENTE_CDC}: falta dFeEmiDE en el XML.`,
+      };
+    }
+    const ymd = /^(\d{4}-\d{2}-\d{2})/.exec(raw)?.[1] ?? raw.slice(0, 10);
+    const fXml = fechaEmisionCdc(ymd);
+    if (fXml !== trCdc.fechaEmision8) {
+      return {
+        ok: false,
+        status: 400,
+        message: `${MSG_XML_INCONSISTENTE_CDC}: la fecha de emisión (dFeEmiDE) no coincide con la fecha codificada en el CDC (XML ${fXml} vs CDC ${trCdc.fechaEmision8}).`,
+      };
+    }
+  } catch {
+    return {
+      ok: false,
+      status: 400,
+      message: `${MSG_XML_INCONSISTENTE_CDC}: dFeEmiDE inválida o ilegible.`,
     };
   }
 

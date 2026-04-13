@@ -5,6 +5,7 @@ import { API_ERRORS } from "@/lib/api/errors";
 import { createNotaCreditoBorrador } from "@/lib/nota-credito/create-nota-credito";
 import { evaluateNotaCreditoCreationGate } from "@/lib/nota-credito/evaluate-creation-gate";
 import type { NotaCreditoCreateBody, NotaCreditoListItemDTO } from "@/lib/nota-credito/types";
+import { obtenerSifenPrevueloFacturaParaNcs } from "@/lib/nota-credito/pre-vuelo-nc-sifen";
 
 function compactSetResponses(ne: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
   if (!ne) return null;
@@ -73,6 +74,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     const gate = await evaluateNotaCreditoCreationGate(supabase, auth.empresa_id, fid);
+    const sifen_prevuelo_factura = await obtenerSifenPrevueloFacturaParaNcs(supabase, auth.empresa_id, fid);
 
     const { data: rows, error: errL } = await supabase
       .from("nota_credito")
@@ -94,6 +96,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         items,
         puede_crear: gate.puede_crear,
         motivo_bloqueo_creacion: gate.motivo_bloqueo,
+        sifen_prevuelo_factura,
       })
     );
   } catch (e) {

@@ -173,6 +173,8 @@ export type OrigenFiscalDesdeRdeXml = {
     dRucEm: string;
     dDVEmi: string;
   };
+  /** `gDatGralOpe.dFeEmiDE` (ISO / SET) — coherencia con fecha en CDC. */
+  fecha_emision_de: string;
 };
 
 /**
@@ -194,6 +196,7 @@ export function extractOrigenFiscalDesdeRdeXml(xmlUtf8: string): OrigenFiscalDes
 
   const gDatGralOpe = firstNs(de, "gDatGralOpe");
   if (!gDatGralOpe) throw new Error("gDatGralOpe no encontrado");
+  const fecha_emision_de = textOf(firstNs(gDatGralOpe, "dFeEmiDE"));
 
   const gEmis = firstNs(gDatGralOpe, "gEmis");
   if (!gEmis) throw new Error("gEmis no encontrado");
@@ -221,6 +224,7 @@ export function extractOrigenFiscalDesdeRdeXml(xmlUtf8: string): OrigenFiscalDes
       dRucEm: textOf(firstNs(gEmis, "dRucEm")),
       dDVEmi: textOf(firstNs(gEmis, "dDVEmi")),
     },
+    fecha_emision_de,
   };
 }
 
