@@ -8,6 +8,7 @@ import type { ConfigGlobal } from "@/lib/config/types";
 import type { Usuario } from "@/lib/usuarios/types";
 import {
   esFacturaAnulada,
+  esFacturaCorregidaNc,
   getDashboardData,
   type ProspectoRaw,
   type ClienteRaw,
@@ -917,8 +918,8 @@ function composicionFacturacionPorModalidad(facturasPeriodo: FacturaRaw[]) {
   let contado = 0;
   let mensual = 0;
   for (const f of facturasPeriodo) {
-    const m = Number(f.monto);
-    if (!Number.isFinite(m)) continue;
+    const m = Number(f.saldo);
+    if (!Number.isFinite(m) || m <= 0) continue;
     const t = (f.tipo ?? "").trim().toLowerCase();
     if (t === "contado") contado += m;
     else mensual += m;
@@ -948,12 +949,18 @@ function DashFinanciero({
   // Bloque principal: métricas del período (misma ventana que el filtro superior: enRango + fechas calendario)
   const facturasValidas = facturas.filter((f) => !esFacturaAnulada(f.estado));
   const facturasPeriodo = facturasValidas.filter((f) => enRango(f.fecha, desde, hasta));
+  const sumSaldoPendiente = (arr: FacturaRaw[]) =>
+    arr.reduce((acc, x) => {
+      const v = Number(x.saldo);
+      return acc + (Number.isFinite(v) ? Math.max(0, v) : 0);
+    }, 0);
   const sumMonto = <T extends { monto?: unknown }>(arr: T[]) =>
     arr.reduce((acc, x) => {
       const v = Number(x.monto);
       return acc + (Number.isFinite(v) ? v : 0);
     }, 0);
-  const aCobrarPeriodo = sumMonto(facturasPeriodo);
+  /** Saldo aún pendiente de cobro en el período (NC aprobada deja saldo 0 → no suma). */
+  const aCobrarPeriodo = sumSaldoPendiente(facturasPeriodo);
 
   /** Suma de pagos registrados por factura (todas las fechas; para imputar contado sin filas en `pagos`). */
   const montoPagadoPorFacturaId = useMemo(() => {
@@ -995,6 +1002,7 @@ function DashFinanciero({
     for (const f of facturasPeriodo) {
       if ((f.tipo ?? "").toLowerCase() !== "contado") continue;
       if (esFacturaAnulada(f.estado)) continue;
+      if (esFacturaCorregidaNc(f.estado)) continue;
       const fid = String(f.id);
       const yaRegistrado = (montoPagadoPorFacturaId.get(fid) ?? 0) > 0;
       if (yaRegistrado) continue;

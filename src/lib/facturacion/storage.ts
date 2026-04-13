@@ -349,6 +349,7 @@ export async function savePago(datos: NuevoPagoData): Promise<Pago | null> {
 
   const estado = String(factura.estado ?? "Pendiente");
   if (estado === "Anulado") return null;
+  if (estado === "Corregida NC") return null;
   if (estado === "Pagado" && Number(factura.saldo) <= 0) return null;
 
   const saldoActual = Number(factura.saldo);

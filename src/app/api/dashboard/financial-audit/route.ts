@@ -4,7 +4,7 @@ import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema"
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { enRangoCalendario, rangoMesCalendarioLocal, toCalendarDateStr } from "@/lib/fechas/calendario";
-import { esFacturaAnulada } from "@/lib/dashboard/data";
+import { esFacturaAnulada, esFacturaCorregidaNc } from "@/lib/dashboard/data";
 
 type Periodo = "hoy" | "7d" | "30d" | "mes" | "anio";
 
@@ -101,7 +101,10 @@ export async function GET(request: NextRequest) {
     }
 
     const contadoEnPeriodo = facturasPeriodo.filter(
-      (r) => String(r.tipo ?? "").toLowerCase() === "contado" && !esFacturaAnulada(r.estado as string)
+      (r) =>
+        String(r.tipo ?? "").toLowerCase() === "contado" &&
+        !esFacturaAnulada(r.estado as string) &&
+        !esFacturaCorregidaNc(r.estado as string)
     );
     const imputadas = contadoEnPeriodo.filter((r) => (montoPorFactura.get(String(r.id)) ?? 0) === 0);
     const sumImputado = imputadas.reduce((s, r) => s + toNum(r.monto), 0);

@@ -115,6 +115,12 @@ export async function POST(request: NextRequest) {
     if (estadoFac === "Anulado") {
       return NextResponse.json(errorResponse("No se puede registrar pago sobre una factura anulada"), { status: 400 });
     }
+    if (estadoFac === "Corregida NC") {
+      return NextResponse.json(
+        errorResponse("La factura fue liquidada con nota de crédito aprobada (SET); no admite cobros adicionales."),
+        { status: 400 }
+      );
+    }
     if (estadoFac === "Pagado" && Number(factura.saldo) <= 0) {
       return NextResponse.json(errorResponse("La factura ya está pagada"), { status: 400 });
     }

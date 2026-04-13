@@ -52,14 +52,15 @@ function BadgeEstado({ estado }: { estado: Cliente["estado"] }) {
 
 function BadgeFactura({ estado }: { estado: string }) {
   const cfg: Record<string, string> = {
-    Pagado:    "bg-green-100 text-green-700",
-    Pendiente: "bg-amber-100 text-amber-700",
-    Vencido:   "bg-red-100 text-red-700",
-    Anulado:   "bg-gray-100 text-gray-500",
+    Pagado:        "bg-green-100 text-green-700",
+    Pendiente:     "bg-amber-100 text-amber-700",
+    Vencido:       "bg-red-100 text-red-700",
+    Anulado:       "bg-gray-100 text-gray-500",
+    "Corregida NC": "bg-teal-100 text-teal-800",
   };
   return (
     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cfg[estado] ?? "bg-gray-100 text-gray-500"}`}>
-      {estado}
+      {estado === "Corregida NC" ? "Corregida (NC SET)" : estado}
     </span>
   );
 }
@@ -750,9 +751,10 @@ export default function GestionClientesPage() {
 
   const totalMonto    = facturasOrdenadas.reduce((s, f) => s + f.monto, 0);
   const totalSaldo    = facturasOrdenadas.reduce((s, f) => s + f.saldo, 0);
-  const cntVencidas   = facturasOrdenadas.filter((f) => f._estadoEfectivo === "Vencido").length;
-  const cntPendientes = facturasOrdenadas.filter((f) => f._estadoEfectivo === "Pendiente").length;
-  const cntPagadas    = facturasOrdenadas.filter((f) => f._estadoEfectivo === "Pagado").length;
+  const cntVencidas     = facturasOrdenadas.filter((f) => f._estadoEfectivo === "Vencido").length;
+  const cntPendientes   = facturasOrdenadas.filter((f) => f._estadoEfectivo === "Pendiente").length;
+  const cntPagadas      = facturasOrdenadas.filter((f) => f._estadoEfectivo === "Pagado").length;
+  const cntCorregidaNc  = facturasOrdenadas.filter((f) => f.estado === "Corregida NC").length;
 
   const sifenPorFactura = useFacturaSifenEstados(facturasOrdenadas.map((f) => f.id));
 
@@ -1003,6 +1005,10 @@ export default function GestionClientesPage() {
                         <div className="rounded-lg border border-emerald-100 bg-white px-2 py-1.5">
                           <p className="text-[10px] text-emerald-600">Pagadas</p>
                           <p className="text-sm font-bold text-emerald-700">{cntPagadas}</p>
+                        </div>
+                        <div className="rounded-lg border border-teal-100 bg-white px-2 py-1.5">
+                          <p className="text-[10px] text-teal-700">NC (SET)</p>
+                          <p className="text-sm font-bold text-teal-800">{cntCorregidaNc}</p>
                         </div>
                       </div>
                     ) : null}

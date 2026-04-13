@@ -18,7 +18,8 @@ export interface Tipificacion {
   observacion:  string;
 }
 
-export type EstadoFactura = "Pagado" | "Pendiente" | "Vencido" | "Anulado";
+/** `Corregida NC`: saldo liquidado por nota de crédito aprobada por SET (no es cobro registrado en `pagos`). */
+export type EstadoFactura = "Pagado" | "Pendiente" | "Vencido" | "Anulado" | "Corregida NC";
 
 export interface Factura {
   id:                string;

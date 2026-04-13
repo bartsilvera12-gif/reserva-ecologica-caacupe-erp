@@ -126,6 +126,11 @@ export function esFacturaAnulada(estado: string | null | undefined): boolean {
   return String(estado ?? "").trim().toLowerCase() === "anulado";
 }
 
+/** Liquidada por nota de crédito SET (sin saldo cobrable vía módulo Pagos). */
+export function esFacturaCorregidaNc(estado: string | null | undefined): boolean {
+  return String(estado ?? "").trim() === "Corregida NC";
+}
+
 export interface DashboardData {
   prospectos: ProspectoRaw[];
   clientes: ClienteRaw[];

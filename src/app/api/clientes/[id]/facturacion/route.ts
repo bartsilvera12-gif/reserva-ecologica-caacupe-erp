@@ -96,7 +96,9 @@ export async function GET(
       const estadoBase = factura ? "emitida" : "proyectada";
       let badgeEstado = estadoBase;
       if (factura) {
-        if (factura.estado === "Pagado" || factura.saldo === 0) badgeEstado = "emitida";
+        if (factura.estado === "Pagado" || factura.estado === "Corregida NC" || factura.saldo === 0) {
+          badgeEstado = "emitida";
+        }
         else if (factura.estado === "Vencido") badgeEstado = "vencida";
         else badgeEstado = "pendiente";
       }

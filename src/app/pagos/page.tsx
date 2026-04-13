@@ -108,7 +108,7 @@ export default function PagosPage() {
   const pendientesBase = useMemo(
     () =>
       facturas.filter((f) => {
-        if (f.saldo <= 0 || f.estado === "Anulado") return false;
+        if (f.saldo <= 0 || f.estado === "Anulado" || f.estado === "Corregida NC") return false;
         const cli = clientes.find((c) => c.id === f.cliente_id);
         if (cli?.estado === "inactivo") return false;
         return true;

@@ -282,6 +282,13 @@ export async function handleNcSifenConsultaLotePost(
       return NextResponse.json(errorResponse(`RPC aprobación NC: ${rpcErr.message}`), { status: 409 });
     }
 
+    const { data: facPost } = await supabase
+      .from("facturas")
+      .select("estado, saldo")
+      .eq("id", String(ncRow.factura_id))
+      .eq("empresa_id", auth.empresa_id)
+      .maybeSingle();
+
     const { error: evErr } = await insertEventos([
       {
         tipo: "respuesta_set",
@@ -299,8 +306,11 @@ export async function handleNcSifenConsultaLotePost(
         tipo: "impacto_saldo_aplicado",
         detalle: {
           factura_id: String(ncRow.factura_id),
+          nota_credito_id: nid,
           monto_nc: Number(ncRow.monto),
           consultadoEn: ultimaJson.consultadoEn,
+          factura_estado: facPost?.estado == null ? null : String(facPost.estado),
+          factura_saldo: facPost?.saldo == null ? null : Number(facPost.saldo),
         },
       },
     ]);
