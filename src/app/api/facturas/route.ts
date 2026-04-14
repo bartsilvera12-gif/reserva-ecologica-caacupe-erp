@@ -5,7 +5,7 @@ import { API_ERRORS } from "@/lib/api/errors";
 import { emitEvent, EVENT_TYPES } from "@/lib/integrations/events";
 import { fechaMasDiasCalendario, fechaVencimientoSuscripcion, toCalendarDateStr } from "@/lib/fechas/calendario";
 import { montosFacturaItemParaInsert } from "@/lib/facturacion/factura-item-montos";
-import { parseFacturaPostTipo } from "@/lib/facturacion/factura-post-tipo";
+import { descripcionLineaFacturaPorDefecto, parseFacturaPostTipo } from "@/lib/facturacion/factura-post-tipo";
 import { obtenerSiguienteNumeroFacturaEmpresa } from "@/lib/facturacion/factura-suscripcion-servidor";
 
 
@@ -114,31 +114,38 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
 
-    if (error) {
-      return NextResponse.json(errorResponse(error.message), { status: 400 });
+    if (error || !data?.id) {
+      return NextResponse.json(errorResponse(error?.message ?? "No se pudo crear la factura"), { status: 400 });
     }
 
-    if (descripcion_linea && data?.id) {
-      const mon = insert.moneda;
-      const lineaUi = montosFacturaItemParaInsert({
-        totalLinea: Number(monto),
-        moneda: mon,
-        cantidad: 1,
-        precioUnitario: Number(monto),
-      });
-      const { error: errItem } = await supabase.from("factura_items").insert({
-        factura_id: data.id,
-        empresa_id: auth.empresa_id,
-        descripcion: descripcion_linea,
-        cantidad: 1,
-        precio_unitario: lineaUi.precio_unitario,
-        subtotal: lineaUi.subtotal,
-        iva: lineaUi.iva,
-        total: lineaUi.total,
-      });
-      if (errItem) {
-        console.error("[api/facturas POST] factura_items:", errItem.message);
-      }
+    const descripcionItem =
+      descripcion_linea || descripcionLineaFacturaPorDefecto(tipoFac);
+    const mon = insert.moneda;
+    const lineaUi = montosFacturaItemParaInsert({
+      totalLinea: Number(monto),
+      moneda: mon,
+      cantidad: 1,
+      precioUnitario: Number(monto),
+    });
+    const { error: errItem } = await supabase.from("factura_items").insert({
+      factura_id: data.id,
+      empresa_id: auth.empresa_id,
+      descripcion: descripcionItem,
+      cantidad: 1,
+      precio_unitario: lineaUi.precio_unitario,
+      subtotal: lineaUi.subtotal,
+      iva: lineaUi.iva,
+      total: lineaUi.total,
+    });
+    if (errItem) {
+      console.error("[api/facturas POST] factura_items:", errItem.message);
+      await supabase.from("facturas").delete().eq("id", data.id).eq("empresa_id", auth.empresa_id);
+      return NextResponse.json(
+        errorResponse(
+          `No se pudo registrar el detalle de la factura: ${errItem.message}. La operación fue cancelada.`
+        ),
+        { status: 400 }
+      );
     }
 
     console.log("[API] About to emit event");

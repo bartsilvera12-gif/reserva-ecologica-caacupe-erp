@@ -144,6 +144,13 @@ export async function POST(
 
     if (errItem) {
       console.error("[facturacion] factura_items:", errItem.message);
+      await supabase.from("facturas").delete().eq("id", factura.id).eq("empresa_id", auth.empresa_id);
+      return NextResponse.json(
+        errorResponse(
+          `No se pudo registrar el detalle de la factura: ${errItem.message}. La operación fue cancelada.`
+        ),
+        { status: 400 }
+      );
     }
 
     await emitEvent(EVENT_TYPES.factura_creada, {

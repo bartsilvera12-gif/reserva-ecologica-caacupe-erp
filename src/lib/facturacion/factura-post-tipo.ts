@@ -6,6 +6,13 @@ export type FacturaPostTipo = (typeof FACTURA_POST_TIPOS)[number];
  * Valida `tipo` del body: solo contado | credito | suscripcion (minúsculas).
  * No hay fallback silencioso a credito.
  */
+/** Descripción de línea por defecto cuando el cliente no envía `descripcion_linea` (SIFEN exige al menos un ítem). */
+export function descripcionLineaFacturaPorDefecto(tipo: FacturaPostTipo): string {
+  if (tipo === "contado") return "Venta al contado";
+  if (tipo === "suscripcion") return "Suscripción";
+  return "Venta a crédito";
+}
+
 export function parseFacturaPostTipo(tipo: unknown): { ok: true; tipo: FacturaPostTipo } | { ok: false; error: string } {
   if (tipo === null || tipo === undefined) {
     return {

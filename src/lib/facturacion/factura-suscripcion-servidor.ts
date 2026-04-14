@@ -161,6 +161,8 @@ export async function crearFacturaInicialSuscripcionSiCorresponde(opts: {
 
   if (errItem) {
     console.error("[crearFacturaInicialSuscripcionSiCorresponde] factura_items:", errItem.message);
+    await supabase.from("facturas").delete().eq("id", factura.id).eq("empresa_id", empresaId);
+    return;
   }
 
   await emitEvent(EVENT_TYPES.factura_creada, {

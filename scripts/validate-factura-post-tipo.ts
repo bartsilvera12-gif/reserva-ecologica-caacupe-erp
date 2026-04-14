@@ -2,7 +2,10 @@
  * Validación mínima anti-regresión para parseFacturaPostTipo (POST /api/facturas).
  * Ejecutar: npx tsx scripts/validate-factura-post-tipo.ts
  */
-import { parseFacturaPostTipo } from "../src/lib/facturacion/factura-post-tipo";
+import {
+  descripcionLineaFacturaPorDefecto,
+  parseFacturaPostTipo,
+} from "../src/lib/facturacion/factura-post-tipo";
 
 let failed = 0;
 
@@ -25,6 +28,15 @@ expect(false, "   ", false);
 expect(false, "credito_foo", false);
 expect(false, 123, false);
 expect(false, "venta", false);
+
+if (
+  descripcionLineaFacturaPorDefecto("contado") !== "Venta al contado" ||
+  descripcionLineaFacturaPorDefecto("suscripcion") !== "Suscripción" ||
+  descripcionLineaFacturaPorDefecto("credito") !== "Venta a crédito"
+) {
+  console.error("FAIL descripcionLineaFacturaPorDefecto");
+  failed++;
+}
 
 if (failed > 0) {
   console.error(`\nvalidate-factura-post-tipo: ${failed} fallo(s)`);
