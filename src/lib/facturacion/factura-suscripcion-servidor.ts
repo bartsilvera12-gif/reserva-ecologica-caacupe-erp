@@ -10,21 +10,55 @@ export async function obtenerSiguienteNumeroFacturaEmpresa(
   supabase: AppSupabaseClient,
   empresaId: string
 ): Promise<string> {
-  const prefijo = process.env.FACTURA_PREFIJO ?? "FAC-";
-  const { data } = await supabase
+  const prefijoDefault = process.env.FACTURA_PREFIJO ?? "FAC-";
+
+  // Camino principal: función SQL transaccional (contador por empresa/schema).
+  const { data: rpc, error: rpcErr } = await supabase.rpc("next_numero_factura_empresa", {
+    p_empresa_id: empresaId,
+    p_prefijo_default: prefijoDefault,
+  });
+  if (!rpcErr && typeof rpc === "string" && rpc.trim() !== "") {
+    return rpc.trim();
+  }
+
+  // Fallback de compatibilidad si la migración aún no fue aplicada.
+  const { data: ultima } = await supabase
     .from("facturas")
     .select("numero_factura")
     .eq("empresa_id", empresaId)
-    .order("numero_factura", { ascending: false })
+    .order("created_at", { ascending: false })
+    .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  let next = 1;
-  if (data?.numero_factura) {
-    const match = String(data.numero_factura).match(/(\d+)$/);
-    if (match) next = parseInt(match[1], 10) + 1;
+  let max = 0;
+  let prefijo = prefijoDefault;
+  const nUlt = String((ultima as { numero_factura?: string } | null)?.numero_factura ?? "").trim();
+  const pUlt = nUlt.replace(/(\d+)$/, "");
+  if (pUlt.trim()) prefijo = pUlt;
+
+  // Escaneo paginado para evitar tope fijo (solo se usa si falta la migración).
+  let from = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data: page, error: pageErr } = await supabase
+      .from("facturas")
+      .select("numero_factura")
+      .eq("empresa_id", empresaId)
+      .range(from, from + pageSize - 1);
+    if (pageErr || !page?.length) break;
+    for (const r of page) {
+      const n = String((r as { numero_factura?: string }).numero_factura ?? "").trim();
+      const m = n.match(/(\d+)$/);
+      if (!m) continue;
+      const num = Number(m[1]);
+      if (Number.isFinite(num) && num > max) max = num;
+    }
+    if (page.length < pageSize) break;
+    from += pageSize;
   }
-  return `${prefijo}${String(next).padStart(6, "0")}`;
+
+  return `${prefijo}${String(max + 1).padStart(6, "0")}`;
 }
 
 export type SuscripcionFacturaRow = {

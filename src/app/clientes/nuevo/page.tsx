@@ -4,15 +4,11 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiCreateCliente, apiCreateFactura, apiCreateSuscripcion } from "@/lib/api/client";
 import { getProspecto, updateProspecto } from "@/lib/crm/storage";
-import { getConfig, saveConfig } from "@/lib/config/storage";
-import { getCurrentUser } from "@/lib/auth";
-import { getBrowserSupabaseForEmpresaData } from "@/lib/supabase/browser-data-client";
 import MontoInput from "@/components/ui/MontoInput";
 import { getPlanes } from "@/lib/planes/storage";
 import type { TipoCliente, OrigenCliente, TipoServicioCliente } from "@/lib/clientes/types";
 import { TIPOS_SERVICIO_CLIENTE } from "@/lib/clientes/types";
 import type { Plan } from "@/lib/planes/types";
-import { montosFacturaItemParaInsert } from "@/lib/facturacion/factura-item-montos";
 
 // ── Estilos ────────────────────────────────────────────────────────────────────
 
@@ -201,41 +197,16 @@ function NuevoClienteForm() {
     if (form.condicion_pago === "CONTADO" && formContado.emitir_factura) {
       const monto = parseFloat(formContado.monto) || 0;
       if (monto > 0) {
-        const config = getConfig();
         const hoy = new Date().toISOString().slice(0, 10);
-        const numeroFactura = `${config.prefijo_factura}${String(config.numeracion_inicial).padStart(6, "0")}`;
-        const factura = await apiCreateFactura({
+        await apiCreateFactura({
           cliente_id: clienteId,
-          numero_factura: numeroFactura,
           fecha: hoy,
           fecha_vencimiento: hoy,
           monto,
           tipo: "contado",
           moneda: form.moneda_preferida,
+          descripcion_linea: formContado.descripcion.trim() || "Venta al contado",
         });
-        if (factura) {
-          const usuario = await getCurrentUser();
-          if (usuario?.empresa_id) {
-            const lineaNuevo = montosFacturaItemParaInsert({
-              totalLinea: monto,
-              moneda: form.moneda_preferida,
-              cantidad: 1,
-              precioUnitario: monto,
-            });
-            const sb = await getBrowserSupabaseForEmpresaData();
-            await sb.from("factura_items").insert({
-              factura_id: factura.id,
-              empresa_id: usuario.empresa_id,
-              descripcion: formContado.descripcion.trim() || "Venta al contado",
-              cantidad: 1,
-              precio_unitario: lineaNuevo.precio_unitario,
-              subtotal: lineaNuevo.subtotal,
-              iva: lineaNuevo.iva,
-              total: lineaNuevo.total,
-            });
-          }
-          saveConfig({ ...config, numeracion_inicial: config.numeracion_inicial + 1 });
-        }
       }
     }
 

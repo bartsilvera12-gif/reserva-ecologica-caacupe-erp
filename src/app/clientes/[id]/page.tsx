@@ -22,7 +22,6 @@ import { getFacturas, getSuscripciones } from "@/lib/facturacion/storage";
 import { getMarketingTasks, createMarketingTask, updateTaskStatus } from "@/lib/marketing/storage";
 import { getUsuariosActivosEmpresa } from "@/lib/usuarios/empresa";
 import { apiCreateFactura, apiCreatePago, apiCreateSuscripcion } from "@/lib/api/client";
-import { getConfig, saveConfig } from "@/lib/config/storage";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { SifenEstadoBadge } from "@/components/sifen/SifenEstadoBadge";
 import { useFacturaSifenEstados } from "@/hooks/useFacturaSifenEstados";
@@ -434,12 +433,9 @@ export default function ClienteDetailPage() {
     if (form.condicion_pago === "CONTADO" && formContadoEdit.emitir_factura) {
       const monto = parseFloat(formContadoEdit.monto) || 0;
       if (monto > 0) {
-        const config = getConfig();
         const hoy = new Date().toISOString().slice(0, 10);
-        const numeroFactura = `${config.prefijo_factura}${String(config.numeracion_inicial).padStart(6, "0")}`;
         const factura = await apiCreateFactura({
           cliente_id: id,
-          numero_factura: numeroFactura,
           fecha: hoy,
           fecha_vencimiento: hoy,
           monto,
@@ -447,10 +443,7 @@ export default function ClienteDetailPage() {
           moneda: form.moneda_preferida,
           descripcion_linea: formContadoEdit.descripcion.trim() || "Venta al contado",
         });
-        if (factura) {
-          saveConfig({ ...config, numeracion_inicial: config.numeracion_inicial + 1 });
-        }
-        getFacturas(id).then(setFacturas);
+        if (factura) getFacturas(id).then(setFacturas);
       }
     }
 
@@ -630,12 +623,9 @@ export default function ClienteDetailPage() {
     if (monto <= 0 || !cliente) return;
     setGuardandoFacturaContado(true);
     try {
-      const config = getConfig();
       const hoy = new Date().toISOString().slice(0, 10);
-      const numeroFactura = `${config.prefijo_factura}${String(config.numeracion_inicial).padStart(6, "0")}`;
       const factura = await apiCreateFactura({
         cliente_id: id,
-        numero_factura: numeroFactura,
         fecha: hoy,
         fecha_vencimiento: hoy,
         monto,
@@ -644,7 +634,6 @@ export default function ClienteDetailPage() {
         descripcion_linea: formFacturaContado.descripcion.trim() || "Venta al contado",
       });
       if (factura) {
-        saveConfig({ ...config, numeracion_inicial: config.numeracion_inicial + 1 });
         setModalFacturaContado(false);
         setFormFacturaContado({ monto: "", descripcion: "Venta al contado" });
         setActiveTab("estado_cuenta");

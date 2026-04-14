@@ -142,7 +142,8 @@ export async function apiDeleteCliente(
 
 export async function apiCreateFactura(data: {
   cliente_id: string;
-  numero_factura: string;
+  /** Deprecated: el servidor reserva correlativo real por empresa/schema. */
+  numero_factura?: string;
   fecha: string;
   fecha_vencimiento: string;
   monto: number;

@@ -6,6 +6,7 @@ import { emitEvent, EVENT_TYPES } from "@/lib/integrations/events";
 import { fechaMasDiasCalendario, fechaVencimientoSuscripcion, toCalendarDateStr } from "@/lib/fechas/calendario";
 import { montosFacturaItemParaInsert } from "@/lib/facturacion/factura-item-montos";
 import { parseFacturaPostTipo } from "@/lib/facturacion/factura-post-tipo";
+import { obtenerSiguienteNumeroFacturaEmpresa } from "@/lib/facturacion/factura-suscripcion-servidor";
 
 
 export async function GET(request: NextRequest) {
@@ -52,7 +53,6 @@ export async function POST(request: NextRequest) {
 
     const body = (await request.json()) as Record<string, unknown>;
     const cliente_id = body.cliente_id;
-    const numero_factura = body.numero_factura;
     const fecha = body.fecha;
     const fecha_vencimiento = body.fecha_vencimiento;
     const monto = body.monto;
@@ -64,9 +64,6 @@ export async function POST(request: NextRequest) {
 
     if (!String(cliente_id ?? "").trim()) {
       return NextResponse.json(errorResponse("cliente_id es obligatorio"), { status: 400 });
-    }
-    if (!String(numero_factura ?? "").trim()) {
-      return NextResponse.json(errorResponse("numero_factura es obligatorio"), { status: 400 });
     }
     if (!fecha) {
       return NextResponse.json(errorResponse("fecha es obligatoria"), { status: 400 });
@@ -96,10 +93,12 @@ export async function POST(request: NextRequest) {
       const diasCred = Number(process.env.FACTURA_DIAS_CREDITO_DEFAULT ?? 30);
       fechaVenc = fechaMasDiasCalendario(fechaNorm, Number.isFinite(diasCred) ? diasCred : 30);
     }
+    const numeroFactura = await obtenerSiguienteNumeroFacturaEmpresa(supabase, auth.empresa_id);
+
     const insert = {
       empresa_id: auth.empresa_id,
       cliente_id: String(cliente_id).trim(),
-      numero_factura: String(numero_factura).trim(),
+      numero_factura: numeroFactura,
       fecha: fechaNorm,
       fecha_vencimiento: fechaVenc,
       monto: Number(monto),

@@ -1,11 +1,9 @@
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
-import { montosFacturaItemParaInsert } from "@/lib/facturacion/factura-item-montos";
 import { getBrowserSupabaseForEmpresaData } from "@/lib/supabase/browser-data-client";
 import { getCurrentUser } from "@/lib/auth";
-import { getConfig, saveConfig } from "@/lib/config/storage";
 import type { Suscripcion, FacturaItem, Pago } from "./types";
 import type { Factura } from "@/lib/gestion-clientes/types";
-import { getFacturas, saveFactura } from "@/lib/gestion-clientes/storage";
+import { getFacturas } from "@/lib/gestion-clientes/storage";
 import { fechaVencimientoSuscripcion, hoyYmdLocal } from "@/lib/fechas/calendario";
 
 // ─── Tipos de fila ───────────────────────────────────────────────────────────
@@ -183,49 +181,27 @@ async function generarFacturaDesdeSuscripcion(
   planNombre: string
 ): Promise<Factura | null> {
   const supabase = await getBrowserSupabaseForEmpresaData();
-  const usuario = await getCurrentUser();
-  if (!usuario?.empresa_id) return null;
-
-  const config = getConfig();
   const hoy = hoyYmdLocal();
   const diaVencCfg = Math.min(Math.max(1, suscripcion.dia_vencimiento), 31);
   const fechaVenc = fechaVencimientoSuscripcion(hoy, diaVencCfg);
 
   const total = Number(suscripcion.precio);
-  const numeroFactura = `${config.prefijo_factura}${String(config.numeracion_inicial).padStart(6, "0")}`;
-
-  const factura = await saveFactura({
-    cliente_id: suscripcion.cliente_id,
-    numero_factura: numeroFactura,
-    fecha: hoy,
-    fecha_vencimiento: fechaVenc,
-    monto: total,
-    saldo: total,
-    estado: "Pendiente",
-    tipo: "suscripcion",
-    moneda: suscripcion.moneda as "GS" | "USD",
+  const res = await fetchWithSupabaseSession("/api/facturas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      cliente_id: suscripcion.cliente_id,
+      fecha: hoy,
+      fecha_vencimiento: fechaVenc,
+      monto: total,
+      tipo: "suscripcion",
+      moneda: suscripcion.moneda as "GS" | "USD",
+      descripcion_linea: planNombre,
+    }),
   });
-
-  if (!factura) return null;
-
-  const lineaSusc = montosFacturaItemParaInsert({
-    totalLinea: total,
-    moneda: suscripcion.moneda,
-    cantidad: 1,
-    precioUnitario: total,
-  });
-  const { error: errItem } = await supabase.from("factura_items").insert({
-    factura_id: factura.id,
-    empresa_id: usuario.empresa_id,
-    descripcion: planNombre,
-    cantidad: 1,
-    precio_unitario: lineaSusc.precio_unitario,
-    subtotal: lineaSusc.subtotal,
-    iva: lineaSusc.iva,
-    total: lineaSusc.total,
-  });
-
-  if (errItem) console.error("[facturacion] factura_items:", errItem.message);
+  const json = (await res.json().catch(() => ({}))) as { success?: boolean; data?: Factura };
+  if (!res.ok || !json.success || !json.data) return null;
+  const factura = json.data;
 
   const { error: errUpd } = await supabase
     .from("facturas")
@@ -233,14 +209,7 @@ async function generarFacturaDesdeSuscripcion(
     .eq("id", factura.id);
 
   if (errUpd) console.error("[facturacion] facturas.suscripcion_id:", errUpd.message);
-
-  saveConfigNumeracion(config.numeracion_inicial + 1);
   return factura;
-}
-
-function saveConfigNumeracion(nuevo: number) {
-  const config = getConfig();
-  saveConfig({ ...config, numeracion_inicial: nuevo });
 }
 
 /** Crea factura inicial para cliente Contado (venta al contado). */
@@ -250,49 +219,23 @@ export async function crearFacturaContado(
   descripcion: string,
   moneda: "GS" | "USD" = "GS"
 ): Promise<Factura | null> {
-  const supabase = await getBrowserSupabaseForEmpresaData();
-  const usuario = await getCurrentUser();
-  if (!usuario?.empresa_id) return null;
-
-  const config = getConfig();
   const hoy = hoyYmdLocal();
-  const numeroFactura = `${config.prefijo_factura}${String(config.numeracion_inicial).padStart(6, "0")}`;
-
-  const factura = await saveFactura({
-    cliente_id: clienteId,
-    numero_factura: numeroFactura,
-    fecha: hoy,
-    fecha_vencimiento: hoy,
-    monto,
-    saldo: monto,
-    estado: "Pendiente",
-    tipo: "contado",
-    moneda,
+  const res = await fetchWithSupabaseSession("/api/facturas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      cliente_id: clienteId,
+      fecha: hoy,
+      fecha_vencimiento: hoy,
+      monto,
+      tipo: "contado",
+      moneda,
+      descripcion_linea: descripcion || "Venta al contado",
+    }),
   });
-
-  if (!factura) return null;
-
-  const lineaCont = montosFacturaItemParaInsert({
-    totalLinea: monto,
-    moneda,
-    cantidad: 1,
-    precioUnitario: monto,
-  });
-  const { error: errItem } = await supabase.from("factura_items").insert({
-    factura_id: factura.id,
-    empresa_id: usuario.empresa_id,
-    descripcion: descripcion || "Venta al contado",
-    cantidad: 1,
-    precio_unitario: lineaCont.precio_unitario,
-    subtotal: lineaCont.subtotal,
-    iva: lineaCont.iva,
-    total: lineaCont.total,
-  });
-
-  if (errItem) console.error("[facturacion] factura_items contado:", errItem.message);
-
-  saveConfigNumeracion(config.numeracion_inicial + 1);
-  return factura;
+  const json = (await res.json().catch(() => ({}))) as { success?: boolean; data?: Factura };
+  if (!res.ok || !json.success || !json.data) return null;
+  return json.data;
 }
 
 // ─── Facturas (re-export + get por cliente) ──────────────────────────────────
