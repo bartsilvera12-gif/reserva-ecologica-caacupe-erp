@@ -816,12 +816,18 @@ export async function getMyAgentOperationalPresence(): Promise<
       .eq("usuario_id", usuario_id);
     data = legacy.data as typeof data;
     error = legacy.error;
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.warn("[getMyAgentOperationalPresence] legado chat_agents:", error.message);
+      return { in_queues: false };
+    }
     const rowsLegacy = data ?? [];
     if (rowsLegacy.length === 0) return { in_queues: false };
     return { in_queues: true, status: "ready" };
   }
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.warn("[getMyAgentOperationalPresence] error no fatal:", error.message);
+    return { in_queues: false };
+  }
   const rows = (data ?? []) as { operational_status?: string | null }[];
   if (rows.length === 0) return { in_queues: false };
   const anyOffline = rows.some((r) => r.operational_status === "offline");
@@ -840,9 +846,13 @@ export async function setMyAgentOperationalPresence(status: ChatAgentOperational
     .eq("empresa_id", empresa_id)
     .eq("usuario_id", usuario_id);
   if (error && isMissingColumnError(error.message, "operational_status")) {
-    throw new Error(
-      "La base aún no tiene la columna operational_status en chat_agents. Aplicá la migración 20260430160000_chat_agents_operational_status.sql en el proyecto Supabase."
+    console.warn(
+      "[setMyAgentOperationalPresence] columna operational_status ausente en schema tenant; update omitido (UI sin error)."
     );
+    return;
   }
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.warn("[setMyAgentOperationalPresence] update no aplicado:", error.message);
+    return;
+  }
 }

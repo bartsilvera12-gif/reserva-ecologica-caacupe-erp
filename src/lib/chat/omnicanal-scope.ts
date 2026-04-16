@@ -1,4 +1,5 @@
 import type { AppSupabaseClient } from "@/lib/supabase/schema";
+import { isMissingColumnError } from "@/lib/chat/postgres-column-error";
 import {
   fetchAgentsForSupervisorUsuarioIds,
   fetchOmnicanalOperatorRole,
@@ -50,7 +51,8 @@ async function usuarioTieneFilaChatAgents(
         m.includes("could not find") ||
         m.includes("not found"));
     if (missingChatAgents) return false;
-    throw new Error(error.message);
+    console.warn("[usuarioTieneFilaChatAgents] error no fatal, se asume sin filas:", error.message);
+    return false;
   }
   return (count ?? 0) > 0;
 }
@@ -77,33 +79,38 @@ export async function getOmnicanalScope(
     return { role: null, queueIds: [], agentUsuarioIds: [] };
   }
 
-  const role = await fetchOmnicanalOperatorRole(supabase, emp, uid);
+  try {
+    const role = await fetchOmnicanalOperatorRole(supabase, emp, uid);
 
-  if (role === "admin") {
-    return { role: "admin", queueIds: [], agentUsuarioIds: [] };
-  }
+    if (role === "admin") {
+      return { role: "admin", queueIds: [], agentUsuarioIds: [] };
+    }
 
-  if (role === "supervisor") {
-    const [queueIds, agentUsuarioIds] = await Promise.all([
-      fetchQueueIdsForSupervisorUsuario(supabase, emp, uid),
-      fetchAgentsForSupervisorUsuarioIds(supabase, emp, uid),
-    ]);
-    return {
-      role: "supervisor",
-      queueIds,
-      agentUsuarioIds,
-    };
-  }
+    if (role === "supervisor") {
+      const [queueIds, agentUsuarioIds] = await Promise.all([
+        fetchQueueIdsForSupervisorUsuario(supabase, emp, uid),
+        fetchAgentsForSupervisorUsuarioIds(supabase, emp, uid),
+      ]);
+      return {
+        role: "supervisor",
+        queueIds,
+        agentUsuarioIds,
+      };
+    }
 
-  if (role === "agente") {
-    return { role: "agente", queueIds: [], agentUsuarioIds: [uid] };
-  }
+    if (role === "agente") {
+      return { role: "agente", queueIds: [], agentUsuarioIds: [uid] };
+    }
 
-  if (await usuarioTieneFilaChatAgents(supabase, emp, uid)) {
+    if (await usuarioTieneFilaChatAgents(supabase, emp, uid)) {
+      return { role: null, queueIds: [], agentUsuarioIds: [uid] };
+    }
+
+    return { role: null, queueIds: [], agentUsuarioIds: [] };
+  } catch (e) {
+    console.error("[getOmnicanalScope] error; alcance mínimo tipo agente para no bloquear inbox:", e);
     return { role: null, queueIds: [], agentUsuarioIds: [uid] };
   }
-
-  return { role: null, queueIds: [], agentUsuarioIds: [] };
 }
 
 /** Rol operativo admin omnicanal = sin restricción por listas de colas/agentes. */
@@ -139,13 +146,23 @@ export async function resolveChatAgentIdsForUsuarios(
 ): Promise<string[]> {
   const ids = [...new Set(usuarioIds.map((x) => normalizeId(x)).filter(Boolean))];
   if (ids.length === 0) return [];
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("chat_agents")
     .select("id")
     .eq("empresa_id", empresaId)
     .in("usuario_id", ids)
     .eq("is_active", true);
-  if (error) throw new Error(error.message);
+  if (error && isMissingColumnError(error.message, "is_active")) {
+    ({ data, error } = await supabase
+      .from("chat_agents")
+      .select("id")
+      .eq("empresa_id", empresaId)
+      .in("usuario_id", ids));
+  }
+  if (error) {
+    console.warn("[resolveChatAgentIdsForUsuarios] error no fatal:", error.message);
+    return [];
+  }
   return [...new Set((data ?? []).map((r) => String((r as { id?: string }).id ?? "").trim()).filter(Boolean))];
 }
 
@@ -157,13 +174,23 @@ export async function resolveQueueIdsForUsuarios(
 ): Promise<string[]> {
   const ids = [...new Set(usuarioIds.map((x) => normalizeId(x)).filter(Boolean))];
   if (ids.length === 0) return [];
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("chat_agents")
     .select("queue_id")
     .eq("empresa_id", empresaId)
     .in("usuario_id", ids)
     .eq("is_active", true);
-  if (error) throw new Error(error.message);
+  if (error && isMissingColumnError(error.message, "is_active")) {
+    ({ data, error } = await supabase
+      .from("chat_agents")
+      .select("queue_id")
+      .eq("empresa_id", empresaId)
+      .in("usuario_id", ids));
+  }
+  if (error) {
+    console.warn("[resolveQueueIdsForUsuarios] error no fatal:", error.message);
+    return [];
+  }
   return [...new Set((data ?? []).map((r) => String((r as { queue_id?: string }).queue_id ?? "").trim()).filter(Boolean))];
 }
 
@@ -198,6 +225,9 @@ export async function appendOmnicanalConversationScopeToQuery(
   if (queueIds.length > 0) {
     return q.in("queue_id", queueIds);
   }
+  if (agentFkIds.length === 0) {
+    return q.eq("id", NO_CONVERSATION_MATCH);
+  }
   return q.in("assigned_agent_id", agentFkIds);
 }
 
@@ -217,9 +247,17 @@ export async function filterConversationIdsByOmnicanalScope(
     return new Set(ids);
   }
 
-  let q = supabase.from("chat_conversations").select("id").eq("empresa_id", empresaId).in("id", ids);
-  q = await appendOmnicanalConversationScopeToQuery(supabase, empresaId, scope, q);
-  const { data, error } = await q;
-  if (error) throw new Error(error.message);
-  return new Set((data ?? []).map((r) => String((r as { id?: string }).id ?? "").trim()).filter(Boolean));
+  try {
+    let q = supabase.from("chat_conversations").select("id").eq("empresa_id", empresaId).in("id", ids);
+    q = await appendOmnicanalConversationScopeToQuery(supabase, empresaId, scope, q);
+    const { data, error } = await q;
+    if (error) {
+      console.warn("[filterConversationIdsByOmnicanalScope] error; fail-open lectura:", error.message);
+      return new Set(ids);
+    }
+    return new Set((data ?? []).map((r) => String((r as { id?: string }).id ?? "").trim()).filter(Boolean));
+  } catch (e) {
+    console.error("[filterConversationIdsByOmnicanalScope] excepción; fail-open:", e);
+    return new Set(ids);
+  }
 }

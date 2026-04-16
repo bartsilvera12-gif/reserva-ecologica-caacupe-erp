@@ -13,7 +13,10 @@ export default async function ConversacionesInboxPage() {
   }
 
   const [agentDisplayName, presence] = await Promise.all([
-    getCurrentUserDisplayNameServer(),
+    getCurrentUserDisplayNameServer().catch((e) => {
+      console.error("[dashboard/conversaciones] getCurrentUserDisplayNameServer", e);
+      return "Usuario";
+    }),
     getMyAgentOperationalPresence().catch((e) => {
       console.error("[dashboard/conversaciones] getMyAgentOperationalPresence", e);
       return null;

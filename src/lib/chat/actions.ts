@@ -68,6 +68,18 @@ export async function fetchChatConversations(
   vista: ConversacionesVista = "inbox",
   filters?: ChatInboxFilters
 ): Promise<InboxConversation[]> {
+  try {
+    return await fetchChatConversationsUnsafe(vista, filters);
+  } catch (e) {
+    console.error("[fetchChatConversations] fatal (inbox vacío):", e);
+    return [];
+  }
+}
+
+async function fetchChatConversationsUnsafe(
+  vista: ConversacionesVista = "inbox",
+  filters?: ChatInboxFilters
+): Promise<InboxConversation[]> {
   const { supabase, catalogSr, empresa_id, usuario_id } = await requireEmpresaTenantServiceRole();
 
   const { data: activeFlowRows, error: activeFlowsErr } = await supabase
@@ -125,6 +137,22 @@ export async function fetchChatConversations(
       human_taken_over,
       active_flow_session_id
     `;
+  /** Sin `priority` ni `assignment_wait_code` (tenants desalineados). */
+  const convSelectLegacyNoPriority = `
+      id,
+      status,
+      queue_id,
+      assigned_agent_id,
+      last_message_at,
+      last_message_preview,
+      unread_count,
+      contact_id,
+      channel_id,
+      flow_code,
+      flow_status,
+      human_taken_over,
+      active_flow_session_id
+    `;
 
   const buildFilteredConversationQuery = async (selectStr: string) => {
     let qb = supabase.from("chat_conversations").select(selectStr).eq("empresa_id", empresa_id);
@@ -154,19 +182,30 @@ export async function fetchChatConversations(
 
     const assignment = filters?.assignment ?? "all";
     if (assignment === "mine") {
-      const { data: myAgents, error: maErr } = await supabase
+      let myAgents: { id: string }[] | null = null;
+      let maErr = null as { message: string } | null;
+      let r = await supabase
         .from("chat_agents")
         .select("id")
         .eq("empresa_id", empresa_id)
         .eq("usuario_id", usuario_id)
         .eq("is_active", true);
+      if (r.error && isMissingColumnError(r.error.message, "is_active")) {
+        r = await supabase
+          .from("chat_agents")
+          .select("id")
+          .eq("empresa_id", empresa_id)
+          .eq("usuario_id", usuario_id);
+      }
+      myAgents = r.data as { id: string }[] | null;
+      maErr = r.error;
       if (maErr) {
         console.warn(
           "[fetchChatConversations] no se pudo cargar chat_agents para filtro «mios»; se listan todas:",
           maErr.message
         );
       } else {
-        const ids = (myAgents ?? []).map((r) => r.id as string);
+        const ids = (myAgents ?? []).map((row) => row.id as string);
         if (ids.length > 0) {
           qb = qb.in("assigned_agent_id", ids);
         } else {
@@ -211,7 +250,19 @@ export async function fetchChatConversations(
     }));
   }
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.warn("[fetchChatConversations] reintento select mínimo sin priority ni assignment_wait_code");
+    q = await buildFilteredConversationQuery(convSelectLegacyNoPriority);
+    ({ data: convs, error } = await q.order("last_message_at", {
+      ascending: false,
+      nullsFirst: false,
+    }));
+  }
+
+  if (error) {
+    console.warn("[fetchChatConversations] listado conversaciones no disponible:", error.message);
+    return [];
+  }
   let list = (convs ?? []) as Record<string, unknown>[];
   const totalAfterQuery = list.length;
 

@@ -51,7 +51,8 @@ export async function fetchOmnicanalOperatorRole(
 
   if (error) {
     if (isMissingSupervisionTable(error)) return null;
-    throw new Error(error.message);
+    console.warn("[fetchOmnicanalOperatorRole] error no fatal, se asume sin rol:", error.message);
+    return null;
   }
   return asRole((data as { role?: string } | null)?.role);
 }
@@ -72,7 +73,8 @@ export async function fetchQueueSupervisorUsuarioIds(
 
   if (error) {
     if (isMissingSupervisionTable(error)) return [];
-    throw new Error(error.message);
+    console.warn("[fetchQueueSupervisorUsuarioIds] error no fatal:", error.message);
+    return [];
   }
   const rows = (data ?? []) as { usuario_id?: string }[];
   return [...new Set(rows.map((r) => String(r.usuario_id ?? "").trim()).filter(Boolean))];
@@ -94,7 +96,8 @@ export async function fetchQueueIdsForSupervisorUsuario(
 
   if (error) {
     if (isMissingSupervisionTable(error)) return [];
-    throw new Error(error.message);
+    console.warn("[fetchQueueIdsForSupervisorUsuario] error no fatal:", error.message);
+    return [];
   }
   const rows = (data ?? []) as { queue_id?: string }[];
   return [...new Set(rows.map((r) => String(r.queue_id ?? "").trim()).filter(Boolean))];
@@ -116,7 +119,8 @@ export async function fetchAgentsForSupervisorUsuarioIds(
 
   if (error) {
     if (isMissingSupervisionTable(error)) return [];
-    throw new Error(error.message);
+    console.warn("[fetchAgentsForSupervisorUsuarioIds] error no fatal:", error.message);
+    return [];
   }
   const rows = (data ?? []) as { agent_usuario_id?: string }[];
   return [...new Set(rows.map((r) => String(r.agent_usuario_id ?? "").trim()).filter(Boolean))];
