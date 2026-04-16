@@ -1,8 +1,7 @@
 import { Suspense } from "react";
 import { getCurrentUserDisplayNameServer } from "@/lib/auth/get-current-user-display-name-server";
 import { getChatDataSchemaForCurrentUser } from "@/lib/chat/empresa-chat-schema-server";
-import { getConversacionesInboxBootstrap } from "@/lib/chat/chat-ops-actions";
-import type { OmnicanalOperatorRole } from "@/lib/chat/omnicanal-supervision-read";
+import { getConversacionesInboxBootstrap, type InboxCabeceraInsignia } from "@/lib/chat/chat-ops-actions";
 import { ConversacionesClient, type ConversacionesInitialOperationalPresence } from "./ConversacionesClient";
 
 export default async function ConversacionesInboxPage() {
@@ -25,9 +24,9 @@ export default async function ConversacionesInboxPage() {
   ]);
 
   let initialOperationalPresence: ConversacionesInitialOperationalPresence | undefined;
-  let initialOmnicanalRole: OmnicanalOperatorRole | null = null;
+  let initialCabeceraInsignia: InboxCabeceraInsignia = null;
   if (bootstrap) {
-    initialOmnicanalRole = bootstrap.omnicanal_role;
+    initialCabeceraInsignia = bootstrap.cabecera_insignia;
     const presence = bootstrap.presence;
     initialOperationalPresence = presence.in_queues
       ? { in_queues: true, status: presence.status, status_changed_at: presence.status_changed_at ?? null }
@@ -41,7 +40,7 @@ export default async function ConversacionesInboxPage() {
         chatDataSchema={chatDataSchema}
         agentDisplayName={agentDisplayName}
         initialOperationalPresence={initialOperationalPresence}
-        initialOmnicanalRole={initialOmnicanalRole}
+        initialCabeceraInsignia={initialCabeceraInsignia}
       />
     </Suspense>
   );

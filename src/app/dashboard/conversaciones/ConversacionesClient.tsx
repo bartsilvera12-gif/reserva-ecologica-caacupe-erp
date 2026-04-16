@@ -30,9 +30,9 @@ import {
   type ChatAgentDirectoryRow,
   type ChatAgentOperationalStatus,
   type ChatQueueListRow,
+  type InboxCabeceraInsignia,
 } from "@/lib/chat/chat-ops-actions";
 import { formatWaitHuman } from "@/lib/chat/format-wait-human";
-import type { OmnicanalOperatorRole } from "@/lib/chat/omnicanal-supervision-read";
 import { Flame, UserRound } from "lucide-react";
 import {
   finalizeConversationWithClosure,
@@ -251,7 +251,7 @@ export function ConversacionesClient({
   chatDataSchema,
   agentDisplayName,
   initialOperationalPresence,
-  initialOmnicanalRole = null,
+  initialCabeceraInsignia = null,
 }: {
   mode: ConversacionesClientMode;
   /** Esquema Postgres de tablas chat_* (zentra_erp o `er_…`). */
@@ -260,8 +260,8 @@ export function ConversacionesClient({
   agentDisplayName: string;
   /** Si viene del RSC, el toggle de presencia puede mostrarse sin esperar la primera server action. */
   initialOperationalPresence?: ConversacionesInitialOperationalPresence;
-  /** Rol declarado en omnicanal (p. ej. admin sin fila en `chat_agents`). */
-  initialOmnicanalRole?: OmnicanalOperatorRole | null;
+  /** Admin/supervisor sin cola (incluye admin ERP por `usuarios.rol`). */
+  initialCabeceraInsignia?: InboxCabeceraInsignia;
 }) {
   const supabaseChat = useMemo(
     () => createBrowserClientForSchema(chatDataSchema),
@@ -1198,7 +1198,7 @@ export function ConversacionesClient({
           </p>
         </div>
         {mode === "inbox" && opPresenceLoaded && !opInQueues ? (
-          initialOmnicanalRole === "admin" ? (
+          initialCabeceraInsignia === "admin" ? (
             <div className="flex flex-col items-end gap-1 shrink-0 max-w-[20rem] text-right">
               <span className="inline-flex items-center rounded-full bg-slate-800 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-white">
                 Administrador
@@ -1210,7 +1210,7 @@ export function ConversacionesClient({
                 </Link>
               </span>
             </div>
-          ) : initialOmnicanalRole === "supervisor" ? (
+          ) : initialCabeceraInsignia === "supervisor" ? (
             <div className="flex flex-col items-end gap-1 shrink-0 max-w-[20rem] text-right">
               <span className="inline-flex items-center rounded-full bg-indigo-800 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-white">
                 Supervisor

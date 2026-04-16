@@ -1043,19 +1043,55 @@ export async function getMyAgentOperationalPresence(): Promise<MyAgentOperationa
   return { in_queues: true, status, status_changed_at };
 }
 
+/** Insignia en cabecera inbox cuando el usuario no tiene filas en `chat_agents`. */
+export type InboxCabeceraInsignia = "admin" | "supervisor" | null;
+
 /** Datos de cabecera inbox (presencia + rol omnicanal) en una sola ida al servidor. */
 export type ConversacionesInboxBootstrap = {
   presence: MyAgentOperationalPresenceResult;
   omnicanal_role: OmnicanalOperatorRole | null;
+  /**
+   * Sin colas de agente: qué mostrar arriba a la derecha.
+   * Incluye admin **ERP** (`usuarios.rol`) aunque no exista fila en `chat_empresa_operator_roles`
+   * (caso típico “Usuario Admin” en el menú).
+   */
+  cabecera_insignia: InboxCabeceraInsignia;
 };
 
+const USUARIO_ROL_ADMIN_ERP = new Set(["admin", "administrador", "super_admin", "owner"]);
+
 export async function getConversacionesInboxBootstrap(): Promise<ConversacionesInboxBootstrap> {
-  const { supabase, empresa_id, usuario_id } = await requireEmpresaTenantServiceRole();
+  const { supabase, catalogSr, empresa_id, usuario_id } = await requireEmpresaTenantServiceRole();
   const [presence, scope] = await Promise.all([
     getMyAgentOperationalPresence(),
     getOmnicanalScope(supabase, empresa_id, usuario_id),
   ]);
-  return { presence, omnicanal_role: scope.role };
+
+  let cabecera_insignia: InboxCabeceraInsignia = null;
+  if (!presence.in_queues) {
+    if (scope.role === "supervisor") {
+      cabecera_insignia = "supervisor";
+    } else if (scope.role === "admin") {
+      cabecera_insignia = "admin";
+    } else {
+      const bypass = await shouldBypassOmnicanalConversationScope(catalogSr, usuario_id, scope);
+      if (bypass) {
+        const { data: urow, error: uerr } = await catalogSr
+          .from("usuarios")
+          .select("rol")
+          .eq("id", usuario_id)
+          .maybeSingle();
+        if (!uerr && urow) {
+          const rol = String((urow as { rol?: string | null }).rol ?? "")
+            .trim()
+            .toLowerCase();
+          if (USUARIO_ROL_ADMIN_ERP.has(rol)) cabecera_insignia = "admin";
+        }
+      }
+    }
+  }
+
+  return { presence, omnicanal_role: scope.role, cabecera_insignia };
 }
 
 export type SetMyAgentOperationalPresenceResult = { applied: boolean; reason?: string };
