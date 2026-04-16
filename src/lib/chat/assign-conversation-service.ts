@@ -159,6 +159,7 @@ export async function assignConversation(
         queue_id: queue.id,
         initial_assignment_at: null,
         first_human_response_at: null,
+        assignment_wait_code: "manual_queue",
         updated_at: ts,
       })
       .eq("id", cid)
@@ -226,6 +227,7 @@ export async function assignConversation(
       .update({
         queue_id: queue.id,
         initial_assignment_at: null,
+        assignment_wait_code: "no_eligible_agent",
         updated_at: ts,
       })
       .eq("id", cid)
@@ -260,6 +262,7 @@ export async function assignConversation(
       initial_assignment_at: ts,
       first_human_response_at: null,
       initial_reassign_count: 0,
+      assignment_wait_code: null,
       updated_at: ts,
     })
     .eq("id", cid)

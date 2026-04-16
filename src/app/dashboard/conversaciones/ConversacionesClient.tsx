@@ -42,6 +42,7 @@ import {
   getMetaInboundDocumentFilename,
   isImageMimeHint,
 } from "@/lib/chat/message-erp-display";
+import { assignmentWaitBadge, assignmentWaitBadgeClass } from "@/lib/chat/inbox-assignment-labels";
 import { playInboxNotificationBeep, readInboxNotificationSoundEnabled } from "@/lib/chat/inbox-notification-preference";
 import { createBrowserClientForSchema } from "@/lib/supabase";
 import { ChannelBadge } from "@/components/chat/ChannelBadge";
@@ -113,10 +114,15 @@ function tabClass(active: boolean) {
 }
 
 function opPresenceToggleClass(active: boolean, variant: "ready" | "offline") {
-  const base = "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors disabled:opacity-50";
-  if (!active) return `${base} text-slate-600 hover:bg-slate-50`;
-  if (variant === "ready") return `${base} bg-emerald-600 text-white shadow-sm`;
-  return `${base} bg-slate-700 text-white shadow-sm`;
+  const base =
+    "px-3 py-1.5 text-xs font-semibold rounded-md transition-colors disabled:opacity-50 min-w-[6.75rem] text-center";
+  if (!active) {
+    return `${base} text-slate-600 bg-white border border-slate-200 hover:bg-slate-50`;
+  }
+  if (variant === "ready") {
+    return `${base} bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-700/30`;
+  }
+  return `${base} bg-slate-700 text-white shadow-sm ring-1 ring-slate-900/25`;
 }
 
 function parseInboxFilters(sp: URLSearchParams): ChatInboxFilters | undefined {
@@ -917,28 +923,33 @@ export function ConversacionesClient({
           <div
             className="flex flex-col items-end gap-1 shrink-0"
             role="group"
-            aria-label="Estado operativo para nuevas conversaciones"
+            aria-label="Disponible u en pausa para recibir chats nuevos por autoasignación"
           >
-            <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50/90 p-0.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Tu turno</span>
+            <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50/90 p-0.5">
               <button
                 type="button"
                 disabled={opPresenceBusy}
                 className={opPresenceToggleClass(opStatus === "ready", "ready")}
+                aria-pressed={opStatus === "ready"}
+                aria-label="Marcar disponible para autoasignación (ready)"
                 onClick={() => void applyOperationalStatus("ready")}
               >
-                Ready
+                Disponible
               </button>
               <button
                 type="button"
                 disabled={opPresenceBusy}
                 className={opPresenceToggleClass(opStatus === "offline", "offline")}
+                aria-pressed={opStatus === "offline"}
+                aria-label="Pausar recepción de chats nuevos por autoasignación (offline)"
                 onClick={() => void applyOperationalStatus("offline")}
               >
-                Offline
+                En pausa
               </button>
             </div>
-            <span className="text-[10px] text-slate-500 max-w-[14rem] text-right leading-tight hidden sm:block">
-              Solo en Ready recibís chats nuevos por autoasignación.
+            <span className="text-[10px] text-slate-500 max-w-[15rem] text-right leading-tight hidden sm:block">
+              Disponible = entrás en la rotación de nuevos chats. En pausa = no recibís asignaciones automáticas.
             </span>
           </div>
         ) : null}
@@ -1061,17 +1072,31 @@ export function ConversacionesClient({
                     {c.queue_name ? (
                       <span
                         className="text-[9px] font-medium text-indigo-800 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded truncate max-w-full"
-                        title={c.queue_name}
+                        title={`Cola: ${c.queue_name}`}
                       >
-                        {c.queue_name}
+                        Cola · {c.queue_name}
                       </span>
                     ) : null}
-                    <span
-                      className="text-[9px] font-medium text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded truncate max-w-full"
-                      title={c.assigned_agent_name ?? "Sin asignar"}
-                    >
-                      {c.assigned_agent_name ?? "Sin asignar"}
-                    </span>
+                    {c.assigned_agent_name ? (
+                      <span
+                        className="text-[9px] font-semibold text-emerald-900 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded truncate max-w-full"
+                        title={`Agente asignado: ${c.assigned_agent_name}`}
+                      >
+                        Agente · {c.assigned_agent_name}
+                      </span>
+                    ) : (
+                      (() => {
+                        const w = assignmentWaitBadge(c.assignment_wait_code, Boolean(c.queue_id));
+                        return (
+                          <span
+                            className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border truncate max-w-full ${assignmentWaitBadgeClass(w.tone)}`}
+                            title="Sin agente asignado"
+                          >
+                            {w.label}
+                          </span>
+                        );
+                      })()
+                    )}
                   </div>
                 </button>
               ))
@@ -1137,6 +1162,46 @@ export function ConversacionesClient({
                         ) : null}
                       </div>
                     </div>
+
+                    {vista !== "bot" && selected ? (
+                      <div className="flex flex-wrap items-center gap-1">
+                        {selected.queue_name ? (
+                          <span
+                            className="text-[10px] font-medium text-indigo-900 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5 truncate max-w-full"
+                            title="Cola de enrutamiento"
+                          >
+                            Cola: {selected.queue_name}
+                          </span>
+                        ) : mode === "inbox" ? (
+                          <span className="text-[10px] text-slate-600 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5">
+                            Sin cola
+                          </span>
+                        ) : null}
+                        {selected.assigned_agent_name ? (
+                          <span
+                            className="text-[10px] font-semibold text-emerald-900 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 truncate max-w-full"
+                            title="Agente asignado"
+                          >
+                            Agente: {selected.assigned_agent_name}
+                          </span>
+                        ) : mode === "inbox" ? (
+                          (() => {
+                            const w = assignmentWaitBadge(
+                              selected.assignment_wait_code,
+                              Boolean(selected.queue_id)
+                            );
+                            return (
+                              <span
+                                className={`text-[10px] font-semibold rounded px-1.5 py-0.5 border ${assignmentWaitBadgeClass(w.tone)}`}
+                                title="Aún sin agente asignado"
+                              >
+                                Sin agente · {w.label}
+                              </span>
+                            );
+                          })()
+                        ) : null}
+                      </div>
+                    ) : null}
 
                     <div className="flex flex-wrap items-center gap-1 w-full sm:justify-end">
                       <span className="text-[10px] font-semibold text-slate-600 shrink-0">Transferir a</span>

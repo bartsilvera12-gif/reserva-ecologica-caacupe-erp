@@ -38,6 +38,8 @@ export type InboxConversation = {
   priority: string;
   queue_id: string | null;
   queue_name: string | null;
+  /** manual_queue | no_eligible_agent cuando queda en cola sin agente; null si hay agente o no aplica. */
+  assignment_wait_code: string | null;
   assigned_agent_id: string | null;
   assigned_agent_name: string | null;
   last_message_at: string | null;
@@ -97,6 +99,7 @@ export async function fetchChatConversations(
       status,
       priority,
       queue_id,
+      assignment_wait_code,
       assigned_agent_id,
       last_message_at,
       last_message_preview,
@@ -403,6 +406,9 @@ export async function fetchChatConversations(
     const compValEnabled = chMeta?.comprobante_validation_enabled ?? false;
     const qid = (row.queue_id as string | null | undefined)?.trim() || null;
     const qRowNombre = qid ? queueNombreById[qid] : null;
+    const waitCode = ((row as { assignment_wait_code?: string | null }).assignment_wait_code ?? null) as
+      | string
+      | null;
     const aid = (row.assigned_agent_id as string | null | undefined)?.trim();
     const uid = aid ? agentUsuarioById[aid] : undefined;
     const uMeta = uid ? usuarioNombreById[uid] : undefined;
@@ -414,6 +420,7 @@ export async function fetchChatConversations(
       priority: (row.priority as string) ?? "medium",
       queue_id: (row.queue_id as string | null) ?? null,
       queue_name: qRowNombre ?? null,
+      assignment_wait_code: typeof waitCode === "string" && waitCode.trim() ? waitCode.trim() : null,
       assigned_agent_id: (row.assigned_agent_id as string | null) ?? null,
       assigned_agent_name: assignedName,
       last_message_at: row.last_message_at as string | null,

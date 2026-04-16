@@ -97,6 +97,7 @@ export async function assignConversationToAgent(
       initial_assignment_at: ts,
       first_human_response_at: null,
       initial_reassign_count: 0,
+      assignment_wait_code: null,
       updated_at: ts,
     })
     .eq("id", conv.id)
@@ -229,6 +230,7 @@ export async function assignConversationToMe(conversationId: string): Promise<vo
       initial_assignment_at: ts,
       first_human_response_at: null,
       initial_reassign_count: 0,
+      assignment_wait_code: null,
       updated_at: ts,
     })
     .eq("id", conv.id)
@@ -330,6 +332,7 @@ export type MonitoringUnassignedRow = {
   created_at: string;
   queue_id: string | null;
   queue_name: string | null;
+  assignment_wait_code: string | null;
   channel_id: string | null;
   channel_type: string | null;
   channel_nombre: string | null;
@@ -421,7 +424,7 @@ export async function fetchMonitoringDashboard(): Promise<MonitoringDashboard> {
       let q = supabase
         .from("chat_conversations")
         .select(
-          "id, status, last_message_at, created_at, queue_id, channel_id, contact_id, assigned_agent_id"
+          "id, status, last_message_at, created_at, queue_id, channel_id, contact_id, assigned_agent_id, assignment_wait_code"
         )
         .eq("empresa_id", empresa_id)
         .is("assigned_agent_id", null)
@@ -544,6 +547,9 @@ export async function fetchMonitoringDashboard(): Promise<MonitoringDashboard> {
     const qid = (row.queue_id as string | null)?.trim() || null;
     const cid = (row.channel_id as string | null)?.trim() || null;
     const ctid = (row.contact_id as string | null)?.trim() || null;
+    const rawWait = (row as { assignment_wait_code?: string | null }).assignment_wait_code;
+    const assignment_wait_code =
+      typeof rawWait === "string" && rawWait.trim() ? rawWait.trim() : null;
     const ch = cid ? channelMetaById[cid] : undefined;
     const contact = ctid ? contactById[ctid] : undefined;
     const created = (row.created_at as string) ?? new Date().toISOString();
@@ -556,6 +562,7 @@ export async function fetchMonitoringDashboard(): Promise<MonitoringDashboard> {
       created_at: created,
       queue_id: qid,
       queue_name: qid ? queueNombreById[qid] ?? null : null,
+      assignment_wait_code,
       channel_id: cid,
       channel_type: ch?.type ?? null,
       channel_nombre: ch?.nombre ?? null,
@@ -585,6 +592,8 @@ export type ChatAgentDirectoryRow = {
   nombre: string;
   email: string;
   is_online: boolean;
+  /** ready | offline — autoasignación solo en ready. */
+  operational_status: string;
   max_conversations: number;
 };
 
@@ -596,7 +605,7 @@ export async function listChatAgentsDirectory(): Promise<ChatAgentDirectoryRow[]
 
   let aq = supabase
     .from("chat_agents")
-    .select("id, queue_id, is_online, max_conversations, usuario_id")
+    .select("id, queue_id, is_online, operational_status, max_conversations, usuario_id")
     .eq("empresa_id", empresa_id)
     .eq("is_active", true)
     .order("queue_id", { ascending: true });
@@ -664,6 +673,8 @@ export async function listChatAgentsDirectory(): Promise<ChatAgentDirectoryRow[]
       nombre,
       email: (u?.email as string) ?? "",
       is_online: Boolean(row.is_online),
+      operational_status:
+        (row.operational_status as string | undefined)?.trim() === "offline" ? "offline" : "ready",
       max_conversations: (row.max_conversations as number) ?? 5,
     };
   });

@@ -120,6 +120,7 @@ export async function assignConversationPg(
        SET queue_id = $1::uuid,
            initial_assignment_at = NULL,
            first_human_response_at = NULL,
+           assignment_wait_code = 'manual_queue',
            updated_at = $2::timestamptz
        WHERE id = $3::uuid AND empresa_id = $4::uuid`,
       [queue.id, ts, cid, empresaId]
@@ -140,7 +141,10 @@ export async function assignConversationPg(
     const ts = new Date().toISOString();
     await pool.query(
       `UPDATE ${convT}
-       SET queue_id = $1::uuid, initial_assignment_at = NULL, updated_at = $2::timestamptz
+       SET queue_id = $1::uuid,
+           initial_assignment_at = NULL,
+           assignment_wait_code = 'no_eligible_agent',
+           updated_at = $2::timestamptz
        WHERE id = $3::uuid AND empresa_id = $4::uuid`,
       [queue.id, ts, cid, empresaId]
     );
@@ -169,7 +173,10 @@ export async function assignConversationPg(
     const ts = new Date().toISOString();
     await pool.query(
       `UPDATE ${convT}
-       SET queue_id = $1::uuid, initial_assignment_at = NULL, updated_at = $2::timestamptz
+       SET queue_id = $1::uuid,
+           initial_assignment_at = NULL,
+           assignment_wait_code = 'no_eligible_agent',
+           updated_at = $2::timestamptz
        WHERE id = $3::uuid AND empresa_id = $4::uuid`,
       [queue.id, ts, cid, empresaId]
     );
@@ -223,6 +230,7 @@ export async function assignConversationPg(
          initial_assignment_at = $3::timestamptz,
          first_human_response_at = NULL,
          initial_reassign_count = 0,
+         assignment_wait_code = NULL,
          updated_at = $3::timestamptz
      WHERE id = $4::uuid AND empresa_id = $5::uuid`,
     [queue.id, best.id, ts, cid, empresaId]

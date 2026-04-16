@@ -113,6 +113,7 @@ export async function maybeRedistributeInitialAssignment(
       assigned_agent_id: pick.id,
       initial_assignment_at: ts,
       initial_reassign_count: reCount + 1,
+      assignment_wait_code: null,
       updated_at: ts,
     })
     .eq("id", cid)

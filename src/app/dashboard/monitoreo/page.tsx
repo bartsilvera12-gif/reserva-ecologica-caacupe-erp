@@ -10,6 +10,7 @@ import {
   type MonitoringUnassignedRow,
   type SupervisorAgentLoadRow,
 } from "@/lib/chat/chat-ops-actions";
+import { assignmentWaitBadge, assignmentWaitBadgeClass } from "@/lib/chat/inbox-assignment-labels";
 
 function formatWait(iso: string): string {
   const t = new Date(iso).getTime();
@@ -91,12 +92,18 @@ export default function MonitoreoPage() {
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between gap-2 mb-3">
-          <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Chats sin asignar (recientes)</h2>
+        <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+          <div className="min-w-0">
+            <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Chats sin asignar (recientes)</h2>
+            <p className="text-xs text-slate-500 mt-1 max-w-3xl">
+              <span className="font-medium text-slate-600">Motivo</span>: cola manual, sin agentes en estado{" "}
+              <span className="font-medium">Disponible</span> para autoasignar, u otra espera en cola.
+            </p>
+          </div>
           <button
             type="button"
             onClick={() => void load()}
-            className="text-xs font-semibold text-[#0EA5E9] hover:underline"
+            className="text-xs font-semibold text-[#0EA5E9] hover:underline shrink-0"
           >
             Actualizar
           </button>
@@ -114,11 +121,14 @@ export default function MonitoreoPage() {
                   <th className="pb-2 pr-3">Contacto</th>
                   <th className="pb-2 pr-3">Canal</th>
                   <th className="pb-2 pr-3">Cola</th>
+                  <th className="pb-2 pr-3">Motivo</th>
                   <th className="pb-2">Estado</th>
                 </tr>
               </thead>
               <tbody>
-                {dash.unassigned_recent.map((r: MonitoringUnassignedRow) => (
+                {dash.unassigned_recent.map((r: MonitoringUnassignedRow) => {
+                  const w = assignmentWaitBadge(r.assignment_wait_code, Boolean(r.queue_id));
+                  return (
                   <tr key={r.id} className="border-b border-slate-50">
                     <td className="py-2 pr-3 text-slate-700 tabular-nums">{formatWait(r.waiting_since)}</td>
                     <td className="py-2 pr-3">
@@ -131,13 +141,21 @@ export default function MonitoreoPage() {
                       {r.channel_nombre ?? r.channel_type ?? "—"}
                     </td>
                     <td className="py-2 pr-3 text-slate-600">{r.queue_name ?? "—"}</td>
+                    <td className="py-2 pr-3">
+                      <span
+                        className={`inline-block rounded-md border px-2 py-0.5 text-[10px] font-semibold ${assignmentWaitBadgeClass(w.tone)}`}
+                      >
+                        {w.label}
+                      </span>
+                    </td>
                     <td className="py-2">
                       <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">
                         {r.status}
                       </span>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -209,6 +227,7 @@ export default function MonitoreoPage() {
                   <th className="pb-2 pr-3">Cola</th>
                   <th className="pb-2 pr-3">Agente</th>
                   <th className="pb-2 pr-3">En línea</th>
+                  <th className="pb-2 pr-3">Turno</th>
                   <th className="pb-2 pr-3">Máx.</th>
                   <th className="pb-2 pr-3">Chats activos</th>
                   <th className="pb-2">Sin 1ª resp.</th>
@@ -227,6 +246,13 @@ export default function MonitoreoPage() {
                         <span className="text-emerald-700 text-xs font-semibold">Sí</span>
                       ) : (
                         <span className="text-slate-400 text-xs">No</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {a.operational_status === "ready" ? (
+                        <span className="text-emerald-800 text-xs font-semibold">Disponible</span>
+                      ) : (
+                        <span className="text-slate-500 text-xs font-medium">En pausa</span>
                       )}
                     </td>
                     <td className="py-2 pr-3">{a.max_conversations}</td>
