@@ -115,13 +115,17 @@ CREATE INDEX IF NOT EXISTS idx_chat_queue_channels_empresa ON public.chat_queue_
 
 ALTER TABLE public.chat_queue_channels ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "chat_queue_channels_select" ON public.chat_queue_channels;
 CREATE POLICY "chat_queue_channels_select" ON public.chat_queue_channels FOR SELECT
   USING (public.puede_acceder_empresa(empresa_id));
+DROP POLICY IF EXISTS "chat_queue_channels_insert" ON public.chat_queue_channels;
 CREATE POLICY "chat_queue_channels_insert" ON public.chat_queue_channels FOR INSERT
   WITH CHECK (public.puede_acceder_empresa(empresa_id));
+DROP POLICY IF EXISTS "chat_queue_channels_update" ON public.chat_queue_channels;
 CREATE POLICY "chat_queue_channels_update" ON public.chat_queue_channels FOR UPDATE
   USING (public.puede_acceder_empresa(empresa_id))
   WITH CHECK (public.puede_acceder_empresa(empresa_id));
+DROP POLICY IF EXISTS "chat_queue_channels_delete" ON public.chat_queue_channels;
 CREATE POLICY "chat_queue_channels_delete" ON public.chat_queue_channels FOR DELETE
   USING (public.puede_acceder_empresa(empresa_id));
 

@@ -40,18 +40,24 @@ BEGIN
   );
 
   -- Datos ya consistentes en saldo pero estado ERP desactualizado (pre-migración).
-  EXECUTE format(
-    'UPDATE %I.facturas f SET estado = ''Corregida NC'', updated_at = now()
-     WHERE f.saldo <= 0.0001
-       AND f.estado IN (''Pendiente'', ''Vencido'')
-       AND EXISTS (
-         SELECT 1 FROM %I.nota_credito nc
-         WHERE nc.factura_id = f.id AND nc.empresa_id = f.empresa_id
-           AND nc.estado_erp = ''aprobada''
-       )',
-    s,
-    s
-  );
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables WHERE table_schema = s AND table_name = 'nota_credito'
+  ) THEN
+    EXECUTE format(
+      'UPDATE %I.facturas f SET estado = ''Corregida NC'', updated_at = now()
+       WHERE f.saldo <= 0.0001
+         AND f.estado IN (''Pendiente'', ''Vencido'')
+         AND EXISTS (
+           SELECT 1 FROM %I.nota_credito nc
+           WHERE nc.factura_id = f.id AND nc.empresa_id = f.empresa_id
+             AND nc.estado_erp = ''aprobada''
+         )',
+      s,
+      s
+    );
+  ELSE
+    RAISE NOTICE 'neura_upgrade_factura_estado_corregida_nc: sin tabla nota_credito en % (solo CHECK)', s;
+  END IF;
 END;
 $$;
 
