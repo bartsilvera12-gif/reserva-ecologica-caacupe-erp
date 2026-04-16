@@ -45,6 +45,15 @@ export type SendWhatsAppDocumentParams = {
   graphVersion?: string;
 };
 
+export type SendWhatsAppAudioParams = {
+  toDigits: string;
+  phoneNumberId: string;
+  accessToken: string;
+  /** URL HTTPS pública del audio (ogg/opus, mpeg, etc.). */
+  audioUrl: string;
+  graphVersion?: string;
+};
+
 async function sendWhatsAppPayload(
   params: {
     phoneNumberId: string;
@@ -127,6 +136,36 @@ export async function sendWhatsAppImage(
     type: "image",
     image: {
       link: params.imageUrl,
+      ...(params.caption ? { caption: params.caption.slice(0, 1024) } : {}),
+    },
+  });
+}
+
+export async function sendWhatsAppAudio(params: SendWhatsAppAudioParams): Promise<SendWhatsAppTextResult> {
+  return sendWhatsAppPayload(params, {
+    messaging_product: "whatsapp",
+    to: params.toDigits,
+    type: "audio",
+    audio: { link: params.audioUrl },
+  });
+}
+
+export type SendWhatsAppVideoParams = {
+  toDigits: string;
+  phoneNumberId: string;
+  accessToken: string;
+  videoUrl: string;
+  caption?: string;
+  graphVersion?: string;
+};
+
+export async function sendWhatsAppVideo(params: SendWhatsAppVideoParams): Promise<SendWhatsAppTextResult> {
+  return sendWhatsAppPayload(params, {
+    messaging_product: "whatsapp",
+    to: params.toDigits,
+    type: "video",
+    video: {
+      link: params.videoUrl,
       ...(params.caption ? { caption: params.caption.slice(0, 1024) } : {}),
     },
   });

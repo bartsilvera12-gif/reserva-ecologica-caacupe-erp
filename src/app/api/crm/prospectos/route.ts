@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     }
 
     const sb = ctx.supabase;
-    const numeroControl = await generarNumeroControlFromSupabase(sb);
+    const numeroControl = await generarNumeroControlFromSupabase(sb, empresaId);
     const creadoPor =
       (typeof ctx.auth.user.email === "string" && ctx.auth.user.email.trim()) || null;
 

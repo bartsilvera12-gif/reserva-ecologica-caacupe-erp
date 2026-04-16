@@ -4,8 +4,10 @@ import { markFirstHumanOperatorReply } from "@/lib/chat/conversation-sla-markers
 import { getAuthWithRol } from "@/lib/middleware/auth";
 import { normalizeWaPhone } from "@/lib/chat/wa-phone";
 import {
+  sendWhatsAppAudio,
   sendWhatsAppDocument,
   sendWhatsAppImage,
+  sendWhatsAppVideo,
   type SendWhatsAppTextResult,
 } from "@/lib/chat/whatsapp-send-service";
 import { sendYCloudWhatsappMediaViaLink, ycloudSenderToE164 } from "@/lib/chat/ycloud-send-service";
@@ -203,24 +205,42 @@ export async function POST(request: NextRequest) {
           caption: caption || undefined,
         });
       }
+    } else if (isImage) {
+      outboundMessageType = "image";
+      sendResult = await sendWhatsAppImage({
+        toDigits,
+        phoneNumberId: phoneNumberId!,
+        accessToken: token!,
+        imageUrl: publicUrl,
+        caption: caption || undefined,
+      });
+    } else if (isAudio) {
+      outboundMessageType = "audio";
+      sendResult = await sendWhatsAppAudio({
+        toDigits,
+        phoneNumberId: phoneNumberId!,
+        accessToken: token!,
+        audioUrl: publicUrl,
+      });
+    } else if (isVideo) {
+      outboundMessageType = "video";
+      sendResult = await sendWhatsAppVideo({
+        toDigits,
+        phoneNumberId: phoneNumberId!,
+        accessToken: token!,
+        videoUrl: publicUrl,
+        caption: caption || undefined,
+      });
     } else {
-      outboundMessageType = isImage ? "image" : "document";
-      sendResult = isImage
-        ? await sendWhatsAppImage({
-            toDigits,
-            phoneNumberId: phoneNumberId!,
-            accessToken: token!,
-            imageUrl: publicUrl,
-            caption: caption || undefined,
-          })
-        : await sendWhatsAppDocument({
-            toDigits,
-            phoneNumberId: phoneNumberId!,
-            accessToken: token!,
-            link: publicUrl,
-            filename: origName,
-            caption: caption || undefined,
-          });
+      outboundMessageType = "document";
+      sendResult = await sendWhatsAppDocument({
+        toDigits,
+        phoneNumberId: phoneNumberId!,
+        accessToken: token!,
+        link: publicUrl,
+        filename: origName,
+        caption: caption || undefined,
+      });
     }
 
     if (!sendResult.ok) {

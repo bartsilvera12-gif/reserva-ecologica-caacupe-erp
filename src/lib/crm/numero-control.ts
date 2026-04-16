@@ -6,12 +6,19 @@ import type { AppSupabaseClient } from "@/lib/supabase/schema";
  *  - parsea CRM-XXXX
  *  - incrementa y vuelve a formatear CRM-000001
  */
-export async function generarNumeroControlFromSupabase(sb: AppSupabaseClient): Promise<string> {
-  const { data } = await sb
+export async function generarNumeroControlFromSupabase(
+  sb: AppSupabaseClient,
+  empresaId?: string
+): Promise<string> {
+  let q = sb
     .from("crm_prospectos")
     .select("numero_control")
     .order("created_at", { ascending: false })
     .limit(1);
+  if (empresaId?.trim()) {
+    q = q.eq("empresa_id", empresaId.trim());
+  }
+  const { data } = await q;
 
   const last = data?.[0] as { numero_control?: string } | undefined;
   const match = last?.numero_control?.match(/CRM-(\d+)/);

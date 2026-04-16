@@ -226,6 +226,8 @@ export function ConversacionesClient({
   const [loadingMsg, setLoadingMsg] = useState(false);
   const [sending, setSending] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
+  /** Grabación de nota de voz (MediaRecorder) antes de subir a /api/chat/send-media. */
+  const [recordingVoice, setRecordingVoice] = useState(false);
   const [releasingBot, setReleasingBot] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
   const [messagesError, setMessagesError] = useState<string | null>(null);
@@ -272,6 +274,10 @@ export function ConversacionesClient({
   const inboxFilterKey = searchParams?.toString() ?? "";
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const selectedIdRef = useRef<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const recordChunksRef = useRef<Blob[]>([]);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   /** Si el usuario está cerca del final, los mensajes nuevos hacen scroll; si subió a leer historial, no. */
   const stickBottomRef = useRef(true);
@@ -334,6 +340,96 @@ export function ConversacionesClient({
     } finally {
       if (!silent) setLoadingMsg(false);
     }
+  }, []);
+
+  const loadMessagesRef = useRef(loadMessages);
+  loadMessagesRef.current = loadMessages;
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
+
+  const sendMediaFile = useCallback(async (file: File) => {
+    const cid = selectedIdRef.current;
+    if (!cid || file.size < 1) return;
+    setSendError(null);
+    stickBottomRef.current = true;
+    setUploadingFile(true);
+    try {
+      const fd = new FormData();
+      fd.set("conversation_id", cid);
+      fd.set("file", file);
+      const res = await fetchWithSupabaseSession("/api/chat/send-media", {
+        method: "POST",
+        body: fd,
+        credentials: "same-origin",
+      });
+      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !json.ok) {
+        throw new Error(typeof json.error === "string" ? json.error : `Error HTTP ${res.status}`);
+      }
+      await loadMessagesRef.current(cid, { silent: true });
+      await loadConversationsRef.current?.({ silent: true });
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : "Error al enviar archivo");
+    } finally {
+      setUploadingFile(false);
+    }
+  }, []);
+
+  async function toggleVoiceNote() {
+    const cid = selectedIdRef.current;
+    if (!cid || uploadingFile) return;
+    const mr = mediaRecorderRef.current;
+    if (mr && mr.state === "recording") {
+      mr.stop();
+      return;
+    }
+    setSendError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      recordChunksRef.current = [];
+      const mime =
+        typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/webm")
+            ? "audio/webm"
+            : "";
+      const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      mediaRecorderRef.current = rec;
+      rec.ondataavailable = (ev) => {
+        if (ev.data.size > 0) recordChunksRef.current.push(ev.data);
+      };
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        mediaRecorderRef.current = null;
+        streamRef.current = null;
+        const blob = new Blob(recordChunksRef.current, { type: rec.mimeType || "audio/webm" });
+        recordChunksRef.current = [];
+        setRecordingVoice(false);
+        if (blob.size < 300) return;
+        const ext = blob.type.includes("ogg") ? "ogg" : "webm";
+        const voiceFile = new File([blob], `nota-voz.${ext}`, { type: blob.type || "audio/webm" });
+        void sendMediaFile(voiceFile);
+      };
+      setRecordingVoice(true);
+      rec.start(400);
+    } catch (e) {
+      setSendError(e instanceof Error ? e.message : "No se pudo acceder al micrófono");
+      setRecordingVoice(false);
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      try {
+        mediaRecorderRef.current?.stop();
+      } catch {
+        /* noop */
+      }
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
   }, []);
 
   loadConversationsRef.current = loadConversations;
@@ -508,6 +604,10 @@ export function ConversacionesClient({
         (payload) => {
           void loadConversationsRef.current?.({ silent: true });
           const row = payload.new as Record<string, unknown>;
+          const convId = typeof row?.conversation_id === "string" ? row.conversation_id : "";
+          if (convId && convId === selectedIdRef.current) {
+            void loadMessagesRef.current(convId, { silent: true });
+          }
           const mid = typeof row?.id === "string" ? row.id : "";
           if (!mid || row.from_me === true) return;
           if (inboundSoundMsgIdsRef.current.has(mid)) return;
@@ -533,13 +633,51 @@ export function ConversacionesClient({
     const id = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
       void loadConversationsRef.current?.({ silent: true });
-    }, 14_000);
+    }, 2800);
     return () => window.clearInterval(id);
   }, []);
 
-  /** Mensajes del hilo abierto: INSERT en tiempo real. */
+  /** Al volver a la pestaña, sincronizar de inmediato (evita depender solo del intervalo). */
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState !== "visible") return;
+      void loadConversationsRef.current?.({ silent: true });
+      const sid = selectedIdRef.current;
+      if (sid) void loadMessagesRef.current(sid, { silent: true });
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+
+  /** Con hilo abierto: sondeo corto por si Realtime no entrega INSERT/UPDATE (p. ej. webhook vía PG). */
   useEffect(() => {
     if (!selectedId) return;
+    const id = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void loadMessagesRef.current(selectedId, { silent: true });
+    }, 2800);
+    return () => window.clearInterval(id);
+  }, [selectedId]);
+
+  /** Mensajes del hilo abierto: INSERT/UPDATE en tiempo real (UPDATE cubre enrich de media YCloud). */
+  useEffect(() => {
+    if (!selectedId) return;
+
+    const mergeRow = (row: Record<string, unknown>) => {
+      if (!row?.id) return;
+      const msg = mapRowToMessage(row);
+      setMessages((prev) => {
+        const i = prev.findIndex((m) => m.id === msg.id);
+        if (i >= 0) {
+          const next = [...prev];
+          next[i] = msg;
+          return next;
+        }
+        return [...prev, msg].sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+      });
+    };
 
     const channel = supabaseChat
       .channel(`conversaciones-msg-${selectedId}`)
@@ -551,17 +689,17 @@ export function ConversacionesClient({
           table: "chat_messages",
           filter: `conversation_id=eq.${selectedId}`,
         },
-        (payload) => {
-          const row = payload.new as Record<string, unknown>;
-          if (!row?.id) return;
-          const msg = mapRowToMessage(row);
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === msg.id)) return prev;
-            return [...prev, msg].sort(
-              (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-            );
-          });
-        }
+        (payload) => mergeRow(payload.new as Record<string, unknown>)
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: chatDataSchema,
+          table: "chat_messages",
+          filter: `conversation_id=eq.${selectedId}`,
+        },
+        (payload) => mergeRow(payload.new as Record<string, unknown>)
       )
       .subscribe();
 
@@ -631,29 +769,7 @@ export function ConversacionesClient({
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file || !selectedId || uploadingFile) return;
-    setUploadingFile(true);
-    setSendError(null);
-    stickBottomRef.current = true;
-    try {
-      const fd = new FormData();
-      fd.set("conversation_id", selectedId);
-      fd.set("file", file);
-      const res = await fetchWithSupabaseSession("/api/chat/send-media", {
-        method: "POST",
-        body: fd,
-        credentials: "same-origin",
-      });
-      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-      if (!res.ok || !json.ok) {
-        throw new Error(typeof json.error === "string" ? json.error : `Error HTTP ${res.status}`);
-      }
-      await loadMessages(selectedId, { silent: true });
-      await loadConversations({ silent: true });
-    } catch (err) {
-      setSendError(err instanceof Error ? err.message : "Error al enviar archivo");
-    } finally {
-      setUploadingFile(false);
-    }
+    await sendMediaFile(file);
   }
 
   async function handleReleaseToBot() {
@@ -1696,12 +1812,29 @@ export function ConversacionesClient({
                 <div className="flex gap-1.5 items-stretch">
                   <button
                     type="button"
-                    disabled={uploadingFile || !selectedId}
+                    disabled={uploadingFile || !selectedId || recordingVoice}
                     onClick={() => fileInputRef.current?.click()}
                     className="shrink-0 border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50 px-2.5 py-2 rounded-lg text-sm font-medium min-h-[2.5rem]"
                     title="Adjuntar imagen, audio o documento"
                   >
                     {uploadingFile ? "…" : "Adjunto"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={uploadingFile || !selectedId}
+                    onClick={() => void toggleVoiceNote()}
+                    className={`shrink-0 border px-2.5 py-2 rounded-lg text-xs font-semibold min-h-[2.5rem] disabled:opacity-50 ${
+                      recordingVoice
+                        ? "border-red-300 bg-red-50 text-red-700"
+                        : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                    }`}
+                    title={
+                      recordingVoice
+                        ? "Detener y enviar nota de voz"
+                        : "Grabar nota de voz (micrófono)"
+                    }
+                  >
+                    {recordingVoice ? "Parar" : "Voz"}
                   </button>
                   <input
                     className="flex-1 min-w-0 border border-slate-200 rounded-lg px-2.5 py-2 text-sm min-h-[2.5rem] focus:ring-2 focus:ring-[#0EA5E9]/30 focus:border-[#0EA5E9] outline-none"

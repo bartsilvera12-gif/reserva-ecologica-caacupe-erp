@@ -264,7 +264,7 @@ export async function saveProspectoFromWebhook(datos: {
 }): Promise<Prospecto | null> {
   const sb = await createServiceRoleClientForEmpresa(datos.empresa_id);
 
-  const numeroControl = await generarNumeroControlFromSupabase(sb);
+  const numeroControl = await generarNumeroControlFromSupabase(sb, datos.empresa_id);
 
   const contacto = datos.contacto?.trim() || "Contacto WhatsApp";
   const empresaNombre = datos.empresa_nombre?.trim() || "Sin nombre";

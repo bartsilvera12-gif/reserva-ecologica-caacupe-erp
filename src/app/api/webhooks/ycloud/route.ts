@@ -231,7 +231,7 @@ export async function POST(request: NextRequest) {
         firstMessagePreview: content,
       });
       if (!crm.ok) {
-        console.warn(LOG, LOG_IN, "crm_lead", crm.error);
+        console.error(LOG, LOG_IN, "crm_lead_falló", crm.error);
       }
 
       const mediaKinds = new Set(["image", "audio", "video", "document", "sticker"]);
@@ -278,7 +278,7 @@ export async function POST(request: NextRequest) {
         }
       }
     } catch (e) {
-      console.warn(LOG, LOG_IN, "post_inbound_extras", e);
+      console.error(LOG, LOG_IN, "post_inbound_extras", e);
     }
   }
 

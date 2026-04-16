@@ -9,7 +9,7 @@ import { createServiceRoleClient } from "@/lib/supabase/service-admin";
 export async function resolveInitialCrmEtapaCodigo(
   supabase: SupabaseAdmin,
   empresaId: string
-): Promise<string | null> {
+): Promise<string> {
   const { data, error } = await supabase
     .from("crm_etapas")
     .select("codigo")
@@ -19,14 +19,22 @@ export async function resolveInitialCrmEtapaCodigo(
 
   if (error) {
     console.error("[crm][whatsapp-inbound-lead] resolveInitialCrmEtapaCodigo:", error.message);
-    return null;
+    console.warn("[crm][whatsapp-inbound-lead] etapa fallback LEAD (error consultando crm_etapas)");
+    return "LEAD";
   }
 
   const rows = (data ?? []) as Array<{ codigo?: string | null }>;
+  if (rows.length === 0) {
+    console.warn(
+      "[crm][whatsapp-inbound-lead] crm_etapas vacío para empresa; usando etapa LEAD (webhook WhatsApp)"
+    );
+    return "LEAD";
+  }
+
   const terminal = new Set(["GANADO", "PERDIDO"]);
   const candidate = rows.find((r) => r.codigo && !terminal.has(String(r.codigo)))?.codigo ?? null;
   if (candidate) return String(candidate);
-  return rows[0]?.codigo ? String(rows[0].codigo) : null;
+  return rows[0]?.codigo ? String(rows[0].codigo) : "LEAD";
 }
 
 async function resolveChannelCreadoPorLabel(
@@ -129,9 +137,6 @@ export async function ensureWhatsappInboundCrmProspecto(input: {
   if (crmPid) return { ok: true };
 
   const etapaCodigo = await resolveInitialCrmEtapaCodigo(etapaSupabase, empresaId);
-  if (!etapaCodigo) {
-    return { ok: false, error: "CRM: no se pudo resolver etapa inicial" };
-  }
 
   const phone = String((contact as { phone_number?: string | null }).phone_number ?? "").trim();
   const displayName = String((contact as { name?: string | null }).name ?? "").trim() || phone || "Contacto WhatsApp";
