@@ -36,6 +36,8 @@
     "db:verify-nota-credito-db": "tsx scripts/verify-nota-credito-fase1-db.ts",
     "db:verify-nota-credito-flow": "tsx scripts/verify-nota-credito-fase1-flow.ts",
     "db:diagnose-migrations": "tsx scripts/diagnose-migration-history.ts",
+    "db:apply-chat-channel-quick-replies": "tsx scripts/apply-chat-channel-quick-replies-migration.ts",
+    "db:verify-chat-quick-replies-smoke": "tsx scripts/verify-chat-quick-replies-smoke.ts",
     "db:apply-chat-closure-taxonomy": "tsx scripts/apply-chat-queue-closure-taxonomy-migration.ts",
     "db:apply-stale-flow-session-pointers": "tsx scripts/apply-stale-flow-session-pointers-migration.ts",
     "verify:admin-catalog-nc": "tsx scripts/verify-admin-catalog-notas-credito.ts"
