@@ -55,10 +55,18 @@ export function ChannelQuickRepliesStandaloneBlock({
         description="Plantillas reutilizables que los asesores insertan desde Conversaciones con el ícono de rayo."
         active={slice.active}
         expanded={slice.expanded}
-        onActiveChange={(v) => persist({ ...slice, active: v })}
-        onExpandedChange={(v) => persist({ ...slice, expanded: v })}
+        hideBodyWhenInactive
+        onActiveChange={(v) =>
+          persist(v ? { active: true, expanded: slice.expanded } : { active: false, expanded: false })
+        }
+        onExpandedChange={(v) => {
+          if (!slice.active) return;
+          persist({ ...slice, expanded: v });
+        }}
       >
-        <ChannelQuickRepliesEditor channelId={channelId} disabled={!slice.active} hideIntro />
+        {slice.active && slice.expanded ? (
+          <ChannelQuickRepliesEditor channelId={channelId} hideIntro />
+        ) : null}
       </ConfigCollapsibleSection>
     </div>
   );

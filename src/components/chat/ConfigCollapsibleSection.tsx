@@ -16,6 +16,11 @@ type ConfigCollapsibleSectionProps = {
   onActiveChange?: (next: boolean) => void;
   onExpandedChange?: (next: boolean) => void;
   children: React.ReactNode;
+  /**
+   * Si es true, no se renderiza el panel expandible mientras la sección está **inactiva**
+   * (solo cabecera). Evita huecos/padding residual al desactivar el switch.
+   */
+  hideBodyWhenInactive?: boolean;
 };
 
 /**
@@ -33,6 +38,7 @@ export function ConfigCollapsibleSection({
   onActiveChange,
   onExpandedChange,
   children,
+  hideBodyWhenInactive = false,
 }: ConfigCollapsibleSectionProps) {
   const controlled =
     typeof activeProp === "boolean" &&
@@ -63,6 +69,8 @@ export function ConfigCollapsibleSection({
   const shellClass = isActive
     ? "border-emerald-200/90 bg-white shadow-md ring-1 ring-emerald-100/50"
     : "border-slate-300/90 bg-slate-100/60 shadow-sm ring-0";
+
+  const showExpandablePanel = !(hideBodyWhenInactive && !isActive);
 
   return (
     <div
@@ -129,17 +137,19 @@ export function ConfigCollapsibleSection({
         </div>
       </div>
 
-      <div
-        className={`grid transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none ${
-          expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
-        }`}
-      >
-        <div id={panelId} role="region" aria-labelledby={headingId} className="min-h-0 overflow-hidden">
-          <div className="border-t border-slate-100/90 bg-gradient-to-b from-slate-50/40 to-white px-4 py-5 sm:px-5 sm:py-6">
-            <div className="w-full">{children}</div>
+      {showExpandablePanel ? (
+        <div
+          className={`grid transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none ${
+            expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+          }`}
+        >
+          <div id={panelId} role="region" aria-labelledby={headingId} className="min-h-0 overflow-hidden">
+            <div className="border-t border-slate-100/90 bg-gradient-to-b from-slate-50/40 to-white px-4 py-5 sm:px-5 sm:py-6">
+              <div className="w-full">{children}</div>
+            </div>
           </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }
