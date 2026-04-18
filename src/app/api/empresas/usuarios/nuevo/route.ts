@@ -66,6 +66,26 @@ export async function POST(req: Request) {
     const nombre = String(body.nombre ?? "").trim();
     const telefono = body.telefono ? String(body.telefono).trim() : null;
     const fecha_nacimiento = body.fecha_nacimiento ? String(body.fecha_nacimiento) : null;
+    const fecha_ingreso = body.fecha_ingreso ? String(body.fecha_ingreso) : null;
+    const tipoRaw = body.tipo_contrato ? String(body.tipo_contrato).trim().toLowerCase() : null;
+    const tipoOk = ["salario", "comision", "mixto", "prestador_servicio"];
+    const tipo_contrato = tipoRaw && tipoOk.includes(tipoRaw) ? tipoRaw : null;
+    const parseGs = (v: unknown): number | null => {
+      if (v === undefined || v === null || v === "") return null;
+      const n = typeof v === "number" ? v : Number(String(v).replace(/\./g, "").replace(/\s/g, ""));
+      return Number.isFinite(n) ? n : null;
+    };
+    const parsePct = (v: unknown): number | null => {
+      if (v === undefined || v === null || v === "") return null;
+      const n = typeof v === "number" ? v : Number(String(v));
+      return Number.isFinite(n) ? n : null;
+    };
+    const salario_base = parseGs(body.salario_base);
+    const porcentaje_comision = parsePct(body.porcentaje_comision);
+    const ips = Boolean(body.ips);
+    const areaRaw = body.area ? String(body.area).trim().toLowerCase() : null;
+    const areasOk = ["ventas", "soporte", "finanzas", "operaciones", "administracion"];
+    const area = areaRaw && areasOk.includes(areaRaw) ? areaRaw : null;
     const rol = String(body.rol ?? "usuario");
 
     if (!email || !password || password.length < 6) {
@@ -73,6 +93,10 @@ export async function POST(req: Request) {
     }
     if (!nombre) {
       return NextResponse.json({ error: "El nombre es obligatorio." }, { status: 400 });
+    }
+
+    if (porcentaje_comision != null && (porcentaje_comision < 0 || porcentaje_comision > 100)) {
+      return NextResponse.json({ error: "La comisión debe estar entre 0 y 100." }, { status: 400 });
     }
 
     const empresaId = admin.empresa_id;
@@ -122,6 +146,12 @@ export async function POST(req: Request) {
       nombre,
       telefono,
       fecha_nacimiento,
+      fecha_ingreso,
+      tipo_contrato,
+      salario_base,
+      porcentaje_comision,
+      ips,
+      area,
       rol,
       auth_user_id: authUserId,
       estado: "activo" as const,

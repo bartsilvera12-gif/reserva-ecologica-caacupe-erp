@@ -1,3 +1,5 @@
+import { isErpRolSupervisor } from "@/lib/usuarios/erp-rol-normalize";
+
 export type ModuloRow = { id: string; nombre: string; slug: string };
 
 /**
@@ -7,6 +9,15 @@ export type ModuloRow = { id: string; nombre: string; slug: string };
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ModulosSupabase = any;
+
+/** Slugs del stack omnicanal en dashboard; si la empresa los tiene habilitados, el supervisor debe verlos aunque `usuario_modulos` esté acotado a otros módulos. */
+const SUPERVISOR_OMNICANAL_GRANT_SLUGS = new Set([
+  "conversaciones",
+  "omnicanal",
+  "historial-omnicanal",
+  "conversaciones-finalizadas",
+  "monitoreo",
+]);
 
 /** Admin de empresa (`admin` al crear empresa, `administrador` en el alta interna): ven todos los módulos habilitados para la empresa. */
 export function esRolAdminEmpresa(rol: string | null | undefined): boolean {
@@ -114,6 +125,14 @@ export async function resolveEffectiveModules(
   } else {
     const empresaSet = new Set(effectiveEmpresaModuloIds);
     moduloIds = userIds.filter((id) => empresaSet.has(id));
+  }
+
+  if (isErpRolSupervisor(usuario.rol)) {
+    const empresaModulos = await modulosRowsByIds(supabase, effectiveEmpresaModuloIds);
+    const omnicanalExtraIds = empresaModulos
+      .filter((m) => SUPERVISOR_OMNICANAL_GRANT_SLUGS.has((m.slug ?? "").trim().toLowerCase()))
+      .map((m) => m.id);
+    moduloIds = [...new Set([...moduloIds, ...omnicanalExtraIds])];
   }
 
   if (moduloIds.length === 0) return [];

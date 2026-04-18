@@ -7,6 +7,37 @@ import {
   filterModuloIdsForEmpresa,
 } from "@/lib/modulos/resolve-effective-modules";
 
+const ERP_ROLES = ["usuario", "supervisor", "administrador"] as const;
+
+function patchOptionalDecimal(v: unknown): number | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null || v === "") return null;
+  const n = typeof v === "number" ? v : Number(String(v).replace(/\./g, "").replace(/\s/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+function patchNullableDate(v: unknown): string | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null || v === "") return null;
+  return String(v);
+}
+
+function patchNullableContrato(v: unknown): string | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null || v === "") return null;
+  const s = String(v).trim().toLowerCase();
+  const ok = ["salario", "comision", "mixto", "prestador_servicio"].includes(s);
+  return ok ? s : null;
+}
+
+function patchNullableArea(v: unknown): string | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null || v === "") return null;
+  const s = String(v).trim().toLowerCase();
+  const ok = ["ventas", "soporte", "finanzas", "operaciones", "administracion"].includes(s);
+  return ok ? s : null;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getAuthUserId(supabase: any, usuario: { auth_user_id?: string | null; email?: string }): Promise<string | null> {
   if (usuario.auth_user_id) return usuario.auth_user_id;
@@ -53,7 +84,9 @@ export async function GET(
 
     const { data: usuario, error } = await supabase
       .from("usuarios")
-      .select("id, nombre, email, telefono, fecha_nacimiento, rol, estado, created_at, empresa_id")
+      .select(
+        "id, nombre, email, telefono, fecha_nacimiento, fecha_ingreso, tipo_contrato, salario_base, porcentaje_comision, ips, area, rol, estado, created_at, empresa_id"
+      )
       .eq("id", id)
       .single();
 
@@ -104,12 +137,17 @@ export async function GET(
       (currentUser?.rol ?? "").trim() === "super_admin" ||
       ["admin", "administrador"].includes((currentUser?.rol ?? "").trim());
 
+    const puede_editar_rol =
+      (currentUser?.rol ?? "").trim() === "super_admin" ||
+      ["admin", "administrador"].includes((currentUser?.rol ?? "").trim());
+
     const { empresa_id: _e, ...rest } = usuario;
     return NextResponse.json({
       ...rest,
       modulo_ids,
       modulos_empresa,
       puede_editar_modulos,
+      puede_editar_rol,
       es_admin_empresa,
     });
   } catch (err: unknown) {
@@ -146,7 +184,22 @@ export async function PATCH(
     };
 
     const body = await req.json();
-    const { nombre, email, telefono, fecha_nacimiento, estado, modulo_ids } = body;
+    const moduloIdsProvided = Object.prototype.hasOwnProperty.call(body, "modulo_ids");
+    const {
+      nombre,
+      email,
+      telefono,
+      fecha_nacimiento,
+      fecha_ingreso,
+      tipo_contrato,
+      salario_base,
+      porcentaje_comision,
+      ips,
+      area,
+      estado,
+      modulo_ids,
+      rol: rolBody,
+    } = body;
 
     const { data: usuario, error: errGet } = await supabase
       .from("usuarios")
@@ -166,9 +219,28 @@ export async function PATCH(
     const puedeModulos =
       rolEditor === "super_admin" || ["admin", "administrador"].includes(rolEditor);
 
+    const puede_editar_rol =
+      rolEditor === "super_admin" || ["admin", "administrador"].includes(rolEditor);
+
     if (Array.isArray(modulo_ids) && !puedeModulos) {
       return NextResponse.json({ error: "Sin permiso para asignar módulos" }, { status: 403 });
     }
+
+    if (rolBody !== undefined && !puede_editar_rol) {
+      return NextResponse.json({ error: "Sin permiso para cambiar el nivel de acceso" }, { status: 403 });
+    }
+
+    const rolNormalizado =
+      rolBody !== undefined ? String(rolBody).trim().toLowerCase() : undefined;
+    if (
+      rolNormalizado !== undefined &&
+      !(ERP_ROLES as readonly string[]).includes(rolNormalizado)
+    ) {
+      return NextResponse.json({ error: "Rol inválido" }, { status: 400 });
+    }
+
+    const finalRol =
+      rolNormalizado !== undefined ? rolNormalizado : String(usuario.rol ?? "usuario").trim().toLowerCase();
 
     const authUserId = await getAuthUserId(supabase, usuario);
 
@@ -177,6 +249,30 @@ export async function PATCH(
     if (estado !== undefined) updates.estado = estado;
     if (telefono !== undefined) updates.telefono = telefono || null;
     if (fecha_nacimiento !== undefined) updates.fecha_nacimiento = fecha_nacimiento || null;
+
+    const pi = patchOptionalDecimal(porcentaje_comision);
+    if (pi !== undefined) {
+      if (pi !== null && (pi < 0 || pi > 100)) {
+        return NextResponse.json({ error: "Comisión debe estar entre 0 y 100." }, { status: 400 });
+      }
+      updates.porcentaje_comision = pi;
+    }
+
+    const sb = patchOptionalDecimal(salario_base);
+    if (sb !== undefined) updates.salario_base = sb;
+
+    const fi = patchNullableDate(fecha_ingreso);
+    if (fi !== undefined) updates.fecha_ingreso = fi;
+
+    const tc = patchNullableContrato(tipo_contrato);
+    if (tc !== undefined) updates.tipo_contrato = tc;
+
+    const ar = patchNullableArea(area);
+    if (ar !== undefined) updates.area = ar;
+
+    if (ips !== undefined) updates.ips = Boolean(ips);
+
+    if (rolNormalizado !== undefined) updates.rol = rolNormalizado;
 
     if (estado !== undefined && authUserId) {
       const banDuration = estado === "inactivo" ? "876000h" : "none";
@@ -213,7 +309,35 @@ export async function PATCH(
       }
     }
 
-    if (Array.isArray(modulo_ids) && usuario.empresa_id && !esRolAdminEmpresa(usuario.rol)) {
+    if (usuario.empresa_id && rolNormalizado !== undefined) {
+      const oldWasAdmin = esRolAdminEmpresa(usuario.rol);
+      const newIsAdmin = esRolAdminEmpresa(finalRol);
+
+      if (!oldWasAdmin && newIsAdmin) {
+        const { error: errDelA } = await supabase.from("usuario_modulos").delete().eq("usuario_id", id);
+        if (errDelA) return NextResponse.json({ error: errDelA.message }, { status: 400 });
+      } else if (oldWasAdmin && !newIsAdmin) {
+        const { error: errDelD } = await supabase.from("usuario_modulos").delete().eq("usuario_id", id);
+        if (errDelD) return NextResponse.json({ error: errDelD.message }, { status: 400 });
+        if (!moduloIdsProvided) {
+          const { data: emActivos } = await supabase
+            .from("empresa_modulos")
+            .select("modulo_id")
+            .eq("empresa_id", usuario.empresa_id)
+            .eq("activo", true);
+          const umRows = (emActivos ?? []).map((r) => ({
+            usuario_id: id,
+            modulo_id: r.modulo_id as string,
+          }));
+          if (umRows.length > 0) {
+            const { error: errInsS } = await supabase.from("usuario_modulos").insert(umRows);
+            if (errInsS) return NextResponse.json({ error: errInsS.message }, { status: 400 });
+          }
+        }
+      }
+    }
+
+    if (Array.isArray(modulo_ids) && usuario.empresa_id && !esRolAdminEmpresa(finalRol)) {
       const validIds = await filterModuloIdsForEmpresa(supabase, usuario.empresa_id, modulo_ids);
       const { error: errDel } = await supabase.from("usuario_modulos").delete().eq("usuario_id", id);
       if (errDel) {
