@@ -33,7 +33,8 @@ import {
   type SupervisorAgentLoadRow,
 } from "@/lib/chat/chat-ops-actions";
 import { formatWaitHuman } from "@/lib/chat/format-wait-human";
-import { ArrowLeftRight, Flame, UserRound } from "lucide-react";
+import { listActiveQuickRepliesForChannel } from "@/lib/chat/quick-replies-actions";
+import { ArrowLeftRight, Flame, Mic, Paperclip, Square, UserRound, Zap } from "lucide-react";
 import {
   finalizeConversationWithClosure,
   loadFinalizeOptionsForConversation,
@@ -315,6 +316,13 @@ export function ConversacionesClient({
   const [transferQueueTarget, setTransferQueueTarget] = useState("");
   const [transferAgentSearch, setTransferAgentSearch] = useState("");
   const [transferLoadsRefreshing, setTransferLoadsRefreshing] = useState(false);
+  const [channelQuickReplies, setChannelQuickReplies] = useState<
+    Array<{ id: string; title: string; body: string }>
+  >([]);
+  const [quickRepliesLoading, setQuickRepliesLoading] = useState(false);
+  const [quickReplyOpen, setQuickReplyOpen] = useState(false);
+  const [quickReplySearch, setQuickReplySearch] = useState("");
+  const quickReplyPanelRef = useRef<HTMLDivElement | null>(null);
   const [hasActiveBotFlows, setHasActiveBotFlows] = useState(false);
   const [botFlowsChecked, setBotFlowsChecked] = useState(false);
   const [compValidacionesOpen, setCompValidacionesOpen] = useState(false);
@@ -1078,6 +1086,76 @@ export function ConversacionesClient({
   const requestedConversationId = searchParams?.get("conversationId") ?? null;
 
   useEffect(() => {
+    const chId = selected?.channel?.id?.trim();
+    if (!chId || vista === "bot") {
+      setChannelQuickReplies([]);
+      setQuickReplyOpen(false);
+      setQuickReplySearch("");
+      return;
+    }
+    let cancelled = false;
+    setQuickRepliesLoading(true);
+    void listActiveQuickRepliesForChannel(chId)
+      .then((rows) => {
+        if (!cancelled) {
+          setChannelQuickReplies(rows.map((r) => ({ id: r.id, title: r.title, body: r.body })));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setChannelQuickReplies([]);
+      })
+      .finally(() => {
+        if (!cancelled) setQuickRepliesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.channel?.id, vista]);
+
+  useEffect(() => {
+    if (!quickReplyOpen) return;
+    function onKey(ev: KeyboardEvent) {
+      if (ev.key === "Escape") setQuickReplyOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [quickReplyOpen]);
+
+  useEffect(() => {
+    if (!quickReplyOpen) return;
+    function onDoc(ev: MouseEvent) {
+      const el = quickReplyPanelRef.current;
+      if (!el) return;
+      const t = ev.target;
+      if (t instanceof Node && el.contains(t)) return;
+      setQuickReplyOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [quickReplyOpen]);
+
+  const filteredQuickReplies = useMemo(() => {
+    const q = quickReplySearch.trim().toLowerCase();
+    if (!q) return channelQuickReplies;
+    return channelQuickReplies.filter(
+      (r) =>
+        r.title.toLowerCase().includes(q) ||
+        r.body.toLowerCase().includes(q)
+    );
+  }, [channelQuickReplies, quickReplySearch]);
+
+  function insertQuickReplyBody(text: string) {
+    const t = text.trim();
+    if (!t) return;
+    setInput((prev) => {
+      if (!prev.trim()) return t;
+      return `${prev.trimEnd()}\n\n${t}`;
+    });
+    setQuickReplyOpen(false);
+    setQuickReplySearch("");
+  }
+
+  useEffect(() => {
     if (!requestedConversationId || !conversations.length) return;
     if (selectedId === requestedConversationId) return;
     const exists = conversations.some((c) => c.id === requestedConversationId);
@@ -1106,7 +1184,7 @@ export function ConversacionesClient({
   }, [finalizeStateId, finalizeOptions]);
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 h-[calc(100dvh-5.25rem)] max-h-[calc(100dvh-5.25rem)] gap-2 overflow-hidden">
+    <div className="flex flex-col flex-1 min-h-0 h-[calc(100dvh-4.75rem)] max-h-[calc(100dvh-4.75rem)] gap-1 overflow-hidden">
       {lightboxUrl ? (
         <button
           type="button"
@@ -1685,68 +1763,70 @@ export function ConversacionesClient({
             </div>
           ) : (
             <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-              <div className="px-2 py-2 border-b border-slate-200 bg-white shrink-0">
+              <div className="px-2 py-1 border-b border-slate-200 bg-white shrink-0">
                 {selected ? (
-                  <div className="flex flex-col gap-2 min-w-0 w-full">
-                    <div className="flex flex-wrap items-start gap-x-2 gap-y-1.5 min-w-0">
-                      <div className="min-w-0 flex-1 basis-[min(100%,14rem)]">
-                        <div className="font-semibold text-slate-800 text-sm truncate">
-                          {selected.contact.name?.trim() ? selected.contact.name.trim() : "Sin nombre"}
-                        </div>
-                        <div className="text-xs text-slate-500 font-mono truncate">
-                          {selected.contact.phone_number || "—"}
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-1 shrink-0 justify-end">
-                        <ChannelBadge type={selected.channel.type} nombre={selected.channel.nombre} />
-                        {vista === "bot" ? (
-                          <span className="text-[10px] font-semibold text-violet-800 bg-violet-50 border border-violet-200 px-1.5 py-0.5 rounded shrink-0">
-                            Bot
+                  <div className="flex flex-col gap-0.5 min-w-0 w-full">
+                    <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 min-w-0">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0 flex-1">
+                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0 min-w-0">
+                          <span className="font-semibold text-slate-900 text-sm leading-tight truncate max-w-[min(100%,14rem)]">
+                            {selected.contact.name?.trim() ? selected.contact.name.trim() : "Sin nombre"}
                           </span>
-                        ) : isHumanActive ? (
-                          <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded shrink-0">
-                            Humano
+                          <span className="text-[10px] text-slate-500 font-mono tabular-nums shrink-0">
+                            {selected.contact.phone_number || "—"}
                           </span>
-                        ) : null}
-                        <span
-                          className={`text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded border shrink-0 ${badgeEstadoClass(selected.status)}`}
-                        >
-                          {labelEstado(selected.status)}
-                        </span>
-                        {listColumnHidden ? (
-                          <button
-                            type="button"
-                            onClick={() => setListColumnHidden(false)}
-                            className="shrink-0 text-[10px] font-medium text-slate-600 hover:text-slate-900 border border-slate-200 rounded px-1.5 py-0.5 bg-white"
-                            title="Mostrar lista de chats"
+                        </div>
+                        <div className="flex flex-wrap items-center gap-0.5 shrink-0">
+                          <ChannelBadge type={selected.channel.type} nombre={selected.channel.nombre} />
+                          {vista === "bot" ? (
+                            <span className="text-[9px] font-semibold text-violet-800 bg-violet-50 border border-violet-200 px-1 py-0.5 rounded shrink-0">
+                              Bot
+                            </span>
+                          ) : isHumanActive ? (
+                            <span className="text-[9px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1 py-0.5 rounded shrink-0">
+                              Humano
+                            </span>
+                          ) : null}
+                          <span
+                            className={`text-[9px] font-semibold uppercase px-1 py-0.5 rounded border shrink-0 ${badgeEstadoClass(selected.status)}`}
                           >
-                            Chats
-                          </button>
-                        ) : null}
+                            {labelEstado(selected.status)}
+                          </span>
+                          {listColumnHidden ? (
+                            <button
+                              type="button"
+                              onClick={() => setListColumnHidden(false)}
+                              className="shrink-0 text-[9px] font-medium text-slate-600 hover:text-slate-900 border border-slate-200 rounded px-1 py-0.5 bg-white"
+                              title="Mostrar lista de chats"
+                            >
+                              Chats
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
 
-                    {vista !== "bot" && selected ? (
-                      <div className="flex flex-wrap items-center gap-1">
+                    {vista !== "bot" ? (
+                      <div className="flex flex-wrap items-center gap-0.5 min-w-0">
                         {selected.queue_name ? (
                           <span
-                            className="text-[10px] font-medium text-indigo-900 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5 truncate max-w-full"
+                            className="text-[9px] font-medium text-indigo-900 bg-indigo-50 border border-indigo-200 rounded px-1 py-0.5 truncate max-w-[10rem]"
                             title="Cola de enrutamiento"
                           >
-                            Cola: {selected.queue_name}
+                            {selected.queue_name}
                           </span>
                         ) : mode === "inbox" ? (
-                          <span className="text-[10px] text-slate-600 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5">
+                          <span className="text-[9px] text-slate-600 bg-slate-50 border border-slate-200 rounded px-1 py-0.5">
                             Sin cola
                           </span>
                         ) : null}
-                        <InboxReplyTurnBadges c={selected} />
+                        <InboxReplyTurnBadges c={selected} dense />
                         {selected.assigned_agent_name ? (
                           <span
-                            className="text-[10px] font-semibold text-emerald-900 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 truncate max-w-full"
+                            className="text-[9px] font-semibold text-emerald-900 bg-emerald-50 border border-emerald-200 rounded px-1 py-0.5 truncate max-w-[9rem]"
                             title="Agente asignado"
                           >
-                            Agente: {selected.assigned_agent_name}
+                            {selected.assigned_agent_name}
                           </span>
                         ) : mode === "inbox" ? (
                           (() => {
@@ -1756,7 +1836,7 @@ export function ConversacionesClient({
                             );
                             return (
                               <span
-                                className={`text-[10px] font-semibold rounded px-1.5 py-0.5 border ${assignmentWaitBadgeClass(w.tone)}`}
+                                className={`text-[9px] font-semibold rounded px-1 py-0.5 border ${assignmentWaitBadgeClass(w.tone)}`}
                                 title="Aún sin agente asignado"
                               >
                                 Sin agente · {w.label}
@@ -1767,75 +1847,71 @@ export function ConversacionesClient({
                       </div>
                     ) : null}
 
-                    <div className="flex flex-wrap items-center gap-2 w-full justify-between gap-y-2">
-                      <div className="flex flex-wrap items-center gap-2 min-w-0">
-                        {vista !== "bot" ? (
-                          <button
-                            type="button"
-                            disabled={opsBusy}
-                            onClick={() => {
-                              setTransferAgentSearch("");
-                              setTransferQueueTarget(selected.queue_id?.trim() ? selected.queue_id : "");
-                              setTransferModalOpen(true);
-                            }}
-                            className="inline-flex items-center gap-2 rounded-xl bg-sky-600 text-white px-4 py-2.5 text-sm font-semibold shadow-md shadow-sky-900/15 hover:bg-sky-700 disabled:opacity-50 transition-colors"
-                          >
-                            <ArrowLeftRight className="w-4 h-4 shrink-0" aria-hidden />
-                            Transferir
-                          </button>
-                        ) : null}
-                        {isHumanActive ? (
-                          <button
-                            type="button"
-                            disabled={releasingBot}
-                            onClick={() => void handleReleaseToBot()}
-                            className="text-xs font-semibold text-slate-700 hover:text-slate-900 border border-slate-300 rounded-xl px-3 py-2 bg-white disabled:opacity-50 shadow-sm"
-                          >
-                            {releasingBot ? "…" : "Modo bot"}
-                          </button>
-                        ) : null}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2 shrink-0 justify-end">
-                        {selected.status !== "closed" && mode === "inbox" ? (
-                          <button
-                            type="button"
-                            disabled={opsBusy || finalizeSaving}
-                            onClick={() => void openFinalizeModal()}
-                            className="text-xs font-semibold text-slate-800 border-2 border-slate-300 rounded-xl px-4 py-2.5 bg-white hover:bg-slate-50 disabled:opacity-50 shadow-sm"
-                          >
-                            Finalizar
-                          </button>
-                        ) : selected.status === "closed" ? (
-                          <button
-                            type="button"
-                            disabled={opsBusy}
-                            onClick={() =>
-                              void runConversationOp(() =>
-                                changeConversationStatus(selected.id, "open")
-                              )
-                            }
-                            className="text-xs font-semibold text-emerald-800 border-2 border-emerald-400 rounded-xl px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 shadow-sm"
-                          >
-                            Reabrir
-                          </button>
-                        ) : null}
-                        {selected.contact.cliente_id ? (
-                          <Link
-                            href={`/clientes/${selected.contact.cliente_id}`}
-                            className="text-xs font-semibold text-[#0EA5E9] hover:underline shrink-0 px-1"
-                          >
-                            Cliente
-                          </Link>
-                        ) : null}
-                        {selected.contact.crm_prospecto_id ? (
-                          <Link
-                            href={`/crm/${selected.contact.crm_prospecto_id}`}
-                            className="text-xs font-semibold text-violet-600 hover:underline shrink-0 px-1"
-                          >
-                            CRM
-                          </Link>
-                        ) : null}
-                      </div>
+                    <div className="flex flex-wrap items-center justify-end gap-1 pt-0.5 border-t border-slate-100">
+                      {vista !== "bot" ? (
+                        <button
+                          type="button"
+                          disabled={opsBusy}
+                          onClick={() => {
+                            setTransferAgentSearch("");
+                            setTransferQueueTarget(selected.queue_id?.trim() ? selected.queue_id : "");
+                            setTransferModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md bg-sky-600 text-white px-2 py-1 text-[11px] font-semibold shadow-sm hover:bg-sky-700 disabled:opacity-50"
+                        >
+                          <ArrowLeftRight className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                          Transferir
+                        </button>
+                      ) : null}
+                      {selected.status !== "closed" && mode === "inbox" ? (
+                        <button
+                          type="button"
+                          disabled={opsBusy || finalizeSaving}
+                          onClick={() => void openFinalizeModal()}
+                          className="inline-flex items-center rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          Finalizar
+                        </button>
+                      ) : selected.status === "closed" ? (
+                        <button
+                          type="button"
+                          disabled={opsBusy}
+                          onClick={() =>
+                            void runConversationOp(() =>
+                              changeConversationStatus(selected.id, "open")
+                            )
+                          }
+                          className="inline-flex items-center rounded-md border border-emerald-400 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+                        >
+                          Reabrir
+                        </button>
+                      ) : null}
+                      {isHumanActive ? (
+                        <button
+                          type="button"
+                          disabled={releasingBot}
+                          onClick={() => void handleReleaseToBot()}
+                          className="inline-flex items-center rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          {releasingBot ? "…" : "Modo bot"}
+                        </button>
+                      ) : null}
+                      {selected.contact.cliente_id ? (
+                        <Link
+                          href={`/clientes/${selected.contact.cliente_id}`}
+                          className="inline-flex items-center rounded-md px-2 py-1 text-[11px] font-semibold text-[#0EA5E9] hover:underline"
+                        >
+                          Cliente
+                        </Link>
+                      ) : null}
+                      {selected.contact.crm_prospecto_id ? (
+                        <Link
+                          href={`/crm/${selected.contact.crm_prospecto_id}`}
+                          className="inline-flex items-center rounded-md px-2 py-1 text-[11px] font-semibold text-violet-600 hover:underline"
+                        >
+                          CRM
+                        </Link>
+                      ) : null}
                     </div>
                   </div>
                 ) : null}
@@ -1945,12 +2021,12 @@ export function ConversacionesClient({
               <div
                 ref={messagesScrollRef}
                 onScroll={onMessagesScroll}
-                className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2 space-y-2 bg-slate-50/50"
+                className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-2 py-1 space-y-0 bg-gradient-to-b from-slate-100/90 to-slate-50/40"
               >
                 {loadingMsg ? (
                   <div className="text-center text-slate-400 text-sm py-8">Cargando mensajes…</div>
                 ) : (
-                  messages.map((m) => {
+                  messages.map((m, idx) => {
                     const attachUrl = resolveAttachmentUrl(m);
                     const metaDocName = getMetaInboundDocumentFilename(m.raw_payload);
                     const erpName = getErpAttachmentFilename(m.raw_payload);
@@ -1962,13 +2038,15 @@ export function ConversacionesClient({
                     return (
                       <div
                         key={m.id}
-                        className={`flex ${m.from_me ? "justify-end" : "justify-start"}`}
+                        className={`flex ${m.from_me ? "justify-end" : "justify-start"} py-1.5 ${
+                          idx > 0 ? "border-t border-slate-200/55" : ""
+                        }`}
                       >
                         <div
-                          className={`max-w-[85%] rounded-xl px-3 py-1.5 text-sm ${
+                          className={`max-w-[88%] rounded-2xl px-2.5 py-1.5 text-sm ${
                             m.from_me
-                              ? "bg-[#0EA5E9] text-white rounded-br-md"
-                              : "bg-white border border-slate-200 text-slate-800 rounded-bl-md shadow-sm"
+                              ? "bg-[#0EA5E9] text-white rounded-br-md shadow-md shadow-sky-900/15 ring-1 ring-white/15"
+                              : "bg-white text-slate-800 rounded-bl-md border border-slate-200/95 shadow-sm border-l-[3px] border-l-sky-300/90"
                           }`}
                         >
                           {showAsImage && attachUrl ? (
@@ -2126,7 +2204,7 @@ export function ConversacionesClient({
 
               <form
                 onSubmit={handleSend}
-                className="p-2 border-t border-slate-200 bg-white flex flex-col gap-1.5 shrink-0 min-h-0"
+                className="p-1.5 border-t border-slate-200 bg-white flex flex-col gap-1 shrink-0 min-h-0"
               >
                 <input
                   ref={fileInputRef}
@@ -2136,39 +2214,116 @@ export function ConversacionesClient({
                   onChange={(e) => void handleSendFile(e)}
                 />
                 {sendError && (
-                  <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-2 py-1.5">
+                  <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-2 py-1">
                     {sendError}
                   </div>
                 )}
-                <div className="flex gap-1.5 items-stretch">
-                  <button
-                    type="button"
-                    disabled={uploadingFile || !selectedId || recordingVoice}
-                    onClick={() => fileInputRef.current?.click()}
-                    className="shrink-0 border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50 px-2.5 py-2 rounded-lg text-sm font-medium min-h-[2.5rem]"
-                    title="Adjuntar imagen, audio o documento"
-                  >
-                    {uploadingFile ? "…" : "Adjunto"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={uploadingFile || !selectedId}
-                    onClick={() => void toggleVoiceNote()}
-                    className={`shrink-0 border px-2.5 py-2 rounded-lg text-xs font-semibold min-h-[2.5rem] disabled:opacity-50 ${
-                      recordingVoice
-                        ? "border-red-300 bg-red-50 text-red-700"
-                        : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                    }`}
-                    title={
-                      recordingVoice
-                        ? "Detener y enviar nota de voz"
-                        : "Grabar nota de voz (micrófono)"
-                    }
-                  >
-                    {recordingVoice ? "Parar" : "Voz"}
-                  </button>
+                <div className="flex gap-1 items-end">
+                  <div ref={quickReplyPanelRef} className="relative flex shrink-0 gap-0.5 items-center">
+                    <button
+                      type="button"
+                      disabled={uploadingFile || !selectedId || recordingVoice}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                      title="Adjuntar imagen, audio o documento"
+                      aria-label="Adjuntar archivo"
+                    >
+                      {uploadingFile ? (
+                        <span className="text-xs font-bold">…</span>
+                      ) : (
+                        <Paperclip className="w-[18px] h-[18px]" aria-hidden />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={uploadingFile || !selectedId}
+                      onClick={() => void toggleVoiceNote()}
+                      className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border text-slate-600 disabled:opacity-50 ${
+                        recordingVoice
+                          ? "border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
+                          : "border-slate-200 hover:bg-slate-50"
+                      }`}
+                      title={
+                        recordingVoice
+                          ? "Detener y enviar nota de voz"
+                          : "Grabar nota de voz"
+                      }
+                      aria-label={recordingVoice ? "Detener grabación y enviar" : "Grabar nota de voz"}
+                    >
+                      {recordingVoice ? (
+                        <Square className="w-[16px] h-[16px] fill-current" aria-hidden />
+                      ) : (
+                        <Mic className="w-[18px] h-[18px]" aria-hidden />
+                      )}
+                    </button>
+                    {vista !== "bot" ? (
+                      <>
+                        <button
+                          type="button"
+                          disabled={!selectedId || quickRepliesLoading}
+                          onClick={() => {
+                            setQuickReplyOpen((o) => !o);
+                            setQuickReplySearch("");
+                          }}
+                          className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border disabled:opacity-50 ${
+                            quickReplyOpen
+                              ? "border-sky-400 bg-sky-50 text-sky-800"
+                              : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                          }`}
+                          title="Respuestas rápidas"
+                          aria-label="Insertar respuesta rápida"
+                          aria-expanded={quickReplyOpen}
+                        >
+                          <Zap className="w-[18px] h-[18px]" aria-hidden />
+                        </button>
+                        {quickReplyOpen ? (
+                          <div className="absolute bottom-full left-0 z-30 mb-1 flex w-[min(calc(100vw-2rem),20rem)] max-h-72 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                            <div className="border-b border-slate-100 px-2 py-1.5">
+                              <input
+                                type="search"
+                                className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400/30"
+                                placeholder="Buscar…"
+                                value={quickReplySearch}
+                                onChange={(e) => setQuickReplySearch(e.target.value)}
+                                aria-label="Buscar respuesta rápida"
+                                autoFocus
+                              />
+                            </div>
+                            <div className="max-h-56 overflow-y-auto overscroll-contain p-1">
+                              {quickRepliesLoading ? (
+                                <p className="px-2 py-4 text-center text-xs text-slate-400">Cargando…</p>
+                              ) : filteredQuickReplies.length === 0 ? (
+                                <p className="px-2 py-4 text-center text-xs text-slate-500">
+                                  {channelQuickReplies.length === 0
+                                    ? "No hay respuestas configuradas para este canal."
+                                    : "Sin coincidencias."}
+                                </p>
+                              ) : (
+                                <ul className="space-y-0.5">
+                                  {filteredQuickReplies.map((r) => (
+                                    <li key={r.id}>
+                                      <button
+                                        type="button"
+                                        className="w-full rounded-lg px-2 py-2 text-left text-xs hover:bg-slate-50"
+                                        onClick={() => insertQuickReplyBody(r.body)}
+                                      >
+                                        <span className="block font-semibold text-slate-900">{r.title}</span>
+                                        <span className="mt-0.5 line-clamp-2 text-[11px] text-slate-500">
+                                          {r.body}
+                                        </span>
+                                      </button>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
                   <input
-                    className="flex-1 min-w-0 border border-slate-200 rounded-lg px-2.5 py-2 text-sm min-h-[2.5rem] focus:ring-2 focus:ring-[#0EA5E9]/30 focus:border-[#0EA5E9] outline-none"
+                    className="flex-1 min-w-0 border border-slate-200 rounded-lg px-2.5 py-2 text-sm min-h-[2.25rem] focus:ring-2 focus:ring-[#0EA5E9]/30 focus:border-[#0EA5E9] outline-none"
                     placeholder="Escribí un mensaje…"
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
@@ -2177,7 +2332,7 @@ export function ConversacionesClient({
                   <button
                     type="submit"
                     disabled={sending || !input.trim()}
-                    className="bg-[#0EA5E9] hover:bg-[#0284C7] disabled:opacity-50 text-white px-3 py-2 rounded-lg text-sm font-medium shrink-0 min-h-[2.5rem]"
+                    className="bg-[#0EA5E9] hover:bg-[#0284C7] disabled:opacity-50 text-white px-3 py-2 rounded-lg text-sm font-medium shrink-0 min-h-[2.25rem]"
                   >
                     {sending ? "…" : "Enviar"}
                   </button>
