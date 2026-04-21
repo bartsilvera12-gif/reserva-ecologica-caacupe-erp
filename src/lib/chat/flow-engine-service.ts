@@ -72,6 +72,26 @@ type FlowOption = {
   option_payload: Record<string, unknown> | null;
 };
 
+/**
+ * Texto del botón reply en WhatsApp: debe coincidir con lo configurado en el ERP.
+ * Prioriza `option_payload.opcion_label` (modo simple del editor), luego promo/producto abreviado, luego `label`.
+ */
+function whatsAppInteractiveTitleFromOption(o: FlowOption): string {
+  const pl = o.option_payload;
+  if (pl && typeof pl === "object" && !Array.isArray(pl)) {
+    const ol = (pl as Record<string, unknown>).opcion_label;
+    if (typeof ol === "string" && ol.trim()) return ol.trim();
+    const pn = (pl as Record<string, unknown>).promo_nombre;
+    if (typeof pn === "string" && pn.trim()) return pn.trim();
+    const prod = (pl as Record<string, unknown>).producto;
+    const monto = (pl as Record<string, unknown>).monto;
+    if (typeof prod === "string" && prod.trim() && typeof monto === "number" && monto > 0) {
+      return `${prod.trim()} ${monto}`.trim();
+    }
+  }
+  return (o.label ?? "").trim() || "Opción";
+}
+
 type FlowNode = {
   id: string;
   empresa_id: string;
@@ -1045,6 +1065,14 @@ export function createFlowEngine(ctx: FlowEngineContext) {
           };
         }
         const options = await getNodeOptions(node.id);
+        console.info("[flow-options]", "buttons_legacy_no_blocks", {
+          conversation_id: state.id,
+          node_code: node.node_code,
+          resolved_titles: options.map((o) => ({
+            meta_button_id: o.meta_button_id,
+            title: whatsAppInteractiveTitleFromOption(o),
+          })),
+        });
         const send = await sendWhatsAppInteractiveButtons({
           toDigits: ctxSend.toDigits,
           phoneNumberId: ctxSend.phoneNumberId,
@@ -1052,7 +1080,7 @@ export function createFlowEngine(ctx: FlowEngineContext) {
           bodyText,
           buttons: options.map((o) => ({
             id: o.meta_button_id,
-            title: o.label,
+            title: whatsAppInteractiveTitleFromOption(o),
           })),
         });
         if (!send.ok) return { ok: false, error: send.error };
@@ -1155,6 +1183,15 @@ export function createFlowEngine(ctx: FlowEngineContext) {
     }
 
     const options = await getNodeOptions(node.id);
+    console.info("[flow-options]", "buttons_with_blocks_context", {
+      conversation_id: state.id,
+      node_code: node.node_code,
+      block_count: blocks.length,
+      resolved_titles: options.map((o) => ({
+        meta_button_id: o.meta_button_id,
+        title: whatsAppInteractiveTitleFromOption(o),
+      })),
+    });
     for (const block of blocks) {
       if (block.block_type === "text") {
         const textRaw = block.content_text?.trim();
@@ -1222,7 +1259,7 @@ export function createFlowEngine(ctx: FlowEngineContext) {
           bodyText,
           buttons: options.map((o) => ({
             id: o.meta_button_id,
-            title: o.label,
+            title: whatsAppInteractiveTitleFromOption(o),
           })),
         });
         if (!send.ok) return { ok: false, error: send.error };

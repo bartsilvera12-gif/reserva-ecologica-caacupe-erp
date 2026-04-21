@@ -628,7 +628,13 @@ export default function FlowEditorPage() {
       );
       setOptionPayloadDrafts((prev) => ({ ...prev, [liveOpt.id]: stringifyOptionPayload(payloadParsed) }));
     }
-    const metaButtonId = resolveUniqueMetaButtonId(live, liveOpt.id, liveOpt.label);
+
+    /** Lo que WhatsApp muestra como título del botón = columna `label`; debe reflejar opcion_label del modo simple / JSON. */
+    const payloadOpc =
+      typeof payloadParsed.opcion_label === "string" ? payloadParsed.opcion_label.trim() : "";
+    const effectiveDisplayLabel = (payloadOpc || liveOpt.label.trim()).slice(0, 500);
+
+    const metaButtonId = resolveUniqueMetaButtonId(live, liveOpt.id, effectiveDisplayLabel);
     const res = await fetchWithSupabaseSession(
       `/api/chat/flows/${encodeURIComponent(flowCode)}/nodes/${encodeURIComponent(live.node_code)}/options/${liveOpt.id}`,
       {
@@ -636,7 +642,7 @@ export default function FlowEditorPage() {
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
         body: JSON.stringify({
-          label: liveOpt.label,
+          label: effectiveDisplayLabel,
           meta_button_id: metaButtonId,
           next_node_code: nextCode,
           sort_order: liveOpt.sort_order,
@@ -644,10 +650,28 @@ export default function FlowEditorPage() {
         }),
       }
     );
-    const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    const json = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      item?: FlowNodeOption;
+    };
     if (!res.ok || !json.ok) throw new Error(json.error ?? "No se pudo guardar opción");
+    if (json.item?.id === liveOpt.id) {
+      setNodes((prev) =>
+        prev.map((n) =>
+          n.id !== live.id
+            ? n
+            : {
+                ...n,
+                options: n.options.map((o) =>
+                  o.id === liveOpt.id ? { ...o, ...(json.item as FlowNodeOption) } : o
+                ),
+              }
+        )
+      );
+    }
     setError(null);
-    setSuccess(`Botón "${liveOpt.label}" guardado.`);
+    setSuccess(`Botón "${effectiveDisplayLabel}" guardado.`);
   }
 
   async function createOption(node: FlowNode) {
