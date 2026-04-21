@@ -118,11 +118,13 @@ CREATE POLICY "edv_mutate"
     OR zentra_erp.puede_acceder_empresa(empresa_id)
   );
 
+DROP POLICY IF EXISTS "edv_update" ON zentra_erp.empresa_dashboard_views;
 CREATE POLICY "edv_update"
   ON zentra_erp.empresa_dashboard_views FOR UPDATE
   USING (zentra_erp.es_super_admin() OR zentra_erp.puede_acceder_empresa(empresa_id))
   WITH CHECK (zentra_erp.es_super_admin() OR zentra_erp.puede_acceder_empresa(empresa_id));
 
+DROP POLICY IF EXISTS "edv_delete" ON zentra_erp.empresa_dashboard_views;
 CREATE POLICY "edv_delete"
   ON zentra_erp.empresa_dashboard_views FOR DELETE
   USING (zentra_erp.es_super_admin() OR zentra_erp.puede_acceder_empresa(empresa_id));
