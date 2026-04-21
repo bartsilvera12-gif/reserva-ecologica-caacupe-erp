@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { getSorteoById } from "@/lib/sorteos/actions";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 
 type FlowRow = {
@@ -29,10 +31,26 @@ function fmt(iso: string) {
   }
 }
 
-export default function FlowsListPage() {
+/** Código interno estable: letras minúsculas, números y guiones bajos (válido para `flow_code`). */
+function suggestedFlowCodeFromSorteoName(nombre: string): string {
+  const base = nombre
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
+  if (base.length > 0) return `sorteo_${base}`;
+  return "sorteo_whatsapp";
+}
+
+function FlowsListContent() {
+  const searchParams = useSearchParams();
+  const sorteoIdParam = searchParams?.get("sorteo_id")?.trim() || null;
+
   const [rows, setRows] = useState<FlowRow[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [success, setSuccess] = useState<ReactNode>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [togglingCode, setTogglingCode] = useState<string | null>(null);
@@ -40,11 +58,15 @@ export default function FlowsListPage() {
   const [newCode, setNewCode] = useState("");
   const [newLabel, setNewLabel] = useState("");
   const [duplicateFrom, setDuplicateFrom] = useState("");
+  const prefilledSorteoRef = useRef(false);
 
   async function reload() {
     setLoading(true);
     try {
-      const res = await fetchWithSupabaseSession("/api/chat/flows", { credentials: "same-origin", cache: "no-store" });
+      const res = await fetchWithSupabaseSession("/api/chat/flows", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
       const json = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         error?: string;
@@ -65,11 +87,21 @@ export default function FlowsListPage() {
     void reload();
   }, []);
 
+  useEffect(() => {
+    if (!sorteoIdParam || prefilledSorteoRef.current) return;
+    prefilledSorteoRef.current = true;
+    void getSorteoById(sorteoIdParam).then((s) => {
+      if (!s) return;
+      setNewCode((prev) => (prev.trim() ? prev : suggestedFlowCodeFromSorteoName(s.nombre)));
+      setNewLabel((prev) => (prev.trim() ? prev : s.nombre.trim() || suggestedFlowCodeFromSorteoName(s.nombre)));
+    });
+  }, [sorteoIdParam]);
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     const flowCode = newCode.trim();
     if (!flowCode) {
-      setError("Ingresá un flow_code para crear el flujo.");
+      setError("Definí un flow_code: es el identificador técnico del flujo (ej. sorteo_navidad). Podés cambiarlo antes de crear.");
       return;
     }
     setCreating(true);
@@ -92,7 +124,18 @@ export default function FlowsListPage() {
       setNewLabel("");
       setDuplicateFrom("");
       await reload();
-      setSuccess(`Flujo ${flowCode} creado correctamente.`);
+      const editorHref = `/configuracion/conversaciones/flujos/${encodeURIComponent(flowCode)}`;
+      setSuccess(
+        <>
+          Flujo «{flowCode}» creado correctamente.{" "}
+          <Link href={editorHref} className="font-semibold text-emerald-800 underline underline-offset-2">
+            Abrir editor del flujo
+          </Link>
+          {sorteoIdParam
+            ? " para vincular este sorteo y configurar los mensajes."
+            : " para asociar un sorteo y los pasos del WhatsApp."}
+        </>,
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al crear flujo");
     } finally {
@@ -166,44 +209,86 @@ export default function FlowsListPage() {
         </Link>
       </div>
 
+      {sorteoIdParam ? (
+        <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+          Venís desde un sorteo: completá el formulario y después en{" "}
+          <strong>Editar</strong> del flujo elegí ese sorteo en la configuración del bot.
+        </div>
+      ) : null}
+
       {error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-2">{error}</div>}
       {success && <div className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2">{success}</div>}
 
-      <form onSubmit={handleCreate} className="bg-white border border-slate-200 rounded-xl p-4 grid grid-cols-1 md:grid-cols-4 gap-3">
-        <input
-          className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-          placeholder="flow_code (ej: sorteo_default)"
-          value={newCode}
-          required
-          onChange={(e) => setNewCode(e.target.value)}
-        />
-        <input
-          className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-          placeholder="label visible"
-          value={newLabel}
-          onChange={(e) => setNewLabel(e.target.value)}
-        />
-        <input
-          className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-          placeholder="duplicar de (opcional)"
-          value={duplicateFrom}
-          onChange={(e) => setDuplicateFrom(e.target.value)}
-        />
-        <button
-          type="submit"
-          disabled={creating}
-          className="bg-[#0EA5E9] hover:bg-[#0284C7] disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium"
-        >
-          {creating ? "Creando..." : "Crear flujo"}
-        </button>
-      </form>
+      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+        <p className="text-sm text-slate-600 leading-relaxed">
+          Crear un sorteo no crea solo el flujo de WhatsApp: aquí definís el{" "}
+          <strong className="text-slate-800">flow_code</strong> (identificador único interno, sin espacios). El nombre
+          que venís usando en el sorteo puede ir en <strong>label visible</strong>. Para atender compras por WhatsApp,
+          después abrís <strong>Editar</strong> en el flujo y allí vinculás el sorteo y los pasos del chat.
+        </p>
+        <form noValidate onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+          <div className="space-y-1 md:col-span-1">
+            <label htmlFor="flow-new-code" className="block text-xs font-semibold text-slate-600">
+              flow_code <span className="text-red-600">*</span>
+            </label>
+            <input
+              id="flow-new-code"
+              type="text"
+              autoComplete="off"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono"
+              placeholder="ej: sorteo_navidad"
+              value={newCode}
+              onChange={(e) => setNewCode(e.target.value)}
+              aria-describedby="flow-code-help"
+            />
+            <p id="flow-code-help" className="text-[11px] text-slate-500 leading-snug">
+              Solo letras minúsculas, números y guiones bajos. No es el nombre público del sorteo.
+            </p>
+          </div>
+          <div className="space-y-1 md:col-span-1">
+            <label htmlFor="flow-new-label" className="block text-xs font-semibold text-slate-600">
+              Nombre visible
+            </label>
+            <input
+              id="flow-new-label"
+              type="text"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              placeholder="Cómo lo ves en la lista"
+              value={newLabel}
+              onChange={(e) => setNewLabel(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1 md:col-span-1">
+            <label htmlFor="flow-duplicate-from" className="block text-xs font-semibold text-slate-600">
+              Duplicar desde (opcional)
+            </label>
+            <input
+              id="flow-duplicate-from"
+              type="text"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono"
+              placeholder="flow_code de otro flujo"
+              value={duplicateFrom}
+              onChange={(e) => setDuplicateFrom(e.target.value)}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={creating}
+            className="bg-[#0EA5E9] hover:bg-[#0284C7] disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium"
+          >
+            {creating ? "Creando..." : "Crear flujo"}
+          </button>
+        </form>
+      </div>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="px-4 py-3 border-b border-slate-200 text-sm font-semibold text-slate-700">Listado</div>
         {loading ? (
           <div className="p-6 text-sm text-slate-400 animate-pulse">Cargando...</div>
         ) : rows.length === 0 ? (
-          <div className="p-6 text-sm text-slate-500">No hay flujos creados.</div>
+          <div className="p-6 text-sm text-slate-500">
+            No hay flujos creados. Completá el flow_code arriba y pulsá Crear flujo (no es un error del sistema).
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
@@ -261,5 +346,17 @@ export default function FlowsListPage() {
         )}
       </div>
     </div>
+  );
+}
+
+function FlowsListFallback() {
+  return <div className="p-6 text-sm text-slate-400">Cargando flujos…</div>;
+}
+
+export default function FlowsListPage() {
+  return (
+    <Suspense fallback={<FlowsListFallback />}>
+      <FlowsListContent />
+    </Suspense>
   );
 }

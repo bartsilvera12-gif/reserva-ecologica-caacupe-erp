@@ -125,7 +125,13 @@ export default function EditarSorteoPage() {
         <span className="text-slate-800 font-medium">Editar</span>
       </div>
       <h1 className="text-2xl font-bold text-gray-800">Editar sorteo</h1>
-      <div className="pt-1">
+      <div className="pt-1 flex flex-wrap gap-2">
+        <Link
+          href={`/configuracion/conversaciones/flujos?sorteo_id=${encodeURIComponent(id)}`}
+          className="inline-flex items-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
+        >
+          Flujo WhatsApp para este sorteo
+        </Link>
         <Link
           href={`/sorteos/${id}/revendedores`}
           className="inline-flex items-center rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-100"
