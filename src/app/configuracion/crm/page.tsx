@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ConfigFormCard, ConfigSectionTitle } from "@/components/config/global-config-primitives";
 import { GlobalConfigSubpageShell } from "@/components/config/GlobalConfigSubpageShell";
 import { getCurrentUser } from "@/lib/auth";
+import { apiFetch } from "@/lib/api/fetch-with-supabase-session";
 import {
   createEtapa,
   deleteEtapa,
@@ -12,12 +13,17 @@ import {
   updateEtapa,
   type EtapaCrm,
 } from "@/lib/crm/etapas";
+import type { ClienteTipoServicioRow } from "@/lib/clientes/tipo-servicio-catalogo";
 
 export default function ConfiguracionCrmPipelinePage() {
   const [esAdmin, setEsAdmin] = useState(false);
   const [etapasCrm, setEtapasCrm] = useState<EtapaCrm[]>([]);
   const [nuevaEtapa, setNuevaEtapa] = useState({ nombre: "", codigo: "", color: "gray", orden: 0 });
   const [editandoEtapa, setEditandoEtapa] = useState<string | null>(null);
+  const [tiposServ, setTiposServ] = useState<ClienteTipoServicioRow[]>([]);
+  const [cargandoTipos, setCargandoTipos] = useState(false);
+  const [nuevoTipoNombre, setNuevoTipoNombre] = useState("");
+  const [editandoTipo, setEditandoTipo] = useState<string | null>(null);
 
   useEffect(() => {
     getCurrentUser().then((u) => {
@@ -33,6 +39,63 @@ export default function ConfiguracionCrmPipelinePage() {
   useEffect(() => {
     loadEtapas();
   }, [loadEtapas]);
+
+  const loadTipos = useCallback(async () => {
+    setCargandoTipos(true);
+    try {
+      if (esAdmin) {
+        const r = await apiFetch("/api/cliente-tipos-servicio?all=1&with_usos=1");
+        if (!r.ok) throw new Error("No se pudo cargar el catálogo de tipos");
+        const j = (await r.json()) as { success?: boolean; data?: ClienteTipoServicioRow[] };
+        if (j?.success && Array.isArray(j.data)) setTiposServ([...j.data].sort((a, b) => a.orden - b.orden));
+        else setTiposServ([]);
+      } else {
+        const r = await apiFetch("/api/cliente-tipos-servicio?form=1");
+        if (r.ok) {
+          const j = (await r.json()) as { success?: boolean; data?: ClienteTipoServicioRow[] };
+          if (j?.success && Array.isArray(j.data)) setTiposServ(j.data);
+          else setTiposServ([]);
+        } else {
+          setTiposServ([]);
+        }
+      }
+    } catch (e) {
+      console.error("[config crm] tipos servicio", e);
+      setTiposServ([]);
+    } finally {
+      setCargandoTipos(false);
+    }
+  }, [esAdmin]);
+
+  useEffect(() => {
+    void loadTipos();
+  }, [loadTipos]);
+
+  const reordenarTipo = (rowId: string, direction: "up" | "down") => {
+    if (!esAdmin) return;
+    const s = [...tiposServ].sort((a, b) => a.orden - b.orden);
+    const i = s.findIndex((x) => x.id === rowId);
+    if (i < 0) return;
+    const j = direction === "up" ? i - 1 : i + 1;
+    if (j < 0 || j >= s.length) return;
+    const a = s[i]!;
+    const b = s[j]!;
+    const ao = a.orden;
+    const bo = b.orden;
+    void (async () => {
+      const r1 = await apiFetch(`/api/cliente-tipos-servicio/${a.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orden: bo }),
+      });
+      const r2 = await apiFetch(`/api/cliente-tipos-servicio/${b.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orden: ao }),
+      });
+      if (r1.ok && r2.ok) void loadTipos();
+    })();
+  };
 
   return (
     <GlobalConfigSubpageShell
@@ -201,6 +264,177 @@ export default function ConfiguracionCrmPipelinePage() {
               </div>
             </>
           )}
+
+          <div className="mt-6 border-t border-slate-200 pt-6">
+            <ConfigSectionTitle>Tipos de servicio / segmentos de cliente</ConfigSectionTitle>
+            <p className="mb-3 text-xs leading-relaxed text-slate-500">
+              Estos tipos se usan para segmentar clientes, reportes, mora, cobranzas y análisis comercial. No borres slugs
+              vinculados; podés <strong className="font-medium text-slate-600">desactivar</strong> un segmento o editar
+              el nombre que ve el usuario.
+            </p>
+            {cargandoTipos ? (
+              <p className="text-sm text-slate-400">Cargando…</p>
+            ) : (
+              <div className="space-y-2">
+                {[...tiposServ].sort((a, b) => a.orden - b.orden).map((t, idx, arr) => (
+                  <div key={t.id} className="flex items-start gap-2 rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+                    {esAdmin && (
+                      <div className="flex flex-col gap-0.5 pt-0.5">
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          onClick={() => reordenarTipo(t.id, "up")}
+                          className="rounded border border-slate-200 px-1 text-xs leading-none text-slate-500 disabled:opacity-30"
+                          aria-label="Subir"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          disabled={idx === arr.length - 1}
+                          onClick={() => reordenarTipo(t.id, "down")}
+                          className="rounded border border-slate-200 px-1 text-xs leading-none text-slate-500 disabled:opacity-30"
+                          aria-label="Bajar"
+                        >
+                          ↓
+                        </button>
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      {esAdmin && editandoTipo === t.id ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            id={`nmt-${t.id}`}
+                            defaultValue={t.nombre}
+                            className="w-40 rounded border px-2 py-1 text-sm"
+                            disabled={!esAdmin}
+                          />
+                          <input
+                            id={`ord-${t.id}`}
+                            type="number"
+                            defaultValue={t.orden}
+                            className="w-16 rounded border px-2 py-1 text-sm"
+                          />
+                          <label className="flex items-center gap-1 text-xs">
+                            <input type="checkbox" id={`ac-${t.id}`} defaultChecked={t.activo} />
+                            Activo
+                          </label>
+                          <button
+                            type="button"
+                            className="text-xs font-medium text-green-600"
+                            onClick={async () => {
+                              const nombre = (document.getElementById(`nmt-${t.id}`) as HTMLInputElement)?.value?.trim();
+                              const ord = parseInt(
+                                (document.getElementById(`ord-${t.id}`) as HTMLInputElement)?.value ?? "0",
+                                10
+                              );
+                              const activo = (document.getElementById(`ac-${t.id}`) as HTMLInputElement)?.checked ?? true;
+                              if (nombre) {
+                                await apiFetch(`/api/cliente-tipos-servicio/${t.id}`, {
+                                  method: "PUT",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ nombre, orden: ord, activo }),
+                                });
+                              }
+                              setEditandoTipo(null);
+                              void loadTipos();
+                            }}
+                          >
+                            Guardar
+                          </button>
+                          <button type="button" className="text-xs text-slate-500" onClick={() => setEditandoTipo(null)}>
+                            Cancelar
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="text-sm font-medium text-slate-800">{t.nombre}</p>
+                          <p className="text-xs text-slate-500">
+                            <span className="font-mono">{t.slug}</span>
+                            {t.es_sistema ? " · sistema" : null}
+                            {" · "}
+                            orden {t.orden}
+                            {typeof t.usos === "number" ? ` · ${t.usos} clientes` : null}
+                            {!t.activo && <span className="ml-1 text-amber-600">· inactivo</span>}
+                          </p>
+                        </>
+                      )}
+                    </div>
+                    {esAdmin && editandoTipo !== t.id && (
+                      <div className="flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          className="text-xs text-slate-500 hover:text-slate-800"
+                          onClick={() => setEditandoTipo(t.id)}
+                        >
+                          Editar
+                        </button>
+                        {!t.es_sistema && (
+                          <button
+                            type="button"
+                            className="text-xs text-red-500 hover:text-red-700"
+                            onClick={async () => {
+                              if ((t.usos ?? 0) > 0) {
+                                window.alert("Hay clientes con este segmento. Reasigná o desactivá en lugar de borrar.");
+                                return;
+                              }
+                              if (!window.confirm("¿Eliminar este segmento? No debe tener clientes asignados.")) return;
+                              const r = await apiFetch(`/api/cliente-tipos-servicio/${t.id}`, { method: "DELETE" });
+                              if (r.ok) void loadTipos();
+                            }}
+                            disabled={(t.usos ?? 0) > 0}
+                            title={
+                              (t.usos ?? 0) > 0 ? "No se elimina mientras tenga clientes" : "Eliminar segmento"
+                            }
+                          >
+                            Borrar
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {esAdmin && (
+                  <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
+                    <div>
+                      <span className="mb-0.5 block text-[10px] text-slate-500">Nuevo segmento (nombre en pantalla)</span>
+                      <input
+                        value={nuevoTipoNombre}
+                        onChange={(e) => setNuevoTipoNombre(e.target.value)}
+                        placeholder="Ej. Consultoría contable"
+                        className="w-56 rounded border px-2 py-1.5 text-sm"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded bg-slate-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-900"
+                      onClick={async () => {
+                        if (!nuevoTipoNombre.trim()) return;
+                        const r = await apiFetch("/api/cliente-tipos-servicio", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ nombre: nuevoTipoNombre.trim() }),
+                        });
+                        if (r.ok) {
+                          setNuevoTipoNombre("");
+                          void loadTipos();
+                        } else {
+                          const j = (await r.json().catch(() => ({}))) as { error?: string };
+                          window.alert(j?.error?.trim() ? j.error : "Error al crear");
+                        }
+                      }}
+                    >
+                      Agregar tipo
+                    </button>
+                  </div>
+                )}
+                {!esAdmin && tiposServ.length > 0 && (
+                  <p className="text-xs text-slate-400">Sólo se listan los segmentos activos. Pedí a un admin la gestión completa.</p>
+                )}
+              </div>
+            )}
+          </div>
         </ConfigFormCard>
       </div>
     </GlobalConfigSubpageShell>

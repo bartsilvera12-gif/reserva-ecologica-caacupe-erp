@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { getClientes, clienteNombre } from "@/lib/clientes/storage";
 import type { Cliente } from "@/lib/clientes/types";
-import { TIPOS_SERVICIO_CLIENTE } from "@/lib/clientes/types";
+import { etiquetaVisibleTipoServicio, type ClienteTipoServicioRow } from "@/lib/clientes/tipo-servicio-catalogo";
+import { filasTiposDesdeSistemaEstatico, fetchTiposFormCliente } from "@/lib/clientes/fetch-tipos-servicio-form";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -55,7 +56,13 @@ export default function ClientesPage() {
   const [filtroEstado, setFiltroEstado] = useState<"" | "activo" | "inactivo">("");
   const [filtroOrigen, setFiltroOrigen] = useState<"" | "CRM" | "VENTA" | "MANUAL">("");
   const [filtroTipo,   setFiltroTipo]   = useState<"" | "empresa" | "persona">("");
-  const [filtroTipoServicio, setFiltroTipoServicio] = useState<"" | Cliente["tipo_servicio_cliente"]>("");
+  const [filtroTipoServicio, setFiltroTipoServicio] = useState<"" | string>("");
+  const [filasTipoCatalogo, setFilasTipoCatalogo] = useState<ClienteTipoServicioRow[]>(() => filasTiposDesdeSistemaEstatico());
+  const mapNombreTipo = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const t of filasTipoCatalogo) m[t.slug] = t.nombre;
+    return m;
+  }, [filasTipoCatalogo]);
 
   useEffect(() => {
     getClientes({ incluirPlanActivo: true }).then((data) => {
@@ -63,6 +70,19 @@ export default function ClientesPage() {
       setCargando(false);
     });
   }, []);
+
+  useEffect(() => {
+    void fetchTiposFormCliente().then(setFilasTipoCatalogo);
+  }, []);
+  const slugsExtraFiltro = useMemo(() => {
+    const known = new Set(filasTipoCatalogo.map((f) => f.slug));
+    const u = new Set<string>();
+    for (const c of clientes) {
+      const t = (c.tipo_servicio_cliente ?? "").trim();
+      if (t && !known.has(t)) u.add(t);
+    }
+    return Array.from(u).sort();
+  }, [clientes, filasTipoCatalogo]);
 
   useEffect(() => {
     if (searchParams?.get("baja_ok") === "1") {
@@ -162,12 +182,19 @@ export default function ClientesPage() {
         </select>
         <select
           value={filtroTipoServicio}
-          onChange={(e) => setFiltroTipoServicio(e.target.value as "" | Cliente["tipo_servicio_cliente"])}
+          onChange={(e) => setFiltroTipoServicio(e.target.value)}
           className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-[#0EA5E9] focus:outline-none"
         >
           <option value="">Tipo servicio</option>
-          {TIPOS_SERVICIO_CLIENTE.map((t) => (
-            <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+          {filasTipoCatalogo.map((t) => (
+            <option key={t.slug} value={t.slug}>
+              {t.nombre}
+            </option>
+          ))}
+          {slugsExtraFiltro.map((slug) => (
+            <option key={slug} value={slug}>
+              {etiquetaVisibleTipoServicio(slug, mapNombreTipo)}
+            </option>
           ))}
         </select>
         {hayFiltros && (
@@ -277,7 +304,9 @@ export default function ClientesPage() {
                     )}
                   </td>
                   <td className="px-5 py-3.5"><BadgeOrigen origen={c.origen} /></td>
-                  <td className="px-5 py-3.5 text-xs text-gray-600">{c.tipo_servicio_cliente ? c.tipo_servicio_cliente.charAt(0).toUpperCase() + c.tipo_servicio_cliente.slice(1) : "—"}</td>
+                  <td className="px-5 py-3.5 text-xs text-gray-600">
+                    {etiquetaVisibleTipoServicio(c.tipo_servicio_cliente ?? null, mapNombreTipo)}
+                  </td>
                   <td className="px-5 py-3.5"><BadgeEstado estado={c.estado} /></td>
                   <td className="px-5 py-3.5 text-xs text-gray-500">{c.created_by_nombre ?? "—"}</td>
                   <td className="px-5 py-3.5 text-xs text-gray-400">{formatFecha(c.created_at)}</td>

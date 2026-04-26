@@ -2,10 +2,18 @@ export type TipoCliente = "empresa" | "persona";
 export type OrigenCliente = "CRM" | "VENTA" | "MANUAL";
 export type EstadoCliente = "activo" | "inactivo";
 
-/** Clasificación operativa del cliente (distinto de tipo_cliente) */
-export type TipoServicioCliente = "marketing" | "saas" | "branding" | "web" | "otro";
+import {
+  SLUGS_TIPOS_CLIENTE_SISTEMA,
+} from "./tipo-servicio-catalogo";
 
-export const TIPOS_SERVICIO_CLIENTE: TipoServicioCliente[] = ["marketing", "saas", "branding", "web", "otro"];
+/**
+ * Clasificación operativa del cliente (distinto de tipo_cliente). Slug libre; los de sistema
+ * (marketing, saas, etc.) se documentan en `SLUGS_TIPOS_CLIENTE_SISTEMA`.
+ */
+export type TipoServicioCliente = string;
+
+export const TIPOS_SERVICIO_CLIENTE: string[] = [...SLUGS_TIPOS_CLIENTE_SISTEMA];
+export { SLUGS_TIPOS_CLIENTE_SISTEMA };
 
 export interface NotaCliente {
   id:    number;

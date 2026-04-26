@@ -2,12 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { emitEvent, EVENT_TYPES } from "@/lib/integrations/events";
-import type { TipoServicioCliente } from "@/lib/clientes/types";
 import type { AppSupabaseClient } from "@/lib/supabase/schema";
 import { getTenantSupabaseFromAuthWithRol } from "@/lib/supabase/tenant-api";
 import { fetchPerfilTributarioActivosMap } from "@/lib/clientes/tributario-server";
-
-const TIPOS_SERVICIO_VALIDOS: TipoServicioCliente[] = ["marketing", "saas", "branding", "web", "otro"];
+import { ensureSemillasCatalogoTipos, tipoServicioSlugValido } from "@/lib/clientes/tipo-servicio-catalogo";
 
 /** Une `plan_activo` (nombre) a cada fila de cliente según suscripción activa más reciente. */
 function attachPlanesActivos(
@@ -124,8 +122,15 @@ export async function POST(request: NextRequest) {
     }
 
     const tipoServicio = tipo_servicio_cliente?.trim();
-    if (tipoServicio && !TIPOS_SERVICIO_VALIDOS.includes(tipoServicio)) {
-      return NextResponse.json(errorResponse(`tipo_servicio_cliente debe ser uno de: ${TIPOS_SERVICIO_VALIDOS.join(", ")}`), { status: 400 });
+    if (tipoServicio) {
+      await ensureSemillasCatalogoTipos(supabase, auth.empresa_id);
+      const valido = await tipoServicioSlugValido(supabase, auth.empresa_id, tipoServicio);
+      if (!valido) {
+        return NextResponse.json(
+          errorResponse("tipo_servicio_cliente no existe en el catálogo de la empresa. Actualizá la lista en Configuración → CRM."),
+          { status: 400 }
+        );
+      }
     }
 
     const nombreCreador =

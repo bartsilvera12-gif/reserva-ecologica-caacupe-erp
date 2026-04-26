@@ -19,8 +19,9 @@ import {
 import { getProspecto, updateProspecto } from "@/lib/crm/storage";
 import MontoInput from "@/components/ui/MontoInput";
 import { getPlanes } from "@/lib/planes/storage";
-import type { TipoCliente, OrigenCliente, TipoServicioCliente } from "@/lib/clientes/types";
-import { TIPOS_SERVICIO_CLIENTE } from "@/lib/clientes/types";
+import type { TipoCliente, OrigenCliente } from "@/lib/clientes/types";
+import type { ClienteTipoServicioRow } from "@/lib/clientes/tipo-servicio-catalogo";
+import { filasTiposDesdeSistemaEstatico, fetchTiposFormCliente } from "@/lib/clientes/fetch-tipos-servicio-form";
 import type { Plan } from "@/lib/planes/types";
 
 // ── Estilos ────────────────────────────────────────────────────────────────────
@@ -71,7 +72,7 @@ function NuevoClienteForm() {
     vendedor_asignado:   "",
     origen:              "MANUAL" as OrigenCliente,
     prospecto_id:          null as string | null,
-    tipo_servicio_cliente: "" as TipoServicioCliente | "",
+    tipo_servicio_cliente: "" as string,
     estado:                "activo" as "activo" | "inactivo",
   });
 
@@ -97,9 +98,14 @@ function NuevoClienteForm() {
     { id: string; slug: string; nombre: string; requiere_detalle_otro: boolean }[]
   >([]);
   const [formTributario, setFormTributario] = useState<TributarioFormState>(() => emptyTributarioForm());
+  const [filasTipoServicio, setFilasTipoServicio] = useState<ClienteTipoServicioRow[]>(() => filasTiposDesdeSistemaEstatico());
 
   useEffect(() => {
     getPlanes().then(setPlanes);
+  }, []);
+
+  useEffect(() => {
+    void fetchTiposFormCliente().then(setFilasTipoServicio);
   }, []);
 
   useEffect(() => {
@@ -352,12 +358,14 @@ function NuevoClienteForm() {
               <select
                 name="tipo_servicio_cliente"
                 value={form.tipo_servicio_cliente}
-                onChange={(e) => setForm((prev) => ({ ...prev, tipo_servicio_cliente: e.target.value as TipoServicioCliente | "" }))}
+                onChange={(e) => setForm((prev) => ({ ...prev, tipo_servicio_cliente: e.target.value }))}
                 className={inputClass}
               >
                 <option value="">— Ninguno —</option>
-                {TIPOS_SERVICIO_CLIENTE.map((t) => (
-                  <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+                {filasTipoServicio.map((f) => (
+                  <option key={f.slug} value={f.slug}>
+                    {f.nombre}
+                  </option>
                 ))}
               </select>
             </div>
