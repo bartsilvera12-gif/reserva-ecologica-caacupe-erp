@@ -36,7 +36,9 @@ const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const MAX_SLUG = 64;
 
 /**
- * Nombre amigable para un slug: catálogo (API) o fallback a los 5 fijos, o el slug tal cual.
+ * Nombre amigable para un slug: primero el mapa `porSlug` (nombres desde
+ * `cliente_tipos_servicio_catalogo.nombre` en UI/API). Si no hay mapa, fallback
+ * a etiquetas fijas; no sustituye el valor en base de datos.
  */
 export function etiquetaVisibleTipoServicio(
   slug: string | null | undefined,
@@ -93,24 +95,47 @@ const SEED_ROWS: { slug: SlugTipoClienteSistema; nombre: string; orden: number }
   { slug: "otro", nombre: "Otro", orden: 50 },
 ];
 
-/** Asegura los 5 slugs de sistema; idempotente (upsert por empresa_id+slug). */
+const SLUGS_SISTEMA_LIST = SEED_ROWS.map((r) => r.slug) as string[];
+
+/**
+ * Asegura que existan los 5 slugs de sistema (una fila por `empresa_id` + `slug`).
+ * **Solo inserta** si falta; no hace `upsert` con nombre por defecto, porque eso
+ * pisa en cada GET/PUT el `nombre` visible que el admin editó en DB.
+ */
 export async function ensureSemillasCatalogoTipos(
   supabase: AppSupabaseClient,
   empresaId: string
 ): Promise<void> {
-  const rows = SEED_ROWS.map((r) => ({
-    empresa_id: empresaId,
-    slug: r.slug,
-    nombre: r.nombre,
-    activo: true,
-    es_sistema: true,
-    orden: r.orden,
-  }));
-  const { error } = await supabase
+  const { data: present, error: e0 } = await supabase
     .from("cliente_tipos_servicio_catalogo")
-    .upsert(rows, { onConflict: "empresa_id,slug" });
-  if (error) {
-    console.error("[cliente_tipos_catalogo] ensureSemillas", error.message);
+    .select("slug")
+    .eq("empresa_id", empresaId)
+    .in("slug", SLUGS_SISTEMA_LIST);
+  if (e0) {
+    console.error("[cliente_tipos_catalogo] ensureSemillas", e0.message);
+    return;
+  }
+  const have = new Set((present ?? []).map((r: { slug: string }) => r.slug));
+  for (const r of SEED_ROWS) {
+    if (have.has(r.slug)) continue;
+    const { error: e1 } = await supabase.from("cliente_tipos_servicio_catalogo").insert({
+      empresa_id: empresaId,
+      slug: r.slug,
+      nombre: r.nombre,
+      activo: true,
+      es_sistema: true,
+      orden: r.orden,
+    });
+    if (e1) {
+      const m = e1.message.toLowerCase();
+      if (m.includes("unique") || m.includes("duplicate")) {
+        have.add(r.slug);
+        continue;
+      }
+      console.error("[cliente_tipos_catalogo] ensureSemillas insert", r.slug, e1.message);
+    } else {
+      have.add(r.slug);
+    }
   }
 }
 

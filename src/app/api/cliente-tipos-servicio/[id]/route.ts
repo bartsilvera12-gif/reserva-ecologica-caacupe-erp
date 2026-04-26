@@ -71,9 +71,15 @@ export async function PUT(
       .eq("id", rowId)
       .eq("empresa_id", auth.empresa_id)
       .select("id, empresa_id, slug, nombre, activo, orden, es_sistema, created_at, updated_at")
-      .single();
+      .maybeSingle();
     if (error) {
       return NextResponse.json(errorResponse(error.message), { status: 400 });
+    }
+    if (data == null) {
+      return NextResponse.json(
+        errorResponse("No se actualizó ninguna fila (revisá permisos, empresa o id)."),
+        { status: 400 }
+      );
     }
     return NextResponse.json(successResponse(data));
   } catch (err) {

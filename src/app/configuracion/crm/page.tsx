@@ -86,8 +86,8 @@ export default function ConfiguracionCrmPipelinePage() {
     loadEtapas();
   }, [loadEtapas]);
 
-  const loadTipos = useCallback(async () => {
-    if (!rolCargado) return;
+  const loadTipos = useCallback(async (): Promise<ClienteTipoServicioRow[] | null> => {
+    if (!rolCargado) return null;
     setCargandoTipos(true);
     try {
       if (puedeConfig) {
@@ -95,25 +95,35 @@ export default function ConfiguracionCrmPipelinePage() {
         if (!r.ok) {
           setTiposServ([]);
           setMensajeTipos({ err: `No se pudo cargar el catálogo: ${await leerErrorApiClientes(r)}` });
-          return;
+          return null;
         }
         const j = (await r.json()) as { success?: boolean; data?: ClienteTipoServicioRow[] };
-        if (j?.success && Array.isArray(j.data)) setTiposServ([...j.data].sort((a, b) => a.orden - b.orden));
-        else setTiposServ([]);
-      } else {
-        const r = await apiFetch("/api/cliente-tipos-servicio?form=1");
-        if (r.ok) {
-          const j = (await r.json()) as { success?: boolean; data?: ClienteTipoServicioRow[] };
-          if (j?.success && Array.isArray(j.data)) setTiposServ([...j.data].sort((a, b) => a.orden - b.orden));
-          else setTiposServ([]);
-        } else {
-          setTiposServ([]);
+        if (j?.success && Array.isArray(j.data)) {
+          const sorted = [...j.data].sort((a, b) => a.orden - b.orden);
+          setTiposServ(sorted);
+          return sorted;
         }
+        setTiposServ([]);
+        return [];
       }
+      const r = await apiFetch("/api/cliente-tipos-servicio?form=1");
+      if (r.ok) {
+        const j = (await r.json()) as { success?: boolean; data?: ClienteTipoServicioRow[] };
+        if (j?.success && Array.isArray(j.data)) {
+          const sorted = [...j.data].sort((a, b) => a.orden - b.orden);
+          setTiposServ(sorted);
+          return sorted;
+        }
+        setTiposServ([]);
+        return [];
+      }
+      setTiposServ([]);
+      return null;
     } catch (e) {
       console.error("[config crm] tipos servicio", e);
       setTiposServ([]);
       setMensajeTipos({ err: "No se pudo cargar el catálogo. Reintentá o revisá la sesión." });
+      return null;
     } finally {
       setCargandoTipos(false);
     }
@@ -509,24 +519,78 @@ export default function ConfiguracionCrmPipelinePage() {
                                 headers: { "Content-Type": "application/json" },
                                 body: JSON.stringify(body),
                               });
-                              const resClone = r.clone();
-                              const raw = await resClone.text();
-                              if (process.env.NODE_ENV === "development") {
-                                let parsed: unknown = raw;
-                                try { parsed = JSON.parse(raw) as unknown; } catch { /* */ }
-                                console.debug("[config-crm][tipo-servicio] PUT respuesta", { id, status: r.status, cuerpo: parsed });
-                                if (!r.ok) {
-                                  console.debug("[config-crm][tipo-servicio] PUT error", { id, status: r.status, raw });
-                                }
-                              }
                               if (!r.ok) {
-                                setMensajeTipos({ err: await leerErrorApiClientes(r) });
+                                const errTxt = await leerErrorApiClientes(r);
+                                if (process.env.NODE_ENV === "development") {
+                                  console.debug("[config-crm][tipo-servicio] PUT error", { id, status: r.status, errTxt, payload: body });
+                                }
+                                setMensajeTipos({ err: errTxt });
+                                setBusyTipoServ(false);
+                                return;
+                              }
+                              let fila: ClienteTipoServicioRow;
+                              try {
+                                const jr = (await r.json()) as {
+                                  success?: boolean;
+                                  data?: ClienteTipoServicioRow;
+                                  error?: string;
+                                };
+                                if (!jr?.success || !jr.data) {
+                                  setMensajeTipos({
+                                    err: jr?.error?.trim() || "Respuesta inválida (sin fila) de la API.",
+                                  });
+                                  setBusyTipoServ(false);
+                                  return;
+                                }
+                                fila = jr.data;
+                                if (process.env.NODE_ENV === "development") {
+                                  console.debug("[config-crm][tipo-servicio] PUT cuerpo", { id, payload: body, fila });
+                                }
+                              } catch {
+                                setMensajeTipos({ err: "No se pudo leer la respuesta JSON de la API." });
+                                setBusyTipoServ(false);
+                                return;
+                              }
+                              if (fila.nombre.trim() !== body.nombre.trim() || fila.activo !== body.activo) {
+                                setMensajeTipos({
+                                  err: "La API indicó éxito pero el registro devuelto no coincide con el nombre o estado enviado.",
+                                });
+                                setBusyTipoServ(false);
+                                return;
+                              }
+                              if (body.orden !== undefined && fila.orden !== body.orden) {
+                                setMensajeTipos({
+                                  err: "La API indicó éxito pero el registro devuelto no coincide con el orden enviado.",
+                                });
                                 setBusyTipoServ(false);
                                 return;
                               }
                               setBorradorTipo(null);
-                              await loadTipos();
-                              setMensajeTipos({ ok: "Tipo actualizado correctamente." });
+                              const reloaded = await loadTipos();
+                              if (reloaded === null) {
+                                setMensajeTipos({ err: "No se pudo recargar el catálogo." });
+                                setBusyTipoServ(false);
+                                return;
+                              }
+                              const f = reloaded.find((x) => x.id === id);
+                              if (!f) {
+                                setMensajeTipos({ err: "Tras guardar, el registro no aparece en el listado." });
+                                setBusyTipoServ(false);
+                                return;
+                              }
+                              const diverge: string[] = [];
+                              if (f.nombre.trim() !== body.nombre.trim()) diverge.push("nombre");
+                              if (f.activo !== body.activo) diverge.push("activo");
+                              if (body.orden !== undefined && f.orden !== body.orden) diverge.push("orden");
+                              if (diverge.length) {
+                                setMensajeTipos({
+                                  err: `La API respondió OK pero, al recargar el listado, no coincide: ${diverge.join(
+                                    ", "
+                                  )}. Reintentá; si continúa, el cambio no quedó persistido.`,
+                                });
+                              } else {
+                                setMensajeTipos({ ok: "Tipo actualizado correctamente." });
+                              }
                               setBusyTipoServ(false);
                             }}
                           >
