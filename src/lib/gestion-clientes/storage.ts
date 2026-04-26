@@ -1,5 +1,6 @@
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { getCurrentUser } from "@/lib/auth";
+import { toCalendarDateStr } from "@/lib/fechas/calendario";
 import { getBrowserSupabaseForEmpresaData } from "@/lib/supabase/browser-data-client";
 import type {
   Factura,
@@ -23,6 +24,7 @@ interface FacturaRow {
   estado: string;
   tipo: string;
   moneda: string;
+  fecha_pago_registro?: string | null;
 }
 
 interface TipificacionRow {
@@ -39,6 +41,10 @@ interface TipificacionRow {
 // ─── Mapeo fila → tipo ────────────────────────────────────────────────────────
 
 function rowToFactura(row: FacturaRow): Factura {
+  const fp =
+    row.fecha_pago_registro != null && String(row.fecha_pago_registro).trim() !== ""
+      ? toCalendarDateStr(String(row.fecha_pago_registro)) || String(row.fecha_pago_registro).slice(0, 10)
+      : null;
   return {
     id: row.id,
     cliente_id: row.cliente_id,
@@ -50,6 +56,7 @@ function rowToFactura(row: FacturaRow): Factura {
     estado: row.estado as EstadoFactura,
     tipo: row.tipo as Factura["tipo"],
     moneda: row.moneda as Factura["moneda"],
+    fecha_pago_registro: fp,
   };
 }
 

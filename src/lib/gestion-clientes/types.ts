@@ -32,4 +32,6 @@ export interface Factura {
   estado:            EstadoFactura;
   tipo:              "contado" | "credito" | "suscripcion";
   moneda:            "GS" | "USD";
+  /** Última fecha de pago registrada en `pagos` (GET /api/facturas enriquecido). */
+  fecha_pago_registro?: string | null;
 }

@@ -18,6 +18,8 @@ import { SifenEstadoBadge } from "@/components/sifen/SifenEstadoBadge";
 import { useFacturaSifenEstados } from "@/hooks/useFacturaSifenEstados";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { getClientes, clienteNombre } from "@/lib/clientes/storage";
+import { etiquetaVisibleTipoServicio } from "@/lib/clientes/tipo-servicio-catalogo";
+import { useMapNombreTipoServicioCatalogo } from "@/lib/clientes/use-map-nombre-tipo-servicio";
 import { toCalendarDateStr } from "@/lib/fechas/calendario";
 import { getFacturas } from "@/lib/gestion-clientes/storage";
 import { estadoFacturaParaUi } from "@/lib/gestion-clientes/estado-factura-ui";
@@ -47,6 +49,13 @@ function formatFechaIso(iso: string) {
     const d = new Date(iso);
     return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
   } catch { return ""; }
+}
+
+function textoTipoClienteGestion(c: Cliente, mapNombreTipo: Record<string, string>) {
+  const base = c.tipo_cliente === "empresa" ? "Empresa" : "Persona";
+  const slug = (c.tipo_servicio_cliente ?? "").trim();
+  if (!slug) return base;
+  return `${base} · ${etiquetaVisibleTipoServicio(slug, mapNombreTipo)}`;
 }
 
 /** Misma lógica que en Pagos: solo cobro si hay saldo y el estado de la factura lo permite. */
@@ -617,6 +626,7 @@ function GestionClientesPageInner() {
   const [panelFiltrosFacturas, setPanelFiltrosFacturas] = useState(false);
   /** Evita carrera: al limpiar, `?cliente=` aún no se quitó y el efecto URL→estado reabría la ficha. */
   const omitirUrlASeleccion = useRef(false);
+  const mapNombreTipoCatalogo = useMapNombreTipoServicioCatalogo(clientes);
 
   const [filters, setFilters] = useState({
     fecha_desde:             "",
@@ -930,6 +940,7 @@ function GestionClientesPageInner() {
                     { label: "Correo", value: selected.email ?? "—" },
                     { label: "Teléfono", value: selected.telefono ?? "—" },
                     { label: "Dirección", value: selected.direccion ?? "—" },
+                    { label: "Tipo de cliente", value: textoTipoClienteGestion(selected, mapNombreTipoCatalogo) },
                     { label: "Ciudad", value: selected.ciudad ?? "—" },
                     { label: "Condición", value: selected.condicion_pago ?? "—" },
                     { label: "Moneda", value: selected.moneda_preferida ?? "GS" },
@@ -1047,10 +1058,22 @@ function GestionClientesPageInner() {
                       </div>
                     ) : (
                       <div className="overflow-x-auto">
-                        <table className="w-full min-w-[960px] text-sm">
+                        <table className="w-full min-w-[1040px] text-sm">
                           <thead className="sticky top-0 z-[1] border-b border-slate-200 bg-slate-50 shadow-sm">
                             <tr>
-                              {["Tipo", "Nro. Factura", "Fecha emisión", "Fecha vencimiento", "Monto", "Saldo", "Días mora", "Estado", "SIFEN", "Operación"].map((h) => (
+                              {[
+                                "Tipo",
+                                "Nro. Factura",
+                                "Fecha emisión",
+                                "Fecha vencimiento",
+                                "Monto",
+                                "Saldo",
+                                "Días mora",
+                                "Estado",
+                                "Pago registrado",
+                                "SIFEN",
+                                "Operación",
+                              ].map((h) => (
                                 <th
                                   key={h}
                                   className="whitespace-nowrap px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-600 sm:px-3 sm:text-xs"
@@ -1106,6 +1129,9 @@ function GestionClientesPageInner() {
                                 </td>
                                 <td className="px-2 py-2 sm:px-3">
                                   <BadgeFactura estado={f._estadoEfectivo} />
+                                </td>
+                                <td className="whitespace-nowrap px-2 py-2 text-xs text-slate-600 sm:px-3">
+                                  {f.fecha_pago_registro ? formatFecha(f.fecha_pago_registro) : "—"}
                                 </td>
                                 <td className="align-middle px-2 py-2.5 sm:px-3">
                                   <div className="flex items-center min-h-[2rem]">

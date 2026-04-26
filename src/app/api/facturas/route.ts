@@ -36,7 +36,43 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(errorResponse(error.message), { status: 400 });
     }
 
-    return NextResponse.json(successResponse(data ?? []));
+    const facturas = (data ?? []) as Record<string, unknown>[];
+    if (facturas.length === 0) {
+      return NextResponse.json(successResponse(facturas));
+    }
+
+    const ids = facturas
+      .map((f) => (typeof f.id === "string" ? f.id : null))
+      .filter((id): id is string => Boolean(id));
+
+    const lastPagoByFactura = new Map<string, string>();
+    if (ids.length > 0) {
+      const { data: pagosRows, error: pagosErr } = await supabase
+        .from("pagos")
+        .select("factura_id, fecha_pago")
+        .eq("empresa_id", auth.empresa_id)
+        .in("factura_id", ids);
+
+      if (!pagosErr && Array.isArray(pagosRows)) {
+        for (const p of pagosRows as { factura_id?: string; fecha_pago?: string }[]) {
+          const fid = typeof p.factura_id === "string" ? p.factura_id : "";
+          if (!fid) continue;
+          const raw = p.fecha_pago != null ? String(p.fecha_pago) : "";
+          const fp = raw.slice(0, 10);
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(fp)) continue;
+          const cur = lastPagoByFactura.get(fid);
+          if (!cur || fp > cur) lastPagoByFactura.set(fid, fp);
+        }
+      }
+    }
+
+    const enriched = facturas.map((row) => {
+      const rid = typeof row.id === "string" ? row.id : "";
+      const fp = rid ? lastPagoByFactura.get(rid) ?? null : null;
+      return { ...row, fecha_pago_registro: fp };
+    });
+
+    return NextResponse.json(successResponse(enriched));
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Error";
     return NextResponse.json(errorResponse(msg), { status: 500 });
