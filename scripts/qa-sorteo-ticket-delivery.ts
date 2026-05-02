@@ -41,12 +41,6 @@ async function main() {
     process.exit(1);
   }
 
-  const secret = process.env.QA_SORTEO_TICKET_SECRET?.trim();
-  if (!secret) {
-    console.error("Falta QA_SORTEO_TICKET_SECRET en .env.local (mismo valor en el servidor Next).");
-    process.exit(1);
-  }
-
   const base = (process.env.QA_API_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
 
   console.log("\n=== 1) Schema catálogo (empresas.data_schema) ===");
@@ -79,6 +73,14 @@ async function main() {
   } finally {
     client.release();
     await pool.end();
+  }
+
+  const secret = process.env.QA_SORTEO_TICKET_SECRET?.trim();
+  if (!secret) {
+    console.error(
+      "\n(Opcional bloque 3) Falta QA_SORTEO_TICKET_SECRET — agregalo para llamar /api/qa/sorteo-ticket-delivery."
+    );
+    process.exit(0);
   }
 
   console.log("\n=== 3) POST API qa (requiere `npm run dev` o deploy con QA_SORTEO_TICKET_SECRET) ===");
