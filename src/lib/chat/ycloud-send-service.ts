@@ -123,3 +123,32 @@ export async function sendYCloudWhatsappMediaViaLink(params: {
 export function ycloudSenderToE164(senderId: string): string | null {
   return digitsToE164(senderId);
 }
+
+/**
+ * Envío de plantilla WhatsApp vía API YCloud (mismo host que texto).
+ * `externalId` recomendado para reconciliar webhooks (p. ej. campaign:uuid:recipient:uuid).
+ */
+export async function sendYCloudWhatsappTemplateMessage(params: {
+  apiKey: string;
+  fromE164: string;
+  toDigits: string;
+  templatePayload: Record<string, unknown>;
+  externalId?: string;
+}): Promise<SendWhatsAppTextResult> {
+  const toE164 = digitsToE164(params.toDigits);
+  if (!toE164) {
+    return { ok: false, error: "Teléfono de destino inválido para YCloud" };
+  }
+
+  const body: Record<string, unknown> = {
+    from: params.fromE164,
+    to: toE164,
+    type: "template",
+    template: params.templatePayload,
+  };
+  if (params.externalId?.trim()) {
+    body.externalId = params.externalId.trim().slice(0, 512);
+  }
+
+  return postYCloudWhatsappMessage(params.apiKey, body);
+}

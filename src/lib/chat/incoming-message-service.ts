@@ -7,6 +7,7 @@ import { assignConversation } from "@/lib/chat/assign-conversation-service";
 import { markFirstHumanOperatorReply } from "@/lib/chat/conversation-sla-markers";
 import { maybeRedistributeInitialAssignment } from "@/lib/chat/initial-assignment-redistribution";
 import { createWhatsappConversationWithActiveFlow } from "@/lib/chat/whatsapp-conversation-bootstrap";
+import { markCampaignReplyFromInbound } from "@/lib/campaigns/campaign-inbound-hook";
 import type { SupabaseAdmin } from "@/lib/chat/types";
 import { normalizeWaPhone } from "@/lib/chat/wa-phone";
 
@@ -423,6 +424,19 @@ export async function saveIncomingMessage(params: SaveIncomingMessageParams): Pr
   if (!persist.ok) {
     if (persist.duplicate) return { ok: true, skipped_duplicate: true };
     return { ok: false, error: persist.error };
+  }
+
+  if (isContactInbound && channel.type === "whatsapp") {
+    try {
+      await markCampaignReplyFromInbound({
+        supabase,
+        empresaId,
+        channelId: channel.id,
+        contactId,
+      });
+    } catch (e) {
+      console.warn("[saveIncomingMessage] markCampaignReplyFromInbound", e);
+    }
   }
 
   return {

@@ -25,6 +25,7 @@ import {
   Banknote,
   Megaphone,
   Ticket,
+  SendHorizontal,
   MessageCircle,
   History,
   Activity,
@@ -148,6 +149,13 @@ const MENU_STRUCTURE: MenuItem[] = [
   { key: "gestion-clientes", slug: "gestion-clientes", label: "Gestión Clientes", href: "/gestion-clientes", icon: Users },
   { key: "crm", slug: "crm", label: "CRM Funnel", href: "/crm", icon: Sparkles },
   { key: "marketing", slug: "marketing", label: "Marketing Ops", href: "/marketing", icon: Megaphone },
+  {
+    key: "campanas",
+    slug: "campanas",
+    label: "Campañas",
+    href: "/dashboard/campanas",
+    icon: SendHorizontal,
+  },
   {
     key: "sorteos",
     slug: "sorteos",

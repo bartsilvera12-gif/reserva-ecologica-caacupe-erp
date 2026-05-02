@@ -11,6 +11,11 @@ import { assertAllowedChatDataSchema } from "@/lib/supabase/chat-data-schema";
 
 const ALLOWED_TABLES = new Set([
   "chat_agents",
+  "chat_campaign_events",
+  "chat_campaign_jobs",
+  "chat_campaign_recipients",
+  "chat_campaign_templates",
+  "chat_campaigns",
   "chat_channels",
   "chat_comprobante_validaciones",
   "chat_contacts",

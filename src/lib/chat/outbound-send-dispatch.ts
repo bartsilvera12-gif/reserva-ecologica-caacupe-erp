@@ -61,7 +61,7 @@ export function isOutboundWhatsappLikeChannel(r: {
   return false;
 }
 
-function effectiveOutboundProvider(channel: {
+export function effectiveOutboundProvider(channel: {
   provider?: string | null;
   type?: string | null;
 }): "meta" | "ycloud" {

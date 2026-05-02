@@ -325,3 +325,19 @@ export async function sendWhatsAppDocument(
   if (params.caption?.trim()) doc.caption = params.caption.trim().slice(0, 1024);
   return sendWhatsAppPayload(params, body);
 }
+
+/** Plantilla aprobada (Cloud API). `templatePayload` = objeto `template` completo (name, language, components). */
+export async function sendWhatsAppTemplateMessage(params: {
+  toDigits: string;
+  phoneNumberId: string;
+  accessToken: string;
+  templatePayload: Record<string, unknown>;
+  graphVersion?: string;
+}): Promise<SendWhatsAppTextResult> {
+  return sendWhatsAppPayload(params, {
+    messaging_product: "whatsapp",
+    to: params.toDigits,
+    type: "template",
+    template: params.templatePayload,
+  });
+}
