@@ -286,7 +286,7 @@ function fillAttr(color: string): string {
 }
 
 /**
- * Plantilla personalizada: datos del cliente bajo el logo; cupón sin cambiar su tamaño “bueno”.
+ * Plantilla personalizada: datos del cliente bajo el logo y centrados como el cupón; tamaño del cupón sin tocar.
  * Colores desde mergeCustomTemplateFields. 1–6 cupones: centrados; más de 6: grilla.
  */
 function buildCustomTemplateOverlaySvg(
@@ -417,6 +417,7 @@ function buildCustomTemplateOverlaySvg(
     metaScale *= 0.93;
   }
 
+  const cx = w / 2;
   const pieces: string[] = [];
   let y = metaTop;
   for (const row of metaRows) {
@@ -424,19 +425,18 @@ function buildCustomTemplateOverlaySvg(
     pieces.push(
       svgTextAsPath({
         text: row.text,
-        x: padX,
+        x: cx,
         y,
         fontSize: row.fs,
         weight: row.weight,
         fill: fillAttr(row.color),
-        textAnchor: "start",
+        textAnchor: "middle",
       })
     );
     y += metaGap;
   }
   y += blockGap - metaGap;
 
-  const cx = w / 2;
   if (cupones.length === 0) {
     /* Sin cupones resueltos: no dibujar placeholder */
   } else if (cupones.length <= 6) {
