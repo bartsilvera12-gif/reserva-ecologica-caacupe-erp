@@ -297,8 +297,12 @@ function buildCustomTemplateOverlaySvg(
 ): string {
   const padX = Math.max(40, Math.min(layout.cliente_nombre?.x ?? 72, w * 0.2));
   const bottomPad = Math.max(36, Math.round(h * 0.028));
-  /** Origen vertical del bloque de datos (debajo del logo en plantillas verticales). */
-  const metaTop = Math.round(h * 0.21);
+  /**
+   * Inicio del bloque de datos (coord. Y antes del primer baseline).
+   * El logo va **dentro del PNG**: sin segmentación no hay bbox; un ratio bajo
+   * solapa el texto con el arte. ~39% del alto suele quedar debajo de logos grandes tipo story.
+   */
+  const metaTop = Math.round(h * 0.39);
 
   const colName = fillAttr(layout.cliente_nombre.color);
   const colDoc = fillAttr(layout.cliente_documento.color);
