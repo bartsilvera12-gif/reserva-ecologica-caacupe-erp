@@ -13,6 +13,10 @@ import {
   SORTEO_COMPROBANTE_VALIDACION_ID_FIELD,
 } from "@/lib/chat/comprobante-validation-types";
 import { parseMoneyPy } from "@/lib/sorteos/parse-money-py";
+import {
+  propagateSorteoCantidadAliasesIntoCanonical,
+  readSorteoCantidadNumericFromMap,
+} from "@/lib/sorteos/sorteo-cantidad-fields";
 
 /** Clave estable: mismo comprobante (media) en misma conversación y flujo → una sola orden. */
 export function buildSorteoIdempotencyKey(
@@ -121,8 +125,14 @@ export function applySorteoInteractiveCommercialContract(
     SORTEO_COMPRA_FIELD.snapCantidad,
     "sorteo_cantidad_opcion",
     "cantidad_boletos",
+    "cantidad_boletas",
+    "cantidad_numeros",
+    "cantidad_entradas",
     SORTEO_COMPRA_FIELD.cantidad,
     "boletos",
+    "boletas",
+    "numeros",
+    "entradas",
     "qty",
     "quantity",
   ]);
@@ -142,9 +152,15 @@ export function applySorteoInteractiveCommercialContract(
     for (const k of [
       "cantidad",
       "cantidad_boletos",
+      "cantidad_boletas",
+      "cantidad_numeros",
+      "cantidad_entradas",
       "qty",
       "quantity",
       "boletos",
+      "boletas",
+      "numeros",
+      "entradas",
       "QTY",
       "Cantidad",
     ]) {
@@ -301,26 +317,28 @@ function mergeSnapshotKeysIntoPrepared(data: Record<string, string>): Record<str
  * Motivo legible cuando `parseSorteoParticipantFromFlowData` devuelve null (diagnóstico en logs).
  */
 export function explainParseSorteoParticipantFailure(data: Record<string, string>): string {
-  const qtyKeys = [
-    SORTEO_COMPRA_FIELD.snapCantidad,
-    "sorteo_cantidad_opcion",
-    "cantidad_boletos",
-    SORTEO_COMPRA_FIELD.cantidad,
-    "boletos",
-    "qty",
-  ] as const;
   let foundKey: string | undefined;
   let rawVal: string | undefined;
-  let qtyValid = false;
-  for (const k of qtyKeys) {
-    const v = norm(data[k]);
-    if (!v) continue;
-    foundKey = k;
-    rawVal = v;
-    const n = Number(v);
-    if (Number.isFinite(n) && n >= 1) {
-      qtyValid = true;
-      break;
+  let qtyValid = readSorteoCantidadNumericFromMap(data) != null;
+  if (!qtyValid) {
+    const qtyKeys = [
+      SORTEO_COMPRA_FIELD.snapCantidad,
+      "sorteo_cantidad_opcion",
+      "cantidad_boletos",
+      SORTEO_COMPRA_FIELD.cantidad,
+      "boletos",
+      "qty",
+    ] as const;
+    for (const k of qtyKeys) {
+      const v = norm(data[k]);
+      if (!v) continue;
+      foundKey = k;
+      rawVal = v;
+      const n = Number(v);
+      if (Number.isFinite(n) && n >= 1) {
+        qtyValid = true;
+        break;
+      }
     }
   }
   if (!qtyValid) {
@@ -403,6 +421,7 @@ export function expandFlowDataCanonicalKeys(data: Record<string, string>): Recor
 }
 
 function flowDataHasResolvableQty(data: Record<string, string>): boolean {
+  if (readSorteoCantidadNumericFromMap(data) != null) return true;
   const qtyKeys = [
     SORTEO_COMPRA_FIELD.snapCantidad,
     "sorteo_cantidad_opcion",
@@ -475,6 +494,7 @@ export function enrichFlowDataForSorteoParse(data: Record<string, string>): Reco
 
 export function prepareFlowDataForSorteoOrder(data: Record<string, string>): Record<string, string> {
   let d = expandFlowDataCanonicalKeys({ ...data });
+  d = propagateSorteoCantidadAliasesIntoCanonical(d);
   d = mergeSnapshotKeysIntoPrepared(d);
   d = enrichFlowDataForSorteoParse(d);
   d = mergeSnapshotKeysIntoPrepared(d);
@@ -490,24 +510,9 @@ export function parseSorteoParticipantFromFlowData(data: Record<string, string>)
   ciudad: string;
   cantidad_boletos: number;
 } | null {
-  const qtyKeys = [
-    SORTEO_COMPRA_FIELD.snapCantidad,
-    "sorteo_cantidad_opcion",
-    "cantidad_boletos",
-    SORTEO_COMPRA_FIELD.cantidad,
-    "boletos",
-    "qty",
-  ];
   let qty = NaN;
-  for (const k of qtyKeys) {
-    const v = norm(data[k]);
-    if (!v) continue;
-    const n = Number(v);
-    if (Number.isFinite(n) && n >= 1) {
-      qty = Math.trunc(n);
-      break;
-    }
-  }
+  const fromMap = readSorteoCantidadNumericFromMap(data);
+  if (fromMap != null) qty = fromMap;
   if (!Number.isFinite(qty) || qty < 1) {
     for (const k of [
       "sorteo_snap_resumen",

@@ -50,6 +50,7 @@ import {
   runSorteoTicketAfterFinalNodeMessage,
   shouldSuppressSorteoFinalTextAfterImageOnlyTicket,
 } from "@/lib/sorteos/sorteo-ticket-delivery";
+import { readSorteoCantidadNumericFromMap } from "@/lib/sorteos/sorteo-cantidad-fields";
 import { SORTEO_TICKET_DEFAULT_STUB, type SorteoTicketDeliveryMode } from "@/lib/sorteos/sorteo-ticket-types";
 import { isSorteoFinalTicketNode } from "@/lib/chat/sorteo-final-ticket-node";
 import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema";
@@ -245,7 +246,19 @@ function augmentCantidadFromInteractiveOption(
   selected: FlowOption
 ): [string, string][] {
   const lowerKeys = new Set(entries.map(([k]) => k.trim().toLowerCase()));
-  const qtyNames = ["cantidad", "cantidad_boletos", "boletos", "qty", "quantity"];
+  const qtyNames = [
+    "cantidad",
+    "cantidad_boletos",
+    "cantidad_boletas",
+    "cantidad_numeros",
+    "cantidad_entradas",
+    "boletos",
+    "boletas",
+    "numeros",
+    "entradas",
+    "qty",
+    "quantity",
+  ];
   const withCantidadSnapshot = (list: [string, string][], qty: string): [string, string][] => {
     const lk = new Set(list.map(([k]) => k.trim().toLowerCase()));
     if (lk.has("sorteo_cantidad_opcion")) return list;
@@ -2032,6 +2045,21 @@ export function createFlowEngine(ctx: FlowEngineContext) {
       if (payloadSaveErr) {
         return { ok: false, status: "save_option_payload_failed", error: payloadSaveErr.message };
       }
+      const qtyFromSave = readSorteoCantidadNumericFromMap(
+        Object.fromEntries(payloadEntries.map(([k, v]) => [k, String(v)]))
+      );
+      if (qtyFromSave != null) {
+        console.info("[sorteo-quantity][saved-from-option]", {
+          empresa_id: state.empresa_id,
+          conversation_id: state.id,
+          flow_session_id: flowSidInteractive,
+          current_node_code: currentNode.node_code,
+          selected_option_id: selected.id,
+          option_label: String(selected.label ?? "").slice(0, 120),
+          cantidad_detected: qtyFromSave,
+          source: "option_payload",
+        });
+      }
       flowTrace("flow_data_write", {
         conversation_id: state.id,
         empresa_id: state.empresa_id,
@@ -3657,7 +3685,91 @@ export function createFlowEngine(ctx: FlowEngineContext) {
         } else if (finImg.reason === "flow_sin_sorteo_id") {
           detail = "Este flujo no está vinculado a un sorteo.";
         } else if (finImg.reason === "datos_flujo_incompletos") {
-          detail = SORTEO_IMAGE_ORDER_INCOMPLETE_MESSAGE;
+          const prepInc = prepareFlowDataForSorteoOrder(hydFdImg);
+          const cantidadDetected = readSorteoCantidadNumericFromMap(prepInc);
+          const descInc = await describeFlowCaptureCompletenessForLogs(
+            supabase,
+            state.empresa_id,
+            state.flow_code as string,
+            prepInc
+          );
+          const missingFields = descInc?.missing_fields ?? [];
+          const incNode = descInc?.firstIncomplete;
+          console.info("[sorteo-quantity][missing]", {
+            schema: dataSchemaTag,
+            empresa_id: state.empresa_id,
+            conversation_id: state.id,
+            flow_session_id: imgFlowSid,
+            current_node_code: currentNode.node_code,
+            missing_fields: missingFields,
+            cantidad_detected: cantidadDetected,
+            source: cantidadDetected != null ? "flow_data_alias" : "none",
+          });
+          if (incNode?.nodeCode && state.flow_code?.trim()) {
+            console.info("[sorteo-quantity][resume-node-selected]", {
+              schema: dataSchemaTag,
+              empresa_id: state.empresa_id,
+              conversation_id: state.id,
+              flow_session_id: imgFlowSid,
+              resume_node_code: incNode.nodeCode,
+              missing_fields: missingFields,
+            });
+            if (missingFields.includes("cantidad")) {
+              console.info("[sorteo-quantity][extracted]", {
+                schema: dataSchemaTag,
+                conversation_id: state.id,
+                cantidad_detected: cantidadDetected,
+              });
+            }
+            await insertFlowEvent({
+              empresaId: state.empresa_id,
+              conversationId: state.id,
+              flowCode: state.flow_code,
+              nodeCode: incNode.nodeCode,
+              flowSessionId: imgFlowSid,
+              eventType: "sorteo_incomplete_capture_resume",
+              payload: {
+                trigger: "image_finalize_skipped_datos_incompletos",
+                resume_node_code: incNode.nodeCode,
+                missing_fields: missingFields,
+                sorteo_missing_quantity: missingFields.includes("cantidad"),
+              },
+            });
+            const advIncomplete = await advanceConversationToNode({
+              conversationId: state.id,
+              empresaId: state.empresa_id,
+              flowCode: state.flow_code,
+              nextNodeCode: incNode.nodeCode.trim(),
+            });
+            if (advIncomplete.ok) {
+              const sentIncomplete = await sendCurrentFlowNode({
+                conversationId: state.id,
+                mergeFlowVars: {
+                  sorteo_comprobante_url: publicUrl,
+                  comprobante_recibido: "sí",
+                },
+              });
+              if (sentIncomplete.ok) {
+                return {
+                  ok: true,
+                  status: "resumed_incomplete_capture_after_comprobante",
+                  nextNodeCode: incNode.nodeCode.trim(),
+                };
+              }
+            }
+            console.warn("[sorteo-quantity][session-mismatch]", {
+              schema: dataSchemaTag,
+              empresa_id: state.empresa_id,
+              conversation_id: state.id,
+              flow_session_id: imgFlowSid,
+              phase: "advance_or_send_failed_after_incomplete",
+            });
+          }
+          detail = await getSorteoDatosIncompletosMessage(
+            supabase,
+            state.empresa_id,
+            state.flow_code as string
+          );
         } else if (finImg.reason === "comprobante_no_validado") {
           detail = await mensajeClienteComprobanteNoValido(
             supabase,

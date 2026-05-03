@@ -1,5 +1,6 @@
 import type { AppSupabaseClient } from "@/lib/supabase/schema";
 import { prepareFlowDataForSorteoOrder } from "@/lib/sorteos/sorteo-order-from-chat";
+import { readSorteoCantidadNumericFromMap } from "@/lib/sorteos/sorteo-cantidad-fields";
 
 function norm(s: string | undefined | null): string {
   return (s ?? "").trim();
@@ -124,21 +125,7 @@ function isCantidadCaptureNode(node: FlowNodeRowLite): boolean {
 
 function cantidadSatisfied(flowData: Record<string, string>): boolean {
   const prep = prepareFlowDataForSorteoOrder({ ...flowData });
-  const qtyKeys = [
-    "sorteo_snap_cantidad",
-    "sorteo_cantidad_opcion",
-    "cantidad_boletos",
-    "cantidad",
-    "boletos",
-    "qty",
-  ] as const;
-  for (const k of qtyKeys) {
-    const v = norm(prep[k]);
-    if (!v) continue;
-    const n = Number(v);
-    if (Number.isFinite(n) && n >= 1) return true;
-  }
-  return false;
+  return readSorteoCantidadNumericFromMap(prep) != null;
 }
 
 const SUMMARY_NODE_HINTS = /estos son tus datos registrados|datos registrados/i;
