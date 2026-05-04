@@ -3,7 +3,45 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
-import { extractQuickReplyButtonsFromTemplateComponents } from "@/lib/campaigns/template-quick-reply-buttons";
+import {
+  extractQuickReplyButtonsFromTemplateComponents,
+  type TemplateQuickReplyButton,
+} from "@/lib/campaigns/template-quick-reply-buttons";
+
+type SavedButtonActionRow = {
+  button_id: string;
+  button_label?: string | null;
+  action_type: string;
+  flow_code?: string | null;
+  start_node_code?: string | null;
+  text_body?: string | null;
+};
+
+function mergeTemplateWithSavedButtonActions(
+  templateButtons: TemplateQuickReplyButton[],
+  saved: SavedButtonActionRow[]
+) {
+  return templateButtons.map((t) => {
+    const s =
+      saved.find((x) => x.button_id === t.suggested_button_id) ??
+      saved.find((x) => (x.button_label ?? "").trim() === t.label);
+    const rawAt = String(s?.action_type ?? "none").trim();
+    const action_type: "none" | "start_flow" | "send_text" =
+      rawAt === "start_flow"
+        ? "start_flow"
+        : rawAt === "send_text"
+          ? "send_text"
+          : "none";
+    return {
+      button_id: (s?.button_id ?? t.suggested_button_id).trim(),
+      button_label: t.label,
+      action_type,
+      flow_code: String(s?.flow_code ?? "").trim(),
+      start_node_code: String(s?.start_node_code ?? "").trim(),
+      text_body: String(s?.text_body ?? "").trim(),
+    };
+  });
+}
 
 type CampaignDetail = Record<string, unknown> & {
   id: string;
@@ -146,6 +184,13 @@ export default function CampanasDetailClient({ campaignId }: { campaignId: strin
     Record<string, Array<{ node_code: string }>>
   >({});
 
+  const [savingButtonActions, setSavingButtonActions] = useState(false);
+  const [buttonActionsFeedback, setButtonActionsFeedback] = useState<
+    | { kind: "success"; message: string }
+    | { kind: "error"; message: string }
+    | null
+  >(null);
+
   useEffect(() => {
     if (!campaign || quickReplyTemplateButtons.length === 0) {
       setButtonActionRows([]);
@@ -175,31 +220,11 @@ export default function CampanasDetailClient({ campaignId }: { campaignId: strin
         items?: Array<{ flow_code: string; label?: string; activo?: boolean }>;
       };
       if (cancelled) return;
-      const saved = baj.data?.actions ?? [];
+      const saved = (baj.data?.actions ?? []) as SavedButtonActionRow[];
       const flows = (flj.items ?? []).filter((f) => f.activo !== false);
       setFlowCatalog(flows.map((f) => ({ flow_code: f.flow_code, label: f.label ?? f.flow_code })));
 
-      const merged = quickReplyTemplateButtons.map((t) => {
-        const s =
-          saved.find((x) => x.button_id === t.suggested_button_id) ??
-          saved.find((x) => (x.button_label ?? "").trim() === t.label);
-        const rawAt = String(s?.action_type ?? "none").trim();
-        const action_type: "none" | "start_flow" | "send_text" =
-          rawAt === "start_flow"
-            ? "start_flow"
-            : rawAt === "send_text"
-              ? "send_text"
-              : "none";
-        return {
-          button_id: (s?.button_id ?? t.suggested_button_id).trim(),
-          button_label: t.label,
-          action_type,
-          flow_code: String(s?.flow_code ?? "").trim(),
-          start_node_code: String(s?.start_node_code ?? "").trim(),
-          text_body: String(s?.text_body ?? "").trim(),
-        };
-      });
-      setButtonActionRows(merged);
+      setButtonActionRows(mergeTemplateWithSavedButtonActions(quickReplyTemplateButtons, saved));
     })();
     return () => {
       cancelled = true;
@@ -224,30 +249,60 @@ export default function CampanasDetailClient({ campaignId }: { campaignId: strin
   }
 
   async function saveButtonActions() {
-    setBusy(true);
-    setErr(null);
-    const res = await fetchWithSupabaseSession(`/api/campanas/${campaignId}/button-actions`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        actions: buttonActionRows.map((r) => ({
-          button_id: r.button_id.trim(),
-          button_label: r.button_label,
-          action_type: r.action_type,
-          flow_code: r.action_type === "start_flow" ? r.flow_code.trim() : null,
-          start_node_code:
-            r.action_type === "start_flow" && r.start_node_code.trim() ? r.start_node_code.trim() : null,
-          text_body: r.action_type === "send_text" ? r.text_body.trim() : null,
-        })),
-      }),
-    });
-    const json = (await res.json().catch(() => ({}))) as { success?: boolean; error?: string };
-    setBusy(false);
-    if (!res.ok || !json.success) {
-      setErr(json.error ?? "No se pudo guardar acciones de botones");
-      return;
+    setSavingButtonActions(true);
+    setButtonActionsFeedback(null);
+    try {
+      const res = await fetchWithSupabaseSession(`/api/campanas/${campaignId}/button-actions`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          actions: buttonActionRows.map((r) => ({
+            button_id: r.button_id.trim(),
+            button_label: r.button_label,
+            action_type: r.action_type,
+            flow_code: r.action_type === "start_flow" ? r.flow_code.trim() : null,
+            start_node_code:
+              r.action_type === "start_flow" && r.start_node_code.trim()
+                ? r.start_node_code.trim()
+                : null,
+            text_body: r.action_type === "send_text" ? r.text_body.trim() : null,
+          })),
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        error?: string;
+        data?: { actions?: SavedButtonActionRow[] };
+      };
+      if (!res.ok || !json.success) {
+        const detail = String(json.error ?? "").trim();
+        setButtonActionsFeedback({
+          kind: "error",
+          message: detail
+            ? `No se pudieron guardar las acciones de botones. ${detail}`
+            : "No se pudieron guardar las acciones de botones. Revisá la configuración.",
+        });
+        return;
+      }
+      const serverActions = json.data?.actions;
+      if (Array.isArray(serverActions) && quickReplyTemplateButtons.length > 0) {
+        setButtonActionRows(
+          mergeTemplateWithSavedButtonActions(quickReplyTemplateButtons, serverActions)
+        );
+      }
+      setButtonActionsFeedback({
+        kind: "success",
+        message: "Acciones de botones guardadas correctamente.",
+      });
+      await load();
+    } catch {
+      setButtonActionsFeedback({
+        kind: "error",
+        message: "No se pudieron guardar las acciones de botones. Revisá la configuración.",
+      });
+    } finally {
+      setSavingButtonActions(false);
     }
-    await load();
   }
 
   async function uploadFile(file: File) {
@@ -324,6 +379,10 @@ export default function CampanasDetailClient({ campaignId }: { campaignId: strin
 
   const canImport = campaign.status === "draft" || campaign.status === "ready";
   const canLaunch = campaign.status === "draft" || campaign.status === "ready";
+  const canEditButtonActions = !["sending", "completed", "cancelled"].includes(
+    String(campaign.status ?? "")
+  );
+  const lockButtonActionsSection = savingButtonActions || !canEditButtonActions;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
@@ -415,6 +474,28 @@ export default function CampanasDetailClient({ campaignId }: { campaignId: strin
             <code className="rounded bg-slate-100 px-1">interactive.button_reply.id</code> (si el envío falla,
             revisá el ID real en los logs o en Meta).
           </p>
+          {!canEditButtonActions ? (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              En el estado actual de la campaña ({String(campaign.status)}) no se pueden editar ni guardar acciones de
+              botones. Creá una nueva campaña en borrador o duplicá esta si necesitás cambiar la configuración.
+            </p>
+          ) : null}
+          {buttonActionsFeedback?.kind === "success" ? (
+            <div
+              className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
+              role="status"
+            >
+              {buttonActionsFeedback.message}
+            </div>
+          ) : null}
+          {buttonActionsFeedback?.kind === "error" ? (
+            <div
+              className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+              role="alert"
+            >
+              {buttonActionsFeedback.message}
+            </div>
+          ) : null}
           <div className="space-y-4">
             {buttonActionRows.map((row, idx) => (
               <div
@@ -425,10 +506,12 @@ export default function CampanasDetailClient({ campaignId }: { campaignId: strin
                 <label className="mt-2 block text-xs text-slate-600">
                   ID / payload del botón (Meta)
                   <input
-                    className="mt-1 w-full rounded border border-slate-300 px-2 py-1 font-mono text-xs"
+                    className="mt-1 w-full rounded border border-slate-300 px-2 py-1 font-mono text-xs disabled:bg-slate-100"
+                    disabled={lockButtonActionsSection}
                     value={row.button_id}
                     onChange={(e) => {
                       const v = e.target.value;
+                      setButtonActionsFeedback(null);
                       setButtonActionRows((prev) =>
                         prev.map((r, i) => (i === idx ? { ...r, button_id: v } : r))
                       );
@@ -438,10 +521,12 @@ export default function CampanasDetailClient({ campaignId }: { campaignId: strin
                 <label className="mt-2 block text-xs text-slate-600">
                   Acción
                   <select
-                    className="mt-1 w-full rounded border border-slate-300 px-2 py-1"
+                    className="mt-1 w-full rounded border border-slate-300 px-2 py-1 disabled:bg-slate-100"
+                    disabled={lockButtonActionsSection}
                     value={row.action_type}
                     onChange={(e) => {
                       const v = e.target.value as typeof row.action_type;
+                      setButtonActionsFeedback(null);
                       setButtonActionRows((prev) =>
                         prev.map((r, i) => (i === idx ? { ...r, action_type: v } : r))
                       );
@@ -457,10 +542,12 @@ export default function CampanasDetailClient({ campaignId }: { campaignId: strin
                     <label className="block text-xs text-slate-600">
                       Flujo
                       <select
-                        className="mt-1 w-full rounded border border-slate-300 px-2 py-1"
+                        className="mt-1 w-full rounded border border-slate-300 px-2 py-1 disabled:bg-slate-100"
+                        disabled={lockButtonActionsSection}
                         value={row.flow_code}
                         onChange={(e) => {
                           const fc = e.target.value;
+                          setButtonActionsFeedback(null);
                           setButtonActionRows((prev) =>
                             prev.map((r, i) =>
                               i === idx ? { ...r, flow_code: fc, start_node_code: "" } : r
@@ -480,11 +567,13 @@ export default function CampanasDetailClient({ campaignId }: { campaignId: strin
                     <label className="block text-xs text-slate-600">
                       Nodo inicial (opcional)
                       <select
-                        className="mt-1 w-full rounded border border-slate-300 px-2 py-1"
+                        className="mt-1 w-full rounded border border-slate-300 px-2 py-1 disabled:bg-slate-100"
+                        disabled={lockButtonActionsSection}
                         value={row.start_node_code}
                         onFocus={() => void ensureNodesLoaded(row.flow_code)}
                         onChange={(e) => {
                           const nc = e.target.value;
+                          setButtonActionsFeedback(null);
                           setButtonActionRows((prev) =>
                             prev.map((r, i) => (i === idx ? { ...r, start_node_code: nc } : r))
                           );
@@ -504,11 +593,13 @@ export default function CampanasDetailClient({ campaignId }: { campaignId: strin
                   <label className="mt-2 block text-xs text-slate-600">
                     Texto a enviar
                     <textarea
-                      className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                      className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm disabled:bg-slate-100"
+                      disabled={lockButtonActionsSection}
                       rows={3}
                       value={row.text_body}
                       onChange={(e) => {
                         const v = e.target.value;
+                        setButtonActionsFeedback(null);
                         setButtonActionRows((prev) =>
                           prev.map((r, i) => (i === idx ? { ...r, text_body: v } : r))
                         );
@@ -521,11 +612,11 @@ export default function CampanasDetailClient({ campaignId }: { campaignId: strin
           </div>
           <button
             type="button"
-            disabled={busy || campaign.status === "sending" || campaign.status === "completed"}
+            disabled={savingButtonActions || busy || !canEditButtonActions}
             onClick={() => void saveButtonActions()}
             className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
           >
-            Guardar acciones de botones
+            {savingButtonActions ? "Guardando…" : "Guardar acciones de botones"}
           </button>
         </section>
       ) : null}
