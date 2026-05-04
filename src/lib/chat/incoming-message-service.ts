@@ -447,9 +447,13 @@ export async function saveIncomingMessage(params: SaveIncomingMessageParams): Pr
 
     const raw = message_data.raw_payload;
     const rawOk = raw && typeof raw === "object" && !Array.isArray(raw);
-    const hasButtonReply =
-      rawOk &&
-      (raw as { interactive?: { button_reply?: unknown } }).interactive?.button_reply != null;
+    const rawRec = rawOk ? (raw as Record<string, unknown>) : null;
+    const hasInteractiveBtn =
+      (raw as { interactive?: { button_reply?: unknown } })?.interactive?.button_reply != null;
+    const hasMetaButton =
+      String(rawRec?.type ?? "").toLowerCase() === "button" &&
+      (raw as { button?: unknown }).button != null;
+    const hasButtonReply = rawOk && (hasInteractiveBtn || hasMetaButton);
     if (
       campaignReplyMatch.matched &&
       (hasButtonReply || message_data.message_type === "text")

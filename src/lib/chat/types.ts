@@ -140,6 +140,8 @@ export type MetaInboundMessage = {
     button_reply?: { id?: string; title?: string };
     list_reply?: { id?: string; title?: string; description?: string };
   };
+  /** Clic en botón de plantilla / reply: Meta envía `type: "button"` (no siempre `interactive`). */
+  button?: { text?: string; payload?: string };
   [key: string]: unknown;
 };
 

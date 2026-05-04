@@ -114,6 +114,12 @@ export function extractMessageBody(msg: MetaInboundMessage): { message_type: str
       };
     case "sticker":
       return { message_type: "sticker", content: "[sticker]" };
+    case "button": {
+      const b = msg.button;
+      const label =
+        b?.text?.trim() || b?.payload?.trim() || "[button]";
+      return { message_type: "button", content: label };
+    }
     case "interactive": {
       const button = msg.interactive?.button_reply;
       if (button?.id) {
@@ -227,6 +233,12 @@ function extractMetaButtonId(msg: MetaInboundMessage): string | null {
   if (buttonId) return buttonId;
   const listId = msg.interactive?.list_reply?.id?.trim();
   if (listId) return listId;
+  const msgType = (msg.type ?? "").trim().toLowerCase();
+  if (msgType === "button") {
+    const b = msg.button;
+    const id = b?.payload?.trim() || b?.text?.trim();
+    if (id) return id;
+  }
   return null;
 }
 
@@ -1095,15 +1107,19 @@ export async function processInboundWebhookValue(
 
       let campaignButtonSuppressFlowInteractive = false;
       const rawInboundPayload = msg as unknown as Record<string, unknown>;
+      const msgTypeLower = String(msg.type ?? "").trim().toLowerCase();
       const isButtonReplyInteractive =
         message_type === "interactive" &&
         Boolean(
           (msg.interactive as { button_reply?: { id?: string; title?: string } } | undefined)
             ?.button_reply
         );
+      /** Meta Cloud API: respuesta a botón de plantilla suele llegar como `type: "button"` + `button.payload`. */
+      const isMetaButtonMessage =
+        msgTypeLower === "button" && Boolean((msg as MetaInboundMessage).button);
       if (
         campaignReplyMatch.matched &&
-        (isButtonReplyInteractive || message_type === "text")
+        (isButtonReplyInteractive || isMetaButtonMessage || message_type === "text")
       ) {
         const reply = campaignReplyMatch;
         try {

@@ -44,15 +44,31 @@ export function inboundButtonReplyIdFromRaw(raw: Record<string, unknown>): strin
   const intr = raw.interactive as
     | { button_reply?: { id?: string }; list_reply?: { id?: string } }
     | undefined;
-  if (!intr || typeof intr !== "object") return null;
-  const id = intr.button_reply?.id?.trim();
-  return id || null;
+  if (intr && typeof intr === "object") {
+    const id = intr.button_reply?.id?.trim();
+    if (id) return id;
+  }
+  /** Meta WhatsApp Cloud: muchos clics de plantilla llegan como `type: "button"` + `button.payload`. */
+  const msgType = String(raw.type ?? "").trim().toLowerCase();
+  if (msgType === "button") {
+    const btn = raw.button as { payload?: string; text?: string } | undefined;
+    const id = btn?.payload?.trim() || btn?.text?.trim();
+    if (id) return id;
+  }
+  return null;
 }
 
 function inboundButtonReplyTitle(raw: Record<string, unknown>): string | null {
   const intr = raw.interactive as { button_reply?: { title?: string } } | undefined;
-  const t = intr?.button_reply?.title?.trim();
-  return t || null;
+  const fromInteractive = intr?.button_reply?.title?.trim();
+  if (fromInteractive) return fromInteractive;
+  const msgType = String(raw.type ?? "").trim().toLowerCase();
+  if (msgType === "button") {
+    const btn = raw.button as { text?: string; payload?: string } | undefined;
+    const t = btn?.text?.trim() || btn?.payload?.trim();
+    return t || null;
+  }
+  return null;
 }
 
 function inboundPlainTextBody(raw: Record<string, unknown>): string | null {
