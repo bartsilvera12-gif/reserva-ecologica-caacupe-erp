@@ -12,6 +12,9 @@ export const CONV_LOG = "[webhook/whatsapp][conversation]" as const;
 /** Marca en `chat_flow_events` que el puntero del flujo se reinició (sesión nueva para re-envío del nodo). */
 export const FLOW_POINTER_RESET_EVENT = "flow_pointer_reset" as const;
 
+/** Reinicio por intención de compra / keywords configurables (`flow_config`). */
+export const RESTART_INTENT_DETECTED_EVENT = "restart_intent_detected" as const;
+
 /**
  * @deprecated Los datos por sesión viven en `chat_flow_sessions` + `chat_flow_data.flow_session_id`;
  * el reinicio crea sesión nueva en lugar de borrar filas.
@@ -337,6 +340,19 @@ export type RestartToFlowStartResult = {
   flow_current_node: string | null;
   restarted: boolean;
   reason: string;
+  /** Sesión `chat_flow_sessions` creada en este reinicio (si `restarted`). */
+  new_flow_session_id?: string | null;
+};
+
+export type RestartWhatsappConversationOpts = {
+  preferFlowCode?: string | null;
+  trigger: string;
+  /** Si existe y está activo en el flujo, el puntero arranca ahí (opciones de boletos, etc.). */
+  targetNodeCode?: string | null;
+  /** Copia `revendedor_id` / snapshot desde la sesión cerrada hacia la nueva. */
+  preserveReferralFromPreviousSession?: boolean;
+  /** Inserta `restart_intent_detected` en `chat_flow_events`. */
+  intentAudit?: { matched_keyword: string };
 };
 
 /**
@@ -349,7 +365,7 @@ export async function restartWhatsappConversationToFlowStart(
   supabase: SupabaseAdmin,
   empresaId: string,
   conversationId: string,
-  opts: { preferFlowCode?: string | null; trigger: string }
+  opts: RestartWhatsappConversationOpts
 ): Promise<RestartToFlowStartResult> {
   console.info(FLOW_RESTART, "restart_begin", {
     empresaId,
@@ -390,7 +406,24 @@ export async function restartWhatsappConversationToFlowStart(
     });
   }
 
-  const firstNode = (await getFirstActiveNodeCodeForFlow(supabase, empresaId, targetFlow)) ?? "inicio";
+  const canonicalFirst =
+    (await getFirstActiveNodeCodeForFlow(supabase, empresaId, targetFlow)) ?? "inicio";
+  const requested = opts.targetNodeCode?.trim() || null;
+  let firstNode = canonicalFirst;
+  if (requested) {
+    const okTarget = await isNodeActiveInFlow(supabase, empresaId, targetFlow, requested);
+    if (okTarget) {
+      firstNode = requested;
+    } else {
+      console.warn(FLOW_RESTART, "target_node_invalid_fallback_first", {
+        empresaId,
+        conversationId,
+        targetFlow,
+        requested,
+        fallback: canonicalFirst,
+      });
+    }
+  }
 
   const { data: convBeforeRestart } = await supabase
     .from("chat_conversations")
@@ -435,6 +468,39 @@ export async function restartWhatsappConversationToFlowStart(
       trigger: opts.trigger,
     });
     return { flow_code: null, flow_current_node: null, restarted: false, reason: "session_create_failed" };
+  }
+
+  if (opts.preserveReferralFromPreviousSession && previousActiveFlowSessionId) {
+    const { data: prevSess } = await supabase
+      .from("chat_flow_sessions")
+      .select("revendedor_id, codigo_referido_snapshot, referral_source")
+      .eq("id", previousActiveFlowSessionId)
+      .eq("empresa_id", empresaId)
+      .maybeSingle();
+    const p = prevSess as
+      | {
+          revendedor_id?: string | null;
+          codigo_referido_snapshot?: string | null;
+          referral_source?: string | null;
+        }
+      | null;
+    if (p && (p.revendedor_id || (p.codigo_referido_snapshot ?? "").trim())) {
+      const { error: refErr } = await supabase
+        .from("chat_flow_sessions")
+        .update({
+          revendedor_id: p.revendedor_id ?? null,
+          codigo_referido_snapshot: p.codigo_referido_snapshot ?? null,
+          referral_source: p.referral_source ?? null,
+        })
+        .eq("id", newSessionId)
+        .eq("empresa_id", empresaId);
+      if (refErr) {
+        console.warn(FLOW_RESTART, "preserve_referral_copy_failed", {
+          conversationId,
+          message: refErr.message,
+        });
+      }
+    }
   }
 
   const { error: updErr } = await supabase
@@ -484,6 +550,30 @@ export async function restartWhatsappConversationToFlowStart(
     });
   }
 
+  if (opts.intentAudit) {
+    const { error: intentEvErr } = await supabase.from("chat_flow_events").insert({
+      empresa_id: empresaId,
+      conversation_id: conversationId,
+      flow_code: targetFlow,
+      node_code: firstNode,
+      event_type: RESTART_INTENT_DETECTED_EVENT,
+      flow_session_id: newSessionId,
+      payload: {
+        trigger: opts.trigger,
+        matched_keyword: opts.intentAudit.matched_keyword,
+        previous_session_id: previousActiveFlowSessionId,
+        new_session_id: newSessionId,
+        restart_node_code: firstNode,
+      },
+    });
+    if (intentEvErr) {
+      console.error(CONV_LOG, "restart_intent_detected_insert_failed", {
+        conversationId,
+        message: intentEvErr.message,
+      });
+    }
+  }
+
   flowTrace("restart_flow_session_complete", {
     conversation_id: conversationId,
     empresa_id: empresaId,
@@ -514,5 +604,6 @@ export async function restartWhatsappConversationToFlowStart(
     flow_current_node: firstNode,
     restarted: true,
     reason: opts.trigger,
+    new_flow_session_id: newSessionId,
   };
 }

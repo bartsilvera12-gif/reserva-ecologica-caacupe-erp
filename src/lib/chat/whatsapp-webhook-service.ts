@@ -19,6 +19,7 @@ import {
   sendOutboundTextMessage,
 } from "@/lib/chat/conversation-send-context";
 import { attachInboundMessageMedia } from "@/lib/chat/inbound-media-attach";
+import { maybeRestartForPurchaseIntent } from "@/lib/chat/flow-restart-intent";
 import {
   CONV_LOG,
   isFlowKnownAndActiveInCatalog,
@@ -816,6 +817,47 @@ export async function processInboundWebhookValue(
           convHuman = false;
           convFlowStatus = "bot";
           restartedThisMessage = true;
+        }
+      }
+
+      /**
+       * Intención de compra / reinicio suave (keywords por `chat_flows.flow_config`), p. ej. “boletos”, “quiero comprar”.
+       * No sustituye al reinicio por hola/menú/iniciar (rama anterior). Si no hubo match ahí, evaluamos aquí.
+       */
+      if (!restartKeywordMatch && message_type === "text") {
+        const pi = await maybeRestartForPurchaseIntent(supabase, empresaId, conversationId, {
+          messageType: message_type,
+          content,
+          convFlow,
+          convNode,
+          convHuman,
+          convFlowStatus,
+          restartedThisMessage,
+        });
+        if (pi.restarted) {
+          convFlow = pi.flow_code;
+          convNode = pi.flow_current_node;
+          convHuman = false;
+          convFlowStatus = "bot";
+          restartedThisMessage = true;
+          existingConv = {
+            ...existingConv,
+            flow_code: convFlow,
+            flow_current_node: convNode,
+            human_taken_over: convHuman,
+            flow_status: convFlowStatus,
+            active_flow_session_id:
+              pi.new_flow_session_id ??
+              (existingConv as { active_flow_session_id?: string | null }).active_flow_session_id ??
+              null,
+          };
+          console.info(CONV_LOG, "purchase_intent_restart_applied", {
+            conversationId,
+            flow_code: convFlow,
+            flow_current_node: convNode,
+            new_flow_session_id: pi.new_flow_session_id,
+            reason: pi.reason,
+          });
         }
       }
 
