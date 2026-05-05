@@ -15,7 +15,7 @@ export async function syncCampaignTemplatesForChannel(params: {
   supabase: SupabaseAdmin;
   empresaId: string;
   channelId: string;
-}): Promise<{ inserted: number; error?: string }> {
+}): Promise<{ inserted: number; fetched: number; error?: string }> {
   const { supabase, empresaId, channelId } = params;
 
   const { data: ch, error: chErr } = await supabase
@@ -28,7 +28,7 @@ export async function syncCampaignTemplatesForChannel(params: {
     .maybeSingle();
 
   if (chErr || !ch) {
-    return { inserted: 0, error: chErr?.message ?? "Canal no encontrado" };
+    return { inserted: 0, fetched: 0, error: chErr?.message ?? "Canal no encontrado" };
   }
 
   const channel = ch as {
@@ -41,7 +41,7 @@ export async function syncCampaignTemplatesForChannel(params: {
     provider_channel_id?: string | null;
   };
   if (channel.activo === false) {
-    return { inserted: 0, error: "Canal desactivado" };
+    return { inserted: 0, fetched: 0, error: "Canal desactivado" };
   }
 
   const provider = effectiveOutboundProvider(channel) as CampaignProviderId;
@@ -62,13 +62,14 @@ export async function syncCampaignTemplatesForChannel(params: {
     if (!waba || !tok) {
       return {
         inserted: 0,
+        fetched: 0,
         error: "Canal Meta: configurá meta_waba_id en el canal y token de acceso para sincronizar plantillas.",
       };
     }
     try {
       rows = await fetchMetaApprovedTemplates({ wabaId: waba, accessToken: tok });
     } catch (e) {
-      return { inserted: 0, error: e instanceof Error ? e.message : "Error Meta templates" };
+      return { inserted: 0, fetched: 0, error: e instanceof Error ? e.message : "Error Meta templates" };
     }
   } else {
     const apiKey = typeof cfg.ycloud_api_key === "string" ? cfg.ycloud_api_key.trim() : "";
@@ -83,11 +84,12 @@ export async function syncCampaignTemplatesForChannel(params: {
               ? cfg.ycloud_channel_id.trim()
               : "";
     if (!apiKey) {
-      return { inserted: 0, error: "Canal YCloud: falta ycloud_api_key en la configuración." };
+      return { inserted: 0, fetched: 0, error: "Canal YCloud: falta ycloud_api_key en la configuración." };
     }
     if (!waba) {
       return {
         inserted: 0,
+        fetched: 0,
         error:
           "El canal YCloud seleccionado no tiene configurado el identificador de la cuenta de WhatsApp Business (WABA). " +
           "Editá el canal en Configuración → Canales, completá “WABA ID” o “Channel ID” según YCloud, y volvé a sincronizar plantillas.",
@@ -96,6 +98,7 @@ export async function syncCampaignTemplatesForChannel(params: {
     rows = await fetchYCloudApprovedTemplates({ apiKey, wabaId: waba });
   }
 
+  const fetched = rows.length;
   let n = 0;
   for (const r of rows) {
     const { error } = await supabase.from("chat_campaign_templates").upsert(
@@ -117,7 +120,15 @@ export async function syncCampaignTemplatesForChannel(params: {
       { onConflict: "empresa_id,channel_id,provider,name,language" }
     );
     if (!error) n += 1;
+    else {
+      console.warn("[campaign-template-service] chat_campaign_templates upsert failed", {
+        channelId,
+        name: r.name,
+        language: r.language,
+        message: error.message,
+      });
+    }
   }
 
-  return { inserted: n };
+  return { inserted: n, fetched };
 }

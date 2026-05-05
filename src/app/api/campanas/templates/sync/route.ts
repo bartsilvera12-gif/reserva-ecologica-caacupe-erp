@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(errorResponse(res.error), { status: 400 });
     }
 
-    return NextResponse.json(successResponse({ inserted: res.inserted }));
+    return NextResponse.json(successResponse({ inserted: res.inserted, fetched: res.fetched }));
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";
     return NextResponse.json(errorResponse(msg), { status: 500 });

@@ -37,7 +37,7 @@ export default function CampanasNuevoClient() {
   const [queueId, setQueueId] = useState("");
   const [templates, setTemplates] = useState<TemplateOpt[]>([]);
   const [templateId, setTemplateId] = useState("");
-  const [synced, setSynced] = useState(false);
+  const [syncSummary, setSyncSummary] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -90,19 +90,50 @@ export default function CampanasNuevoClient() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ channel_id: channelId }),
     });
-    const json = (await res.json().catch(() => ({}))) as { success?: boolean; error?: string };
+    const json = (await res.json().catch(() => ({}))) as {
+      success?: boolean;
+      error?: string;
+      data?: { inserted?: number; fetched?: number };
+    };
     setBusy(false);
     if (!res.ok || !json.success) {
       setErr(json.error ?? "No se pudieron sincronizar plantillas");
+      setSyncSummary(null);
       return;
     }
-    setSynced(true);
+    const fetchedFromApi = typeof json.data?.fetched === "number" ? json.data.fetched : undefined;
+    const inserted = typeof json.data?.inserted === "number" ? json.data.inserted : undefined;
+
     const list = await fetchWithSupabaseSession(
       `/api/campanas/templates?channel_id=${encodeURIComponent(channelId)}`,
       { cache: "no-store" }
     );
-    const lj = (await list.json().catch(() => ({}))) as { success?: boolean; data?: TemplateOpt[] };
-    if (list.ok && lj.success && lj.data) setTemplates(lj.data);
+    const lj = (await list.json().catch(() => ({}))) as { success?: boolean; data?: TemplateOpt[]; error?: string };
+    if (!list.ok || !lj.success) {
+      setErr(lj.error ?? "No se pudo cargar el listado de plantillas");
+      setSyncSummary(null);
+      setTemplates([]);
+      return;
+    }
+    const listed = Array.isArray(lj.data) ? lj.data : [];
+    setTemplates(listed);
+
+    const n = listed.length;
+    if (n > 0) {
+      setSyncSummary(`Sincronización completada: ${n} plantilla(s) aprobada(s) disponible(s) para este canal.`);
+    } else if (fetchedFromApi === 0) {
+      setSyncSummary(
+        "Sincronización completada, pero no se encontraron plantillas aprobadas para este canal. Verificá que la plantilla pertenezca al WABA configurado en YCloud y en Configuración → Canales."
+      );
+    } else if (typeof inserted === "number" && inserted === 0 && (fetchedFromApi ?? 0) > 0) {
+      setSyncSummary(
+        "YCloud devolvió plantillas pero no se pudieron guardar en el ERP. Revisá permisos de base de datos o contactá soporte."
+      );
+    } else {
+      setSyncSummary(
+        "Sincronización completada, pero no hay plantillas en el listado. Probá de nuevo o verificá el canal en Configuración → Canales."
+      );
+    }
   }
 
   async function createCampaign() {
@@ -175,7 +206,7 @@ export default function CampanasNuevoClient() {
               setChannelId(e.target.value);
               setTemplates([]);
               setTemplateId("");
-              setSynced(false);
+              setSyncSummary(null);
             }}
           >
             <option value="">Seleccionar…</option>
@@ -212,7 +243,7 @@ export default function CampanasNuevoClient() {
           >
             Sincronizar plantillas aprobadas
           </button>
-          {synced ? <span className="text-xs text-emerald-700">Listo — elegí plantilla abajo</span> : null}
+          {syncSummary ? <span className="text-xs text-slate-700">{syncSummary}</span> : null}
         </div>
 
         <label className="block">
