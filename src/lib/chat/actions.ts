@@ -100,6 +100,10 @@ export type InboxConversation = {
    * Requiere migración con columna `client_turn_since` en el mismo RPC.
    */
   awaiting_client_reply_since: string | null;
+  /** Flujo asignado (`chat_conversations.flow_code`), si existe. */
+  flow_code: string | null;
+  /** Nodo actual del motor (`chat_conversations.flow_current_node`), si existe. */
+  flow_current_node: string | null;
   channel: {
     id: string;
     type: string;
@@ -343,6 +347,7 @@ async function fetchChatConversationsUnsafe(
       contact_id,
       channel_id,
       flow_code,
+      flow_current_node,
       flow_status,
       human_taken_over,
       active_flow_session_id
@@ -359,6 +364,7 @@ async function fetchChatConversationsUnsafe(
       contact_id,
       channel_id,
       flow_code,
+      flow_current_node,
       flow_status,
       human_taken_over,
       active_flow_session_id
@@ -375,6 +381,7 @@ async function fetchChatConversationsUnsafe(
       contact_id,
       channel_id,
       flow_code,
+      flow_current_node,
       flow_status,
       human_taken_over,
       active_flow_session_id
@@ -978,6 +985,14 @@ async function fetchChatConversationsUnsafe(
       unread_count: (row.unread_count as number) ?? 0,
       flow_status: String((row as { flow_status?: string | null }).flow_status ?? ""),
       human_taken_over: Boolean(row.human_taken_over),
+      flow_code: (() => {
+        const f = String((row as { flow_code?: string | null }).flow_code ?? "").trim();
+        return f || null;
+      })(),
+      flow_current_node: (() => {
+        const n = String((row as { flow_current_node?: string | null }).flow_current_node ?? "").trim();
+        return n || null;
+      })(),
       channel: {
         id: channelId,
         type: channelType,

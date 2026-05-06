@@ -187,17 +187,17 @@ async function pgFetchConversationsWithColumns(
   const colsFull = `
     id, status, priority, queue_id, assignment_wait_code, assigned_agent_id,
     last_message_at, last_message_preview, unread_count, contact_id, channel_id,
-    flow_code, flow_status, human_taken_over, active_flow_session_id
+    flow_code, flow_current_node, flow_status, human_taken_over, active_flow_session_id
   `;
   const colsLegacy = `
     id, status, priority, queue_id, assigned_agent_id,
     last_message_at, last_message_preview, unread_count, contact_id, channel_id,
-    flow_code, flow_status, human_taken_over, active_flow_session_id
+    flow_code, flow_current_node, flow_status, human_taken_over, active_flow_session_id
   `;
   const colsMin = `
     id, status, queue_id, assigned_agent_id,
     last_message_at, last_message_preview, unread_count, contact_id, channel_id,
-    flow_code, flow_status, human_taken_over, active_flow_session_id
+    flow_code, flow_current_node, flow_status, human_taken_over, active_flow_session_id
   `;
   const cols = variant === "full" ? colsFull : variant === "legacy" ? colsLegacy : colsMin;
   const q = `
@@ -880,6 +880,14 @@ export async function fetchChatConversationsFromTenantPg(
       unread_count: Number(row.unread_count ?? 0) || 0,
       flow_status: String((row as { flow_status?: string | null }).flow_status ?? ""),
       human_taken_over: Boolean(row.human_taken_over),
+      flow_code: (() => {
+        const f = String((row as { flow_code?: string | null }).flow_code ?? "").trim();
+        return f || null;
+      })(),
+      flow_current_node: (() => {
+        const n = String((row as { flow_current_node?: string | null }).flow_current_node ?? "").trim();
+        return n || null;
+      })(),
       channel: {
         id: channelId,
         type: normalizeChannelType(channelType),

@@ -36,7 +36,7 @@ import {
 import { INBOX_HEARTBEAT_INTERVAL_MS } from "@/lib/chat/agent-presence";
 import { formatWaitHuman } from "@/lib/chat/format-wait-human";
 import { listActiveQuickRepliesForChannel } from "@/lib/chat/quick-replies-actions";
-import { ArrowLeftRight, Flame, Mic, Paperclip, Square, UserRound, Zap } from "lucide-react";
+import { ArrowLeftRight, Flame, Mic, Paperclip, RefreshCw, Square, UserRound, Zap } from "lucide-react";
 import {
   finalizeConversationWithClosure,
   loadFinalizeOptionsForConversation,
@@ -334,6 +334,8 @@ export function ConversacionesClient({
   /** Grabación de nota de voz (MediaRecorder) antes de subir a /api/chat/send-media. */
   const [recordingVoice, setRecordingVoice] = useState(false);
   const [releasingBot, setReleasingBot] = useState(false);
+  const [resendFlowStepLoading, setResendFlowStepLoading] = useState(false);
+  const [resendFlowNotice, setResendFlowNotice] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [messagesError, setMessagesError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -1172,6 +1174,76 @@ export function ConversacionesClient({
     }
   }
 
+  useEffect(() => {
+    if (!resendFlowNotice) return;
+    const t = window.setTimeout(() => setResendFlowNotice(null), 5000);
+    return () => window.clearTimeout(t);
+  }, [resendFlowNotice]);
+
+  async function handleResendCurrentFlowStep() {
+    if (!selectedId || resendFlowStepLoading) return;
+    const sel = conversationsRef.current.find((c) => c.id === selectedId);
+    if (!sel?.flow_code?.trim() || !sel?.flow_current_node?.trim() || sel.status === "closed") return;
+
+    let confirmHumanOverride = false;
+    if (sel.human_taken_over || sel.flow_status === "human") {
+      const ok = window.confirm(
+        "La conversación está en modo humano. ¿Reenviar igualmente el mensaje del paso actual del bot?"
+      );
+      if (!ok) return;
+      confirmHumanOverride = true;
+    }
+
+    const postOnce = async (override: boolean) => {
+      const res = await fetchWithSupabaseSession(
+        `/api/chat/conversations/${encodeURIComponent(selectedId)}/resend-current-node`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirm_human_override: override }),
+        }
+      );
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        needs_human_override_confirmation?: boolean;
+      };
+      return { res, json };
+    };
+
+    setResendFlowStepLoading(true);
+    setResendFlowNotice(null);
+    setSendError(null);
+    try {
+      let { res, json } = await postOnce(confirmHumanOverride);
+      if (res.status === 409 && json.needs_human_override_confirmation) {
+        const ok = window.confirm(
+          "La conversación está en modo humano. ¿Reenviar igualmente el mensaje del paso actual del bot?"
+        );
+        if (!ok) return;
+        ({ res, json } = await postOnce(true));
+      }
+      if (!res.ok || !json.ok) {
+        const errMsg =
+          typeof json.error === "string" && json.error.trim()
+            ? json.error.trim()
+            : "No se pudo reenviar el paso actual. Revisá el estado del canal o los logs.";
+        setResendFlowNotice({ kind: "err", text: errMsg });
+        return;
+      }
+      setResendFlowNotice({ kind: "ok", text: "Paso actual reenviado correctamente." });
+      await loadMessages(selectedId, { silent: true });
+      await loadConversations({ silent: true });
+    } catch {
+      setResendFlowNotice({
+        kind: "err",
+        text: "No se pudo reenviar el paso actual. Revisá el estado del canal o los logs.",
+      });
+    } finally {
+      setResendFlowStepLoading(false);
+    }
+  }
+
   async function runConversationOp(fn: () => Promise<void>) {
     if (!selectedId || opsBusy) return;
     setOpsBusy(true);
@@ -1316,6 +1388,12 @@ export function ConversacionesClient({
   }, [conversations, listSearch]);
 
   const selected = conversations.find((c) => c.id === selectedId);
+  const canResendCurrentFlowStep = Boolean(
+    selected &&
+      selected.status !== "closed" &&
+      selected.flow_code?.trim() &&
+      selected.flow_current_node?.trim()
+  );
   const isHumanActive =
     !!selected && (selected.human_taken_over || selected.flow_status === "human");
   const requestedConversationId = searchParams?.get("conversationId") ?? null;
@@ -2059,6 +2137,18 @@ export function ConversacionesClient({
           {messagesError}
         </div>
       )}
+      {resendFlowNotice && (
+        <div
+          className={`text-xs rounded-lg px-2 py-1.5 shrink-0 border ${
+            resendFlowNotice.kind === "ok"
+              ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+              : "bg-red-50 border-red-200 text-red-900"
+          }`}
+          role="status"
+        >
+          {resendFlowNotice.text}
+        </div>
+      )}
 
       <div className="flex flex-1 min-h-0 border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
         {/* Lista */}
@@ -2319,6 +2409,21 @@ export function ConversacionesClient({
                           className="inline-flex items-center rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                         >
                           {releasingBot ? "…" : "Modo bot"}
+                        </button>
+                      ) : null}
+                      {canResendCurrentFlowStep ? (
+                        <button
+                          type="button"
+                          disabled={resendFlowStepLoading || opsBusy}
+                          onClick={() => void handleResendCurrentFlowStep()}
+                          title='Vuelve a enviar la pregunta o mensaje del nodo actual sin avanzar el flujo. Útil si el bot quedó trabado o el cliente no recibió el último paso.'
+                          className="inline-flex items-center gap-1 rounded-md border border-violet-300 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-900 hover:bg-violet-100 disabled:opacity-50"
+                        >
+                          <RefreshCw
+                            className={`w-3.5 h-3.5 shrink-0 ${resendFlowStepLoading ? "animate-spin" : ""}`}
+                            aria-hidden
+                          />
+                          {resendFlowStepLoading ? "Enviando…" : "Reenviar paso actual"}
                         </button>
                       ) : null}
                       {selected.contact.cliente_id ? (
