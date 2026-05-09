@@ -42,8 +42,18 @@ export async function requireComisionesModuleAccess(request: Request): Promise<C
     rol: usuario.rol,
   });
   const slugs = new Set(modulos.map((m) => (m.slug ?? "").trim().toLowerCase()));
-  if (!slugs.has("comisiones")) {
-    return { ok: false, status: 403, message: "Sin acceso al módulo Comisiones" };
+  /**
+   * Comisiones no se auto-habilita en `empresa_modulos` (micro-paso 1). Quien abre
+   * Configuración → Comisiones entra con módulo `configuracion`; sin esto, GET/PUT
+   * devolvían 403 aunque la UI de settings sea accesible.
+   */
+  const puedeComisionesOConfig = slugs.has("comisiones") || slugs.has("configuracion");
+  if (!puedeComisionesOConfig) {
+    return {
+      ok: false,
+      status: 403,
+      message: "Sin acceso al módulo Comisiones ni a Configuración global.",
+    };
   }
 
   return { ok: true, empresaId: usuario.empresa_id, usuarioCatalogId: usuario.id, rol: usuario.rol };
