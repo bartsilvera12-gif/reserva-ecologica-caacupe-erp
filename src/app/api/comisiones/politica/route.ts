@@ -73,11 +73,19 @@ export async function GET(request: Request) {
     schemaResuelto = schemaResuelto || "(error_resolviendo_schema_o_slugs)";
   }
 
+  const puedeEditar = puedeConfigurarComisiones(auth.rol);
+  const permisosRespuesta = {
+    puedeEditar,
+    canEdit: puedeEditar,
+    rol: auth.rol ?? null,
+  };
+
   console.warn("[api/comisiones/politica] GET diag", {
     traceId,
     path: POLITICA_PATH,
     status_returned: "200_pending",
     rol: auth.rol ?? null,
+    puede_editar: puedeEditar,
     es_admin_empresa: esRolAdminEmpresa(auth.rol),
     es_admin_global: esRolAdminEmpresaOGlobal(auth.rol),
     slugs_efectivos: slugsEfectivos,
@@ -106,7 +114,11 @@ export async function GET(request: Request) {
 
     if (!politica) {
       console.warn("[api/comisiones/politica] GET ok empty policy", { traceId, status_returned: 200 });
-      return politicaJson(withTrace(successResponse({ politica: null, escalas: [] }), traceId), 200, traceId);
+      return politicaJson(
+        withTrace(successResponse({ politica: null, escalas: [], ...permisosRespuesta }), traceId),
+        200,
+        traceId
+      );
     }
 
     const pid = (politica as { id: string }).id;
@@ -128,7 +140,11 @@ export async function GET(request: Request) {
     }
 
     console.warn("[api/comisiones/politica] GET ok", { traceId, status_returned: 200 });
-    return politicaJson(withTrace(successResponse({ politica, escalas: escalas ?? [] }), traceId), 200, traceId);
+    return politicaJson(
+      withTrace(successResponse({ politica, escalas: escalas ?? [], ...permisosRespuesta }), traceId),
+      200,
+      traceId
+    );
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";
     console.warn("[api/comisiones/politica] GET exception", {

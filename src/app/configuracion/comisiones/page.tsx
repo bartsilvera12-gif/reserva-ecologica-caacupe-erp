@@ -14,8 +14,6 @@ import {
   getUnknownErrorKeys,
   serializeUnknownError,
 } from "@/lib/errors/serialize-unknown-error";
-import { getCurrentUser } from "@/lib/auth";
-import { esRolAdminEmpresaOGlobal } from "@/lib/auth/rol-empresa";
 
 type EscalaRow = {
   id?: string;
@@ -60,9 +58,6 @@ export default function ConfiguracionComisionesPage() {
     setError(null);
     const traceCliente = nuevoTraceCliente();
     try {
-      const u = await getCurrentUser();
-      setPuedeEditar(esRolAdminEmpresaOGlobal(u?.rol));
-
       const res = await fetchWithSupabaseSession(POLITICA_ENDPOINT, {
         cache: "no-store",
         headers: { "X-Client-Trace-Id": traceCliente },
@@ -83,6 +78,9 @@ export default function ConfiguracionComisionesPage() {
               data?: {
                 politica: Record<string, unknown> | null;
                 escalas: Record<string, unknown>[];
+                puedeEditar?: boolean;
+                canEdit?: boolean;
+                rol?: string | null;
               };
               error?: string;
             })
@@ -112,6 +110,10 @@ export default function ConfiguracionComisionesPage() {
         );
         return;
       }
+
+      const puede =
+        json.data?.puedeEditar ?? json.data?.canEdit ?? false;
+      setPuedeEditar(Boolean(puede));
 
       const pol = json.data?.politica;
       const esc = json.data?.escalas ?? [];
