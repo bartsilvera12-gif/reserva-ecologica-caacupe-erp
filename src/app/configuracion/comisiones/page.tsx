@@ -61,8 +61,9 @@ function labelModoPeriodo(raw: string): string {
 function resumenEscalas(rows: EscalaRow[]): string {
   if (rows.length === 0) return "Sin escalas";
   const pct = rows[0]?.porcentaje_comision?.trim() || "0";
-  if (rows.length === 1) return `1 escala · ${pct}%`;
-  return `${rows.length} escalas · primer tramo ${pct}%`;
+  const desde = formatMontoPygResumen(rows[0]?.desde_monto ?? "");
+  if (rows.length === 1) return `1 escala · Desde ${desde} · ${pct}%`;
+  return `${rows.length} escalas · primera desde ${desde} · ${pct}%`;
 }
 
 function formatUltimaActualizacion(iso: unknown): string | null {
@@ -73,6 +74,94 @@ function formatUltimaActualizacion(iso: unknown): string | null {
     return d.toLocaleString("es-PY", { dateStyle: "short", timeStyle: "short" });
   } catch {
     return null;
+  }
+}
+
+function parseMontoPyg(raw: string, opts?: { nullable?: boolean; label?: string }): number | null {
+  const label = opts?.label ?? "Monto";
+  const value = (raw ?? "").trim();
+  if (!value) return opts?.nullable ? null : 0;
+
+  const cleaned = value
+    .replace(/\u00a0/g, "")
+    .replace(/₲/g, "")
+    .replace(/(?:PYG|GS)\.?/gi, "")
+    .replace(/\s+/g, "");
+
+  if (!/^-?[0-9.,]+$/.test(cleaned)) {
+    throw new Error(`${label}: ingresá solo números y separadores de miles.`);
+  }
+
+  const negative = cleaned.startsWith("-");
+  const unsigned = negative ? cleaned.slice(1) : cleaned;
+  const hasDot = unsigned.includes(".");
+  const hasComma = unsigned.includes(",");
+  let normalized = unsigned;
+
+  if (hasDot && hasComma) {
+    const lastDot = unsigned.lastIndexOf(".");
+    const lastComma = unsigned.lastIndexOf(",");
+    const decimalSep = lastDot > lastComma ? "." : ",";
+    const thousandsSep = decimalSep === "." ? "," : ".";
+    normalized = unsigned.split(thousandsSep).join("").replace(decimalSep, ".");
+  } else if (hasDot || hasComma) {
+    const sep = hasDot ? "." : ",";
+    const parts = unsigned.split(sep);
+    if (parts.length > 2) {
+      normalized = parts.join("");
+    } else {
+      const [entero = "", decimal = ""] = parts;
+      const looksLikeThousands = decimal.length === 3 && entero.length >= 1 && entero.length <= 3;
+      normalized = looksLikeThousands ? `${entero}${decimal}` : `${entero}.${decimal}`;
+    }
+  }
+
+  const n = Number(`${negative ? "-" : ""}${normalized}`);
+  if (!Number.isFinite(n) || n < 0) {
+    throw new Error(`${label}: monto inválido.`);
+  }
+  return n;
+}
+
+function formatMontoPygNumber(n: number): string {
+  return new Intl.NumberFormat("es-PY", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(n);
+}
+
+function formatMontoPygInput(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value);
+  return formatMontoPygNumber(n);
+}
+
+function formatMontoPygEditable(raw: string): string {
+  if (!raw.trim()) return "";
+  try {
+    const n = parseMontoPyg(raw, { nullable: true });
+    return n == null ? "" : formatMontoPygNumber(n);
+  } catch {
+    return raw;
+  }
+}
+
+function formatMontoPygResumen(raw: string): string {
+  try {
+    const n = parseMontoPyg(raw, { nullable: true });
+    return n == null ? "—" : `₲ ${formatMontoPygNumber(n)}`;
+  } catch {
+    return raw.trim() ? `₲ ${raw.trim()}` : "—";
+  }
+}
+
+function montoPareceMuyBajo(raw: string): boolean {
+  try {
+    const n = parseMontoPyg(raw, { nullable: true });
+    return n != null && n > 0 && n < 1000;
+  } catch {
+    return false;
   }
 }
 
@@ -140,10 +229,10 @@ export default function ConfiguracionComisionesPage() {
       setEscalas(
         esc.map((r) => ({
           id: typeof r.id === "string" ? r.id : undefined,
-          desde_monto: String(r.desde_monto ?? "0"),
-          hasta_monto: r.hasta_monto != null ? String(r.hasta_monto) : "",
+          desde_monto: formatMontoPygInput(r.desde_monto ?? "0"),
+          hasta_monto: r.hasta_monto != null ? formatMontoPygInput(r.hasta_monto) : "",
           porcentaje_comision: String(r.porcentaje_comision ?? "0"),
-          premio_fijo: r.premio_fijo != null ? String(r.premio_fijo) : "",
+          premio_fijo: r.premio_fijo != null ? formatMontoPygInput(r.premio_fijo) : "",
         }))
       );
     } else if (!tieneId) {
@@ -233,11 +322,11 @@ export default function ConfiguracionComisionesPage() {
     setError(null);
     setSuccess(false);
     try {
-      const escalasPayload = escalas.map((row) => ({
-        desde_monto: parseFloat(row.desde_monto.replace(",", ".")) || 0,
-        hasta_monto: row.hasta_monto.trim() === "" ? null : parseFloat(row.hasta_monto.replace(",", ".")),
+      const escalasPayload = escalas.map((row, idx) => ({
+        desde_monto: parseMontoPyg(row.desde_monto, { label: `Escala ${idx + 1} desde` }) ?? 0,
+        hasta_monto: parseMontoPyg(row.hasta_monto, { nullable: true, label: `Escala ${idx + 1} hasta` }),
         porcentaje_comision: parseFloat(row.porcentaje_comision.replace(",", ".")) || 0,
-        premio_fijo: row.premio_fijo.trim() === "" ? null : parseFloat(row.premio_fijo.replace(",", ".")),
+        premio_fijo: parseMontoPyg(row.premio_fijo, { nullable: true, label: `Escala ${idx + 1} premio fijo` }),
       }));
       const res = await fetchWithSupabaseSession("/api/comisiones/politica", {
         method: "PUT",
@@ -446,7 +535,8 @@ export default function ConfiguracionComisionesPage() {
           <ConfigFormCard>
             <ConfigSectionTitle>Escalas</ConfigSectionTitle>
             <p className="mb-3 text-sm text-slate-600">
-              Rangos de monto y porcentaje de comisión. Dejá «Hasta» vacío para indicar sin techo en ese tramo.
+              Rangos de monto en guaraníes y porcentaje de comisión. Ejemplo: 50.000.000. Dejá «Hasta» vacío para
+              indicar sin techo en ese tramo.
             </p>
             <div className="space-y-3">
               {escalas.map((row, idx) => (
@@ -455,29 +545,45 @@ export default function ConfiguracionComisionesPage() {
                   className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50/80 p-3 sm:grid-cols-12 sm:items-end"
                 >
                   <div className="sm:col-span-3">
-                    <label className={F_LABEL}>Desde (monto)</label>
+                    <label className={F_LABEL}>Desde · monto en guaraníes</label>
                     <input
                       type="text"
-                      inputMode="decimal"
+                      inputMode="numeric"
+                      placeholder="50.000.000"
                       value={row.desde_monto}
                       onChange={(e) => {
                         const v = e.target.value;
                         setEscalas((prev) => prev.map((x, i) => (i === idx ? { ...x, desde_monto: v } : x)));
                       }}
+                      onBlur={() =>
+                        setEscalas((prev) =>
+                          prev.map((x, i) =>
+                            i === idx ? { ...x, desde_monto: formatMontoPygEditable(x.desde_monto) } : x
+                          )
+                        )
+                      }
                       disabled={!puedeEditar}
                       className={F_INPUT}
                     />
                   </div>
                   <div className="sm:col-span-3">
-                    <label className={F_LABEL}>Hasta (opcional)</label>
+                    <label className={F_LABEL}>Hasta · opcional</label>
                     <input
                       type="text"
-                      inputMode="decimal"
+                      inputMode="numeric"
+                      placeholder="Sin techo"
                       value={row.hasta_monto}
                       onChange={(e) => {
                         const v = e.target.value;
                         setEscalas((prev) => prev.map((x, i) => (i === idx ? { ...x, hasta_monto: v } : x)));
                       }}
+                      onBlur={() =>
+                        setEscalas((prev) =>
+                          prev.map((x, i) =>
+                            i === idx ? { ...x, hasta_monto: formatMontoPygEditable(x.hasta_monto) } : x
+                          )
+                        )
+                      }
                       disabled={!puedeEditar}
                       className={F_INPUT}
                     />
@@ -497,15 +603,23 @@ export default function ConfiguracionComisionesPage() {
                     />
                   </div>
                   <div className="sm:col-span-3">
-                    <label className={F_LABEL}>Premio fijo (opc.)</label>
+                    <label className={F_LABEL}>Premio fijo · opcional</label>
                     <input
                       type="text"
-                      inputMode="decimal"
+                      inputMode="numeric"
+                      placeholder="500.000"
                       value={row.premio_fijo}
                       onChange={(e) => {
                         const v = e.target.value;
                         setEscalas((prev) => prev.map((x, i) => (i === idx ? { ...x, premio_fijo: v } : x)));
                       }}
+                      onBlur={() =>
+                        setEscalas((prev) =>
+                          prev.map((x, i) =>
+                            i === idx ? { ...x, premio_fijo: formatMontoPygEditable(x.premio_fijo) } : x
+                          )
+                        )
+                      }
                       disabled={!puedeEditar}
                       className={F_INPUT}
                     />
@@ -519,6 +633,18 @@ export default function ConfiguracionComisionesPage() {
                       >
                         Quitar
                       </button>
+                    )}
+                  </div>
+                  <div className="sm:col-span-12">
+                    <p className="text-xs text-slate-500">
+                      Desde {formatMontoPygResumen(row.desde_monto)}
+                      {row.hasta_monto.trim() ? ` · Hasta ${formatMontoPygResumen(row.hasta_monto)}` : " · Sin techo"}
+                      {row.premio_fijo.trim() ? ` · Premio fijo ${formatMontoPygResumen(row.premio_fijo)}` : ""}
+                    </p>
+                    {[row.desde_monto, row.hasta_monto, row.premio_fijo].some(montoPareceMuyBajo) && (
+                      <p className="mt-1 text-xs text-amber-700">
+                        Este monto parece muy bajo. Si querías millones, escribí por ejemplo 50.000.000.
+                      </p>
                     )}
                   </div>
                 </div>
