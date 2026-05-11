@@ -7,9 +7,15 @@ import { ConfigMetricCard } from "@/components/config/global-config-primitives";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 
 const BASE_LABEL: Record<string, string> = {
-  pago_registrado: "Pago registrado",
+  pago_registrado: "Cobros registrados",
+  factura_emitida: "Facturas emitidas",
+  factura_pagada: "Facturas cobradas",
+};
+
+const MOVIMIENTO_LABEL: Record<string, string> = {
+  pago: "Cobro registrado",
   factura_emitida: "Factura emitida",
-  factura_pagada: "Factura pagada",
+  factura_pagada: "Factura cobrada",
 };
 
 type Linea = {
@@ -31,6 +37,15 @@ type VendedorRow = {
   escala_aplicada: string;
   porcentaje_tramo: number;
   premio_fijo_tramo: number;
+  escala_actual_desde: number | null;
+  escala_actual_hasta: number | null;
+  escala_actual_porcentaje: number | null;
+  escala_actual_premio_fijo: number | null;
+  siguiente_escala_desde: number | null;
+  siguiente_escala_porcentaje: number | null;
+  falta_para_siguiente_escala: number | null;
+  progreso_hacia_siguiente_pct: number | null;
+  max_escala_alcanzada: boolean;
   comision_estimada: number;
   lineas: Linea[];
 };
@@ -73,15 +88,112 @@ function fmtMoney(n: number): string {
   return new Intl.NumberFormat("es-PY", { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n);
 }
 
-/** Texto claro para KPIs de fuentes sin vendedor (sin exponer nombres de columnas técnicas). */
+function fmtPct(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  return `${new Intl.NumberFormat("es-PY", { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n)}%`;
+}
+
+function formatDate(iso: string | null): string {
+  if (!iso) return "—";
+  const ymd = iso.slice(0, 10);
+  const [y, m, d] = ymd.split("-");
+  if (!y || !m || !d) return iso;
+  return `${d}/${m}/${y}`;
+}
+
+function escalaActualLabel(r: VendedorRow): string {
+  if (r.escala_actual_porcentaje == null) {
+    return r.siguiente_escala_desde == null ? "Sin escalas configuradas" : "Sin escala alcanzada todavía";
+  }
+  return `Escala actual: ${fmtPct(r.escala_actual_porcentaje)}`;
+}
+
+function siguienteEscalaLabel(r: VendedorRow): string {
+  if (r.escala_actual_porcentaje == null && r.siguiente_escala_desde == null) return "Configurá escalas para medir el progreso.";
+  if (r.max_escala_alcanzada) return "Máxima escala alcanzada";
+  if (r.siguiente_escala_desde == null) return "Sin siguiente escala";
+  return `Siguiente escala: ${fmtPct(r.siguiente_escala_porcentaje)} desde ${fmtMoney(r.siguiente_escala_desde)}`;
+}
+
+function faltaEscalaLabel(r: VendedorRow): string {
+  if (r.max_escala_alcanzada) return "Ya estás en el tramo más alto.";
+  if (r.falta_para_siguiente_escala == null) return "Sin escala siguiente configurada.";
+  if (r.falta_para_siguiente_escala <= 0) return "Ya alcanzaste la siguiente escala.";
+  return `Faltan ${fmtMoney(r.falta_para_siguiente_escala)} para la siguiente escala.`;
+}
+
+/** Texto claro para KPIs de movimientos sin vendedor (sin exponer nombres de columnas técnicas). */
 function mensajeFuentesSinVendedor(k: PreviewKpis): string {
-  const p = k.alertas_sin_vendedor_pagos;
-  const f = k.alertas_sin_vendedor_facturas;
-  const trozos: string[] = [];
-  if (p > 0) trozos.push(`${p} ${p === 1 ? "pago" : "pagos"}`);
-  if (f > 0) trozos.push(`${f} ${f === 1 ? "movimiento de factura" : "movimientos de factura"}`);
-  const lista = trozos.join(" y ");
-  return `Hay ${lista} de clientes sin vendedor asignado. Para que entren al cálculo, asigná un vendedor responsable en la ficha del cliente.`;
+  const total = k.fuentes_sin_vendedor;
+  return `Hay ${total} ${total === 1 ? "movimiento" : "movimientos"} de clientes sin vendedor asignado. Asigná un vendedor responsable en la ficha del cliente para incluirlos en el cálculo.`;
+}
+
+function ScaleProgress({ row, compact = false }: { row: VendedorRow; compact?: boolean }) {
+  const progress = row.max_escala_alcanzada ? 100 : row.progreso_hacia_siguiente_pct ?? 0;
+
+  if (row.escala_actual_porcentaje == null && row.siguiente_escala_desde == null) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
+        Sin escalas configuradas para esta política.
+      </div>
+    );
+  }
+
+  return (
+    <div className={compact ? "space-y-2" : "rounded-xl border border-slate-100 bg-slate-50 p-4"}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-semibold text-slate-900">{escalaActualLabel(row)}</p>
+          <p className="text-xs text-slate-500">{siguienteEscalaLabel(row)}</p>
+        </div>
+        <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+          row.max_escala_alcanzada ? "bg-emerald-100 text-emerald-800" : "bg-sky-100 text-sky-800"
+        }`}>
+          {row.max_escala_alcanzada ? "Máxima escala" : `${progress}%`}
+        </span>
+      </div>
+      <div className="h-2 rounded-full bg-white ring-1 ring-slate-200">
+        <div
+          className="h-2 rounded-full bg-sky-500 transition-all"
+          style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
+        />
+      </div>
+      <p className="text-xs text-slate-600">{faltaEscalaLabel(row)}</p>
+    </div>
+  );
+}
+
+function MovimientosTable({ row }: { row: VendedorRow }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="mt-3 w-full min-w-[560px] text-left text-sm">
+        <thead>
+          <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
+            <th className="py-2 pr-2">Cliente</th>
+            <th className="py-2 pr-2">Movimiento</th>
+            <th className="py-2 pr-2">Comprobante</th>
+            <th className="py-2 pr-2">Fecha</th>
+            <th className="py-2 pr-2 text-right">Base comisionable</th>
+            <th className="py-2 text-right">Comisión estimada</th>
+          </tr>
+        </thead>
+        <tbody>
+          {row.lineas.map((ln, i) => (
+            <tr key={`${ln.pago_id ?? ""}-${ln.factura_id ?? ""}-${i}`} className="border-b border-slate-50">
+              <td className="py-2 pr-2 text-slate-800">{ln.cliente_label}</td>
+              <td className="py-2 pr-2 text-xs text-slate-600">{MOVIMIENTO_LABEL[ln.tipo] ?? "Movimiento"}</td>
+              <td className="py-2 pr-2 text-xs text-slate-700">{ln.numero_factura ?? "—"}</td>
+              <td className="py-2 pr-2 text-xs text-slate-600">{formatDate(ln.fecha)}</td>
+              <td className="py-2 pr-2 text-right tabular-nums">{fmtMoney(ln.monto_base)}</td>
+              <td className="py-2 text-right tabular-nums text-emerald-800">
+                {fmtMoney(ln.comision_estimada_linea)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 export default function ComisionesPage() {
@@ -113,7 +225,7 @@ export default function ComisionesPage() {
   if (loading) {
     return (
       <div className="mx-auto max-w-5xl px-4 py-16 text-center text-sm text-slate-500">
-        Cargando vista previa de comisiones…
+        Cargando seguimiento de comisiones…
       </div>
     );
   }
@@ -157,14 +269,16 @@ export default function ComisionesPage() {
   }
 
   const baseLabel = BASE_LABEL[meta?.base_calculo ?? ""] ?? meta?.base_calculo ?? "—";
+  const isSellerView = meta?.alcance === "solo_vendedor_autenticado";
+  const sellerRow = rows[0] ?? null;
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 px-4 py-10">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Comisiones</h1>
+          <h1 className="text-2xl font-bold text-slate-900">{isSellerView ? "Mi comisión del mes" : "Comisiones"}</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Vista previa del período actual según la política activa. No genera liquidaciones ni modifica datos.
+            Seguimiento mensual de comisiones según la política activa.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -176,31 +290,16 @@ export default function ComisionesPage() {
             <RefreshCw className="h-4 w-4" />
             Recalcular
           </button>
-          <Link
-            href="/configuracion/comisiones"
-            className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
-          >
-            Configuración
-          </Link>
+          {!isSellerView && (
+            <Link
+              href="/configuracion/comisiones"
+              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+            >
+              Configuración
+            </Link>
+          )}
         </div>
       </div>
-
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-        <span className="font-semibold">Vista previa.</span> No genera liquidación, no escribe líneas de comisión ni
-        afecta facturas o pagos.
-      </div>
-
-      {meta?.supervisor_equipos_pendiente && (
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-600">
-          Alcance de supervisor por equipos: pendiente de definir; hoy se muestra la empresa completa.
-        </div>
-      )}
-
-      {meta?.alerta_neto_sin_nc && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-          {meta.alerta_neto_sin_nc}
-        </div>
-      )}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -212,30 +311,62 @@ export default function ComisionesPage() {
             </p>
           </div>
           <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-sky-900">
-            Preview · No cerrado
+            En seguimiento
           </span>
         </div>
-        <div className="mt-4 grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-4 grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-4">
+          <ConfigMetricCard label="Estado" value="Período actual" />
           <ConfigMetricCard label="Política activa" value={meta?.politica_nombre ?? "—"} />
           <ConfigMetricCard label="Base de cálculo" value={baseLabel} />
           <ConfigMetricCard
             label="Escalas"
-            value={meta?.sin_escalas ? "Sin escalas (comisión 0)" : "Configuradas"}
+            value={meta?.sin_escalas ? "Sin escalas" : "Configuradas"}
           />
         </div>
       </section>
 
-      {kpis && (
+      {isSellerView ? (
+        <section className="space-y-4">
+          {!sellerRow ? (
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-10 text-center shadow-sm">
+              <p className="text-sm font-semibold text-slate-800">Todavía no tenés movimientos comisionables en este período.</p>
+              <p className="mt-1 text-sm text-slate-500">Cuando tus clientes registren movimientos dentro del período, vas a verlos acá.</p>
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <ConfigMetricCard label="Base comisionable" value={fmtMoney(sellerRow.revenue_base)} />
+                <ConfigMetricCard label="Comisión estimada" value={fmtMoney(sellerRow.comision_estimada)} />
+                <ConfigMetricCard label="Escala actual" value={fmtPct(sellerRow.escala_actual_porcentaje)} />
+                <ConfigMetricCard label="Movimientos" value={sellerRow.cantidad_movimientos} />
+              </div>
+              <ScaleProgress row={sellerRow} />
+              <details className="group rounded-2xl border border-slate-200 bg-white shadow-sm open:shadow-md">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 pr-3 [&::-webkit-details-marker]:hidden">
+                  <div>
+                    <p className="font-semibold text-slate-900">Mis clientes y movimientos</p>
+                    <p className="text-xs text-slate-500">{sellerRow.cantidad_movimientos} movimientos en el período</p>
+                  </div>
+                  <ChevronDown className="h-5 w-5 shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
+                </summary>
+                <div className="border-t border-slate-100 px-4 pb-4">
+                  <MovimientosTable row={sellerRow} />
+                </div>
+              </details>
+            </>
+          )}
+        </section>
+      ) : kpis && (
         <section>
           <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Resumen</h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <ConfigMetricCard label="Revenue base total" value={fmtMoney(kpis.revenue_base_total)} />
+            <ConfigMetricCard label="Base comisionable total" value={fmtMoney(kpis.revenue_base_total)} />
             <ConfigMetricCard label="Comisión estimada total" value={fmtMoney(kpis.comision_estimada_total)} />
             <ConfigMetricCard label="Vendedores con comisión" value={kpis.vendedores_con_comision} />
             <ConfigMetricCard
-              label="Fuentes sin vendedor"
+              label="Movimientos sin vendedor"
               value={kpis.fuentes_sin_vendedor}
-              sub={kpis.fuentes_sin_vendedor > 0 ? "No ingresan al reparto hasta asignar vendedor" : undefined}
+              sub={kpis.fuentes_sin_vendedor > 0 ? "Se incluirán al asignar vendedor responsable" : undefined}
             />
           </div>
           {kpis.fuentes_sin_vendedor > 0 && (
@@ -254,6 +385,7 @@ export default function ComisionesPage() {
         </section>
       )}
 
+      {!isSellerView && (
       <section>
         <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Por vendedor</h2>
         {rows.length === 0 ? (
@@ -271,84 +403,32 @@ export default function ComisionesPage() {
                   <div className="min-w-0">
                     <p className="font-semibold text-slate-900">{r.vendedor_nombre}</p>
                     <p className="text-xs text-slate-500">
-                      {r.cantidad_movimientos} movimientos · escala: {r.escala_aplicada}
+                      {r.cantidad_movimientos} movimientos · {escalaActualLabel(r)}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-4 text-right">
                     <div>
-                      <p className="text-[10px] font-semibold uppercase text-slate-400">Revenue base</p>
+                      <p className="text-[10px] font-semibold uppercase text-slate-400">Base comisionable</p>
                       <p className="text-sm font-bold tabular-nums text-slate-800">{fmtMoney(r.revenue_base)}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] font-semibold uppercase text-slate-400">Comisión est.</p>
+                      <p className="text-[10px] font-semibold uppercase text-slate-400">Comisión estimada</p>
                       <p className="text-sm font-bold tabular-nums text-emerald-800">{fmtMoney(r.comision_estimada)}</p>
                     </div>
                     <ChevronDown className="h-5 w-5 shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
                   </div>
                 </summary>
                 <div className="border-t border-slate-100 px-4 pb-4">
-                  <div className="overflow-x-auto">
-                    <table className="mt-3 w-full min-w-[640px] text-left text-sm">
-                      <thead>
-                        <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
-                          <th className="py-2 pr-2">Cliente</th>
-                          <th className="py-2 pr-2">Tipo</th>
-                          <th className="py-2 pr-2">Factura</th>
-                          <th className="py-2 pr-2">Pago</th>
-                          <th className="py-2 pr-2">Fecha</th>
-                          <th className="py-2 pr-2 text-right">Monto base</th>
-                          <th className="py-2 text-right">Comisión est.</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {r.lineas.map((ln, i) => (
-                          <tr key={`${ln.pago_id ?? ""}-${ln.factura_id ?? ""}-${i}`} className="border-b border-slate-50">
-                            <td className="py-2 pr-2 text-slate-800">{ln.cliente_label}</td>
-                            <td className="py-2 pr-2 text-xs text-slate-600">{ln.tipo.replace(/_/g, " ")}</td>
-                            <td className="py-2 pr-2 font-mono text-xs text-slate-700">
-                              {ln.numero_factura ?? ln.factura_id?.slice(0, 8) ?? "—"}
-                            </td>
-                            <td className="py-2 pr-2 font-mono text-xs text-slate-600">{ln.pago_id?.slice(0, 8) ?? "—"}</td>
-                            <td className="py-2 pr-2 text-xs text-slate-600">{ln.fecha ?? "—"}</td>
-                            <td className="py-2 pr-2 text-right tabular-nums">{fmtMoney(ln.monto_base)}</td>
-                            <td className="py-2 text-right tabular-nums text-emerald-800">
-                              {fmtMoney(ln.comision_estimada_linea)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,360px)]">
+                    <MovimientosTable row={r} />
+                    <ScaleProgress row={r} compact />
                   </div>
-                  <p className="mt-3 text-xs text-slate-500">
-                    Premio fijo del tramo: {fmtMoney(r.premio_fijo_tramo)} · Porcentaje aplicado al total:{" "}
-                    {r.porcentaje_tramo}%
-                  </p>
                 </div>
               </details>
             ))}
           </div>
         )}
       </section>
-
-      {meta?.documentacion_base && (
-        <details className="rounded-xl border border-slate-200 bg-white text-sm shadow-sm">
-          <summary className="cursor-pointer list-none px-4 py-3 font-semibold text-slate-800 [&::-webkit-details-marker]:hidden">
-            Ver explicación del cálculo
-          </summary>
-          <div className="border-t border-slate-100 px-4 pb-4 pt-1 text-xs leading-relaxed text-slate-600">
-            <ul className="mt-2 list-inside list-disc space-y-2">
-              <li>
-                <strong>Pago registrado:</strong> {meta.documentacion_base.pago_registrado}
-              </li>
-              <li>
-                <strong>Factura emitida:</strong> {meta.documentacion_base.factura_emitida}
-              </li>
-              <li>
-                <strong>Factura pagada:</strong> {meta.documentacion_base.factura_pagada}
-              </li>
-            </ul>
-          </div>
-        </details>
       )}
     </div>
   );

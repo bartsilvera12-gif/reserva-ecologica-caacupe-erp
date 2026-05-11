@@ -109,6 +109,87 @@ function parseEscalas(rows: Record<string, unknown>[] | null): EscalaPolitica[] 
   }));
 }
 
+function roundMoney(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+type EscalaProgreso = {
+  escala_actual_desde: number | null;
+  escala_actual_hasta: number | null;
+  escala_actual_porcentaje: number | null;
+  escala_actual_premio_fijo: number | null;
+  siguiente_escala_desde: number | null;
+  siguiente_escala_porcentaje: number | null;
+  falta_para_siguiente_escala: number | null;
+  progreso_hacia_siguiente_pct: number | null;
+  max_escala_alcanzada: boolean;
+};
+
+function calcularProgresoEscala(revenue: number, escalas: EscalaPolitica[]): EscalaProgreso {
+  const sorted = [...escalas].sort((a, b) => {
+    const da = Number(a.desde_monto) || 0;
+    const db = Number(b.desde_monto) || 0;
+    if (da !== db) return da - db;
+    return a.orden - b.orden;
+  });
+
+  if (sorted.length === 0) {
+    return {
+      escala_actual_desde: null,
+      escala_actual_hasta: null,
+      escala_actual_porcentaje: null,
+      escala_actual_premio_fijo: null,
+      siguiente_escala_desde: null,
+      siguiente_escala_porcentaje: null,
+      falta_para_siguiente_escala: null,
+      progreso_hacia_siguiente_pct: null,
+      max_escala_alcanzada: false,
+    };
+  }
+
+  let actual: EscalaPolitica | null = null;
+  let actualIndex = -1;
+  for (let i = 0; i < sorted.length; i += 1) {
+    const desde = Number(sorted[i]?.desde_monto) || 0;
+    if (revenue >= desde) {
+      actual = sorted[i] ?? null;
+      actualIndex = i;
+    }
+  }
+
+  const siguiente = sorted[actualIndex + 1] ?? (actual ? null : sorted[0] ?? null);
+  const siguienteDesde = siguiente ? Number(siguiente.desde_monto) || 0 : null;
+  const actualDesde = actual ? Number(actual.desde_monto) || 0 : null;
+  const falta =
+    siguienteDesde == null
+      ? null
+      : Math.max(0, roundMoney(siguienteDesde - revenue));
+
+  let progreso: number | null = null;
+  if (siguienteDesde != null) {
+    if (actualDesde == null) {
+      progreso = siguienteDesde > 0 ? (revenue / siguienteDesde) * 100 : 100;
+    } else {
+      const tramo = siguienteDesde - actualDesde;
+      progreso = tramo > 0 ? ((revenue - actualDesde) / tramo) * 100 : 100;
+    }
+    progreso = Math.max(0, Math.min(100, Math.round(progreso)));
+  }
+
+  return {
+    escala_actual_desde: actualDesde,
+    escala_actual_hasta: actual?.hasta_monto == null ? null : Number(actual.hasta_monto) || 0,
+    escala_actual_porcentaje: actual == null ? null : Number(actual.porcentaje_comision) || 0,
+    escala_actual_premio_fijo:
+      actual == null ? null : actual.premio_fijo == null ? 0 : Number(actual.premio_fijo) || 0,
+    siguiente_escala_desde: siguienteDesde,
+    siguiente_escala_porcentaje: siguiente == null ? null : Number(siguiente.porcentaje_comision) || 0,
+    falta_para_siguiente_escala: falta,
+    progreso_hacia_siguiente_pct: progreso,
+    max_escala_alcanzada: actual != null && siguiente == null,
+  };
+}
+
 /** GET — preview read-only de comisiones del período actual (sin persistir liquidaciones). */
 export async function GET(request: Request) {
   const auth = await requireComisionesModuleAccess(request);
@@ -431,6 +512,7 @@ export async function GET(request: Request) {
       revenueTotal += agg.revenue;
       const tier: TierResult | null = sinEscalas ? null : resolverTramo(agg.revenue, escalas);
       const comisionVen = sinEscalas ? 0 : comisionPorTramo(agg.revenue, tier);
+      const progresoEscala = calcularProgresoEscala(agg.revenue, escalas);
       comisionTotal += comisionVen;
 
       const montos = agg.lines.map((l) => l.monto_base);
@@ -448,6 +530,7 @@ export async function GET(request: Request) {
         escala_aplicada: tier?.etiqueta ?? (sinEscalas ? "Sin escalas configuradas" : "—"),
         porcentaje_tramo: tier?.porcentaje ?? 0,
         premio_fijo_tramo: tier?.premioFijo ?? 0,
+        ...progresoEscala,
         comision_estimada: Math.round(comisionVen * 100) / 100,
         lineas: linesOut,
       });

@@ -20,5 +20,6 @@ export function isErpRolAdministrador(rol: string | null | undefined): boolean {
 }
 
 export function isErpRolVendedor(rol: string | null | undefined): boolean {
-  return normalizeErpRolSlug(rol) === "vendedor";
+  const r = normalizeErpRolSlug(rol);
+  return r === "vendedor" || r === "asesor" || r === "comercial" || r === "asesor comercial";
 }
