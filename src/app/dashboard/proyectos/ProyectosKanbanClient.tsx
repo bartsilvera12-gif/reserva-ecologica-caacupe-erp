@@ -1,6 +1,19 @@
 "use client";
 
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
 import Link from "next/link";
+import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { slaDeadlineBadge, type SlaBadge } from "@/lib/proyectos/sla-badge";
@@ -54,6 +67,43 @@ type PrioridadConfig = {
   activo: boolean;
 };
 
+type ProjectCardViewProps = {
+  p: ProyectoCard;
+  estados: EstadoRow[];
+  estadoActivoIds: Set<string>;
+  prioridadConfig?: PrioridadConfig;
+  onOpen: (id: string) => void;
+  onMove: (proyectoId: string, estadoId: string) => void;
+  moving?: boolean;
+  dragOverlay?: boolean;
+};
+
+type KanbanColumnViewProps = {
+  col: EstadoRow;
+  children: ReactNode;
+};
+
+const PROJECT_DRAG_PREFIX = "project:";
+const COLUMN_DROP_PREFIX = "estado:";
+
+function projectDragId(projectId: string): string {
+  return `${PROJECT_DRAG_PREFIX}${projectId}`;
+}
+
+function estadoDropId(estadoId: string): string {
+  return `${COLUMN_DROP_PREFIX}${estadoId}`;
+}
+
+function readProjectIdFromDragId(id: unknown): string | null {
+  const raw = String(id ?? "");
+  return raw.startsWith(PROJECT_DRAG_PREFIX) ? raw.slice(PROJECT_DRAG_PREFIX.length) : null;
+}
+
+function readEstadoIdFromDropId(id: unknown): string | null {
+  const raw = String(id ?? "");
+  return raw.startsWith(COLUMN_DROP_PREFIX) ? raw.slice(COLUMN_DROP_PREFIX.length) : null;
+}
+
 function badgeSlaLabel(b: SlaBadge): string {
   if (b === "ok") return "A tiempo";
   if (b === "por_vencer") return "Por vencer";
@@ -82,6 +132,8 @@ export default function ProyectosKanbanClient() {
   const [dash, setDash] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [movingProjectId, setMovingProjectId] = useState<string | null>(null);
+  const [activeDragProjectId, setActiveDragProjectId] = useState<string | null>(null);
 
   const [q, setQ] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("");
@@ -91,6 +143,11 @@ export default function ProyectosKanbanClient() {
   const [tipoOpts, setTipoOpts] = useState<{ id: string; nombre: string }[]>([]);
   const [userOpts, setUserOpts] = useState<{ id: string; nombre?: string }[]>([]);
   const [modalProjectId, setModalProjectId] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor)
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -190,18 +247,87 @@ export default function ProyectosKanbanClient() {
     return m;
   }, [prioridadesConfig]);
 
-  async function cambiarEstado(proyectoId: string, estadoId: string) {
-    const res = await fetchWithSupabaseSession(`/api/proyectos/${proyectoId}/cambiar-estado`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ estado_id: estadoId }),
-    });
-    const j = (await res.json().catch(() => ({}))) as { success?: boolean; error?: string };
-    if (!res.ok || !j.success) {
-      setErr(j.error ?? "No se pudo cambiar el estado");
-      return;
+  const activeDragProject = useMemo(
+    () => proyectos.find((p) => p.id === activeDragProjectId) ?? null,
+    [activeDragProjectId, proyectos]
+  );
+
+  async function cambiarEstado(proyectoId: string, estadoId: string): Promise<boolean> {
+    if (!estadoActivoIds.has(estadoId)) {
+      setErr("No se puede mover a una columna inactiva.");
+      return false;
     }
-    await load();
+
+    const currentProject = proyectos.find((p) => p.id === proyectoId);
+    if (!currentProject) {
+      setErr("No se encontró el proyecto a mover.");
+      return false;
+    }
+    if (currentProject.estado_id === estadoId) return true;
+
+    const previousProjects = proyectos;
+    const destino = estados.find((e) => e.id === estadoId);
+    setErr(null);
+    setMovingProjectId(proyectoId);
+    setProyectos((prev) =>
+      prev.map((p) =>
+        p.id === proyectoId
+          ? {
+              ...p,
+              estado_id: estadoId,
+              proyecto_estado: destino
+                ? {
+                    ...(p.proyecto_estado ?? {}),
+                    nombre: destino.nombre,
+                    codigo: destino.codigo,
+                    color: destino.color,
+                    es_estado_final: p.proyecto_estado?.es_estado_final,
+                  }
+                : p.proyecto_estado,
+            }
+          : p
+      )
+    );
+
+    try {
+      const res = await fetchWithSupabaseSession(`/api/proyectos/${proyectoId}/cambiar-estado`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estado_id: estadoId }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { success?: boolean; error?: string };
+      if (!res.ok || !j.success) {
+        setProyectos(previousProjects);
+        setErr(j.error ?? "No se pudo cambiar el estado. La tarjeta volvió a su columna anterior.");
+        setMovingProjectId(null);
+        return false;
+      }
+      setMovingProjectId(null);
+      await load();
+      return true;
+    } catch (e) {
+      setProyectos(previousProjects);
+      setErr(
+        e instanceof Error
+          ? `${e.message}. La tarjeta volvió a su columna anterior.`
+          : "No se pudo cambiar el estado. La tarjeta volvió a su columna anterior."
+      );
+      setMovingProjectId(null);
+      return false;
+    }
+  }
+
+  function handleDragStart(event: DragStartEvent) {
+    setActiveDragProjectId(readProjectIdFromDragId(event.active.id));
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const proyectoId = readProjectIdFromDragId(event.active.id);
+    const estadoId = readEstadoIdFromDropId(event.over?.id);
+    setActiveDragProjectId(null);
+
+    if (!proyectoId || !estadoId) return;
+    void cambiarEstado(proyectoId, estadoId);
   }
 
   if (loading && proyectos.length === 0 && estados.length === 0) {
@@ -309,133 +435,64 @@ export default function ProyectosKanbanClient() {
         </select>
       </div>
 
-      <div className="overflow-x-auto pb-4">
-        <div className="flex min-h-[480px] gap-4">
-          {kanbanColumns.map((col) => {
-            const items = byColumn.get(col.id) ?? [];
-            return (
-              <div
-                key={col.id}
-                className="flex w-[300px] shrink-0 flex-col rounded-xl border border-slate-200 bg-slate-50/80"
-              >
-                <div
-                  className="flex items-center justify-between border-b border-slate-200 px-3 py-2"
-                  style={{ borderTopColor: col.color, borderTopWidth: 3 }}
-                >
-                  <span className="text-sm font-semibold text-slate-800">{col.nombre}</span>
-                  <span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-600">{items.length}</span>
-                </div>
-                {col.inactiveFallback ? (
-                  <div className="border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                    Esta columna está inactiva, pero contiene proyectos. Movelos a una columna activa.
+      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+        <div className="overflow-x-auto pb-4">
+          <div className="flex min-h-[480px] gap-4">
+            {kanbanColumns.map((col) => {
+              const items = byColumn.get(col.id) ?? [];
+              return (
+                <KanbanColumnView key={col.id} col={col}>
+                  <div
+                    className="flex items-center justify-between border-b border-slate-200 px-3 py-2"
+                    style={{ borderTopColor: col.color, borderTopWidth: 3 }}
+                  >
+                    <span className="text-sm font-semibold text-slate-800">{col.nombre}</span>
+                    <span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-600">{items.length}</span>
                   </div>
-                ) : null}
-                <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-2">
-                  {items.map((p) => {
-                    const prioridadConfig = prioridadByCodigo.get(p.prioridad);
-                    const sla = slaDeadlineBadge({
-                      fecha_prometida: p.fecha_prometida,
-                      archivado: p.archivado,
-                      estado_final: p.proyecto_estado?.es_estado_final,
-                    });
-                    const cli =
-                      (p.cliente?.empresa || "").trim() ||
-                      (p.cliente?.nombre_contacto || "").trim() ||
-                      "Sin cliente";
-                    return (
-                      <div
-                        key={p.id}
-                        className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm hover:shadow-md"
-                      >
-                        <button
-                          type="button"
-                          className="block w-full cursor-pointer text-left"
-                          onClick={() => setModalProjectId(p.id)}
-                        >
-                          <div className="text-sm font-semibold text-indigo-700 hover:underline">{p.titulo}</div>
-                          <div className="mt-1 text-xs text-slate-600">{cli}</div>
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            <span className="rounded px-1.5 py-0.5 text-[10px] font-medium text-slate-700 ring-1 ring-slate-200">
-                              {p.proyecto_tipo?.nombre ?? "Tipo"}
-                            </span>
-                            <span
-                              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                                prioridadConfig ? "border" : prioridadClass(p.prioridad)
-                              }`}
-                              style={
-                                prioridadConfig
-                                  ? {
-                                      backgroundColor:
-                                        prioridadConfig.bg_color ?? prioridadConfig.color ?? undefined,
-                                      color: prioridadConfig.text_color ?? undefined,
-                                      borderColor:
-                                        prioridadConfig.border_color ??
-                                        prioridadConfig.bg_color ??
-                                        prioridadConfig.color ??
-                                        undefined,
-                                    }
-                                  : undefined
-                              }
-                            >
-                              {prioridadConfig?.nombre ?? p.prioridad}
-                            </span>
-                            <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${badgeSlaClass(sla)}`}>
-                              SLA {badgeSlaLabel(sla)}
-                            </span>
-                            {p.bloqueado ? (
-                              <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-medium text-rose-800">
-                                Bloqueado
-                              </span>
-                            ) : null}
-                          </div>
-                          <div className="mt-2 space-y-0.5 text-[11px] text-slate-500">
-                            <div>Com.: {p.responsable_comercial?.nombre ?? "—"}</div>
-                            <div>Téc.: {p.responsable_tecnico?.nombre ?? "—"}</div>
-                            <div>Ingreso: {fmtDate(p.fecha_ingreso)}</div>
-                            <div>Prometido: {fmtDate(p.fecha_prometida)}</div>
-                            <div>Actividad: {fmtDateTime(p.last_activity_at)}</div>
-                          </div>
-                        </button>
-                        <div className="mt-2" onClick={(e) => e.stopPropagation()}>
-                          <Link
-                            href={`/dashboard/proyectos/${p.id}`}
-                            className="text-[10px] font-medium text-sky-600 hover:underline"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            Abrir en página completa
-                          </Link>
-                        </div>
-                        <label className="mt-2 block text-[10px] font-medium uppercase text-slate-500">Mover a</label>
-                        <select
-                          className="mt-1 w-full rounded border border-slate-200 px-2 py-1.5 text-xs"
-                          value={p.estado_id}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => void cambiarEstado(p.id, e.target.value)}
-                        >
-                          {!estadoActivoIds.has(p.estado_id) ? (
-                            <option value={p.estado_id}>Estado actual oculto / no usado</option>
-                          ) : null}
-                          {estados.map((e) => (
-                            <option key={e.id} value={e.id}>
-                              {e.nombre}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    );
-                  })}
-                  {items.length === 0 ? (
-                    <div className="py-8 text-center text-xs text-slate-400">Vacío</div>
+                  {col.inactiveFallback ? (
+                    <div className="border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      Esta columna está inactiva, pero contiene proyectos. Movelos a una columna activa.
+                    </div>
                   ) : null}
-                </div>
-              </div>
-            );
-          })}
+                  <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-2">
+                    {items.map((p) => (
+                      <ProjectCardView
+                        key={p.id}
+                        p={p}
+                        estados={estados}
+                        estadoActivoIds={estadoActivoIds}
+                        prioridadConfig={prioridadByCodigo.get(p.prioridad)}
+                        onOpen={setModalProjectId}
+                        onMove={(proyectoId, estadoId) => void cambiarEstado(proyectoId, estadoId)}
+                        moving={movingProjectId === p.id}
+                      />
+                    ))}
+                    {items.length === 0 ? (
+                      <div className="py-8 text-center text-xs text-slate-400">Soltá tarjetas acá</div>
+                    ) : null}
+                  </div>
+                </KanbanColumnView>
+              );
+            })}
+          </div>
         </div>
-      </div>
+        <DragOverlay>
+          {activeDragProject ? (
+            <ProjectCardView
+              p={activeDragProject}
+              estados={estados}
+              estadoActivoIds={estadoActivoIds}
+              prioridadConfig={prioridadByCodigo.get(activeDragProject.prioridad)}
+              onOpen={() => undefined}
+              onMove={() => undefined}
+              dragOverlay
+            />
+          ) : null}
+        </DragOverlay>
+      </DndContext>
 
       <p className="text-center text-xs text-slate-400">
-        Arrastrar tarjetas: próxima fase — por ahora usá el selector de estado.
+        Arrastrá tarjetas entre columnas activas o usá el selector “Mover a” como alternativa.
       </p>
 
       <ProyectoDetalleModal
@@ -444,6 +501,156 @@ export default function ProyectosKanbanClient() {
         onClose={() => setModalProjectId(null)}
         onUpdated={() => void load()}
       />
+    </div>
+  );
+}
+
+function KanbanColumnView({ col, children }: KanbanColumnViewProps) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: estadoDropId(col.id),
+    disabled: col.inactiveFallback === true,
+    data: { estadoId: col.id, active: col.inactiveFallback !== true },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex w-[300px] shrink-0 flex-col rounded-xl border bg-slate-50/80 transition-colors ${
+        isOver && !col.inactiveFallback
+          ? "border-indigo-300 bg-indigo-50/70 ring-2 ring-indigo-100"
+          : "border-slate-200"
+      }`}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ProjectCardView({
+  p,
+  estados,
+  estadoActivoIds,
+  prioridadConfig,
+  onOpen,
+  onMove,
+  moving,
+  dragOverlay,
+}: ProjectCardViewProps) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: projectDragId(p.id),
+    disabled: dragOverlay === true,
+    data: { projectId: p.id, estadoId: p.estado_id },
+  });
+
+  const sla = slaDeadlineBadge({
+    fecha_prometida: p.fecha_prometida,
+    archivado: p.archivado,
+    estado_final: p.proyecto_estado?.es_estado_final,
+  });
+  const cli =
+    (p.cliente?.empresa || "").trim() ||
+    (p.cliente?.nombre_contacto || "").trim() ||
+    "Sin cliente";
+
+  const style: CSSProperties | undefined = transform
+    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
+    : undefined;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={`touch-none rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition-shadow hover:shadow-md ${
+        dragOverlay ? "rotate-1 cursor-grabbing shadow-2xl" : "cursor-grab active:cursor-grabbing"
+      } ${isDragging ? "opacity-40" : ""} ${moving ? "ring-2 ring-sky-100" : ""}`}
+    >
+      <button
+        type="button"
+        className="block w-full text-left"
+        onClick={() => {
+          if (!dragOverlay) onOpen(p.id);
+        }}
+      >
+        <div className="text-sm font-semibold text-indigo-700 hover:underline">{p.titulo}</div>
+        <div className="mt-1 text-xs text-slate-600">{cli}</div>
+        <div className="mt-2 flex flex-wrap gap-1">
+          <span className="rounded px-1.5 py-0.5 text-[10px] font-medium text-slate-700 ring-1 ring-slate-200">
+            {p.proyecto_tipo?.nombre ?? "Tipo"}
+          </span>
+          <span
+            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+              prioridadConfig ? "border" : prioridadClass(p.prioridad)
+            }`}
+            style={
+              prioridadConfig
+                ? {
+                    backgroundColor: prioridadConfig.bg_color ?? prioridadConfig.color ?? undefined,
+                    color: prioridadConfig.text_color ?? undefined,
+                    borderColor:
+                      prioridadConfig.border_color ??
+                      prioridadConfig.bg_color ??
+                      prioridadConfig.color ??
+                      undefined,
+                  }
+                : undefined
+            }
+          >
+            {prioridadConfig?.nombre ?? p.prioridad}
+          </span>
+          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${badgeSlaClass(sla)}`}>
+            SLA {badgeSlaLabel(sla)}
+          </span>
+          {p.bloqueado ? (
+            <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-medium text-rose-800">
+              Bloqueado
+            </span>
+          ) : null}
+          {moving ? (
+            <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800">
+              Guardando...
+            </span>
+          ) : null}
+        </div>
+        <div className="mt-2 space-y-0.5 text-[11px] text-slate-500">
+          <div>Com.: {p.responsable_comercial?.nombre ?? "—"}</div>
+          <div>Téc.: {p.responsable_tecnico?.nombre ?? "—"}</div>
+          <div>Ingreso: {fmtDate(p.fecha_ingreso)}</div>
+          <div>Prometido: {fmtDate(p.fecha_prometida)}</div>
+          <div>Actividad: {fmtDateTime(p.last_activity_at)}</div>
+        </div>
+      </button>
+      {!dragOverlay ? (
+        <>
+          <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+            <Link
+              href={`/dashboard/proyectos/${p.id}`}
+              className="text-[10px] font-medium text-sky-600 hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Abrir en página completa
+            </Link>
+          </div>
+          <label className="mt-2 block text-[10px] font-medium uppercase text-slate-500">Mover a</label>
+          <select
+            className="mt-1 w-full rounded border border-slate-200 px-2 py-1.5 text-xs"
+            value={p.estado_id}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => onMove(p.id, e.target.value)}
+          >
+            {!estadoActivoIds.has(p.estado_id) ? (
+              <option value={p.estado_id}>Estado actual oculto / no usado</option>
+            ) : null}
+            {estados.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.nombre}
+              </option>
+            ))}
+          </select>
+        </>
+      ) : null}
     </div>
   );
 }
