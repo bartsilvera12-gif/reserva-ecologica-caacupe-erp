@@ -118,11 +118,37 @@ function badgeSlaClass(b: SlaBadge): string {
   return "bg-slate-100 text-slate-600";
 }
 
+function prioridadFallbackVisual(p: string): {
+  bgColor: string;
+  textColor: string;
+  borderColor: string;
+  accentColor: string;
+} {
+  if (p === "urgente") {
+    return { bgColor: "#dc2626", textColor: "#ffffff", borderColor: "#b91c1c", accentColor: "#dc2626" };
+  }
+  if (p === "alta") {
+    return { bgColor: "#f97316", textColor: "#ffffff", borderColor: "#ea580c", accentColor: "#f97316" };
+  }
+  if (p === "normal") {
+    return { bgColor: "#e2e8f0", textColor: "#1e293b", borderColor: "#cbd5e1", accentColor: "#94a3b8" };
+  }
+  return { bgColor: "#f1f5f9", textColor: "#475569", borderColor: "#cbd5e1", accentColor: "#94a3b8" };
+}
+
 function prioridadClass(p: string): string {
   if (p === "urgente") return "bg-red-600 text-white";
   if (p === "alta") return "bg-orange-500 text-white";
   if (p === "normal") return "bg-slate-200 text-slate-800";
   return "bg-slate-100 text-slate-600";
+}
+
+function hexToRgba(hex: string | null | undefined, alpha: number): string | null {
+  if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return null;
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 export default function ProyectosKanbanClient() {
@@ -443,7 +469,7 @@ export default function ProyectosKanbanClient() {
               return (
                 <KanbanColumnView key={col.id} col={col}>
                   <div
-                    className="flex items-center justify-between border-b border-slate-200 px-3 py-2"
+                    className="sticky top-3 z-20 flex items-center justify-between border-b border-slate-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/85"
                     style={{ borderTopColor: col.color, borderTopWidth: 3 }}
                   >
                     <span className="text-sm font-semibold text-slate-800">{col.nombre}</span>
@@ -555,14 +581,38 @@ function ProjectCardView({
   const style: CSSProperties | undefined = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
     : undefined;
+  const fallbackPriority = prioridadFallbackVisual(p.prioridad);
+  const priorityAccent =
+    prioridadConfig?.border_color ??
+    prioridadConfig?.color ??
+    prioridadConfig?.bg_color ??
+    fallbackPriority.accentColor;
+  const priorityBg = prioridadConfig?.bg_color ?? prioridadConfig?.color ?? fallbackPriority.bgColor;
+  const cardTint = hexToRgba(priorityBg, 0.1);
+  const cardStyle: CSSProperties = {
+    ...style,
+    borderLeftColor: priorityAccent,
+    background: cardTint ? `linear-gradient(90deg, ${cardTint}, #ffffff 42%)` : undefined,
+  };
+  const badgeStyle: CSSProperties | undefined = prioridadConfig
+    ? {
+        backgroundColor: prioridadConfig.bg_color ?? prioridadConfig.color ?? undefined,
+        color: prioridadConfig.text_color ?? undefined,
+        borderColor:
+          prioridadConfig.border_color ??
+          prioridadConfig.bg_color ??
+          prioridadConfig.color ??
+          undefined,
+      }
+    : undefined;
 
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      style={cardStyle}
       {...attributes}
       {...listeners}
-      className={`touch-none rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition-shadow hover:shadow-md ${
+      className={`touch-none rounded-lg border border-l-4 border-slate-200 bg-white p-3 shadow-sm transition-shadow hover:shadow-md ${
         dragOverlay ? "rotate-1 cursor-grabbing shadow-2xl" : "cursor-grab active:cursor-grabbing"
       } ${isDragging ? "opacity-40" : ""} ${moving ? "ring-2 ring-sky-100" : ""}`}
     >
@@ -583,19 +633,7 @@ function ProjectCardView({
             className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
               prioridadConfig ? "border" : prioridadClass(p.prioridad)
             }`}
-            style={
-              prioridadConfig
-                ? {
-                    backgroundColor: prioridadConfig.bg_color ?? prioridadConfig.color ?? undefined,
-                    color: prioridadConfig.text_color ?? undefined,
-                    borderColor:
-                      prioridadConfig.border_color ??
-                      prioridadConfig.bg_color ??
-                      prioridadConfig.color ??
-                      undefined,
-                  }
-                : undefined
-            }
+            style={badgeStyle}
           >
             {prioridadConfig?.nombre ?? p.prioridad}
           </span>
