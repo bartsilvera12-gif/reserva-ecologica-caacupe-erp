@@ -44,12 +44,40 @@ type EstadoDraft = Pick<
   | "sla_horas_objetivo"
 >;
 
-type ConfigResponse = {
+type ProyectoPrioridadConfigItem = {
+  id: string;
+  empresa_id: string;
+  codigo: "baja" | "normal" | "alta" | "urgente";
+  nombre: string;
+  color: string | null;
+  bg_color: string | null;
+  text_color: string | null;
+  border_color: string | null;
+  sort_order: number;
+  activo: boolean;
+};
+
+type PrioridadDraft = Pick<
+  ProyectoPrioridadConfigItem,
+  "nombre" | "color" | "bg_color" | "text_color" | "border_color" | "sort_order" | "activo"
+>;
+
+type EstadosConfigResponse = {
   estados: ProyectoEstadoConfigItem[];
   meta: {
     can_edit: boolean;
     role?: string | null;
     source_table: "proyecto_estados";
+  };
+};
+
+type PrioridadesConfigResponse = {
+  prioridades: ProyectoPrioridadConfigItem[];
+  meta: {
+    can_edit: boolean;
+    role?: string | null;
+    source_table: "proyecto_prioridades_config";
+    source: "db" | "fallback";
   };
 };
 
@@ -93,6 +121,18 @@ function toDraft(estado: ProyectoEstadoConfigItem): EstadoDraft {
   };
 }
 
+function toPrioridadDraft(prioridad: ProyectoPrioridadConfigItem): PrioridadDraft {
+  return {
+    nombre: prioridad.nombre,
+    color: prioridad.color,
+    bg_color: prioridad.bg_color,
+    text_color: prioridad.text_color,
+    border_color: prioridad.border_color,
+    sort_order: prioridad.sort_order,
+    activo: prioridad.activo,
+  };
+}
+
 function readError(json: ApiEnvelope<unknown>, fallback: string): string {
   return json.error || fallback;
 }
@@ -104,6 +144,10 @@ export default function ConfiguracionProyectosPage() {
   const [message, setMessage] = useState<{ type: "ok" | "error"; text: string } | null>(null);
   const [estados, setEstados] = useState<ProyectoEstadoConfigItem[]>([]);
   const [drafts, setDrafts] = useState<Record<string, EstadoDraft>>({});
+  const [prioridades, setPrioridades] = useState<ProyectoPrioridadConfigItem[]>([]);
+  const [prioridadDrafts, setPrioridadDrafts] = useState<Record<string, PrioridadDraft>>({});
+  const [prioridadesLoading, setPrioridadesLoading] = useState(true);
+  const [savingPriorityId, setSavingPriorityId] = useState<string | null>(null);
   const [canEdit, setCanEdit] = useState(false);
   const [newColumn, setNewColumn] = useState(EMPTY_NEW_COLUMN);
 
@@ -119,7 +163,7 @@ export default function ConfiguracionProyectosPage() {
     setMessage(null);
     try {
       const response = await apiFetch("/api/configuracion/proyectos/estados", { cache: "no-store" });
-      const json = (await response.json()) as ApiEnvelope<ConfigResponse>;
+      const json = (await response.json()) as ApiEnvelope<EstadosConfigResponse>;
       if (!response.ok || !json.success || !json.data) {
         throw new Error(readError(json, "No se pudieron cargar las columnas Kanban"));
       }
@@ -139,15 +183,58 @@ export default function ConfiguracionProyectosPage() {
     }
   }, []);
 
+  const loadPrioridades = useCallback(async () => {
+    setPrioridadesLoading(true);
+    try {
+      const response = await apiFetch("/api/configuracion/proyectos/prioridades", { cache: "no-store" });
+      const json = (await response.json()) as ApiEnvelope<PrioridadesConfigResponse>;
+      if (!response.ok || !json.success || !json.data) {
+        throw new Error(readError(json, "No se pudieron cargar las prioridades"));
+      }
+
+      setPrioridades(json.data.prioridades);
+      setCanEdit(json.data.meta.can_edit);
+      setPrioridadDrafts(
+        Object.fromEntries(json.data.prioridades.map((prioridad) => [prioridad.id, toPrioridadDraft(prioridad)]))
+      );
+    } catch (e) {
+      setMessage({
+        type: "error",
+        text: e instanceof Error ? e.message : "No se pudieron cargar las prioridades",
+      });
+    } finally {
+      setPrioridadesLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void loadEstados();
-  }, [loadEstados]);
+    void loadPrioridades();
+  }, [loadEstados, loadPrioridades]);
 
   const updateDraft = <K extends keyof EstadoDraft>(id: string, key: K, value: EstadoDraft[K]) => {
     setDrafts((prev) => ({
       ...prev,
       [id]: {
         ...(prev[id] ?? EMPTY_NEW_COLUMN),
+        [key]: value,
+      },
+    }));
+  };
+
+  const updatePrioridadDraft = <K extends keyof PrioridadDraft>(id: string, key: K, value: PrioridadDraft[K]) => {
+    setPrioridadDrafts((prev) => ({
+      ...prev,
+      [id]: {
+        ...(prev[id] ?? {
+          nombre: "",
+          color: null,
+          bg_color: null,
+          text_color: null,
+          border_color: null,
+          sort_order: 0,
+          activo: true,
+        }),
         [key]: value,
       },
     }));
@@ -205,6 +292,34 @@ export default function ConfiguracionProyectosPage() {
       });
     } finally {
       setCreating(false);
+    }
+  };
+
+  const savePrioridad = async (prioridad: ProyectoPrioridadConfigItem) => {
+    const draft = prioridadDrafts[prioridad.id];
+    if (!draft) return;
+    setSavingPriorityId(prioridad.id);
+    setMessage(null);
+    try {
+      const response = await apiFetch(`/api/configuracion/proyectos/prioridades/${prioridad.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(draft),
+      });
+      const json = (await response.json()) as ApiEnvelope<{ prioridad: ProyectoPrioridadConfigItem }>;
+      if (!response.ok || !json.success) {
+        throw new Error(readError(json, "No se pudo guardar la prioridad"));
+      }
+
+      setMessage({ type: "ok", text: "Prioridad guardada. El Kanban verá el cambio al refrescar." });
+      await loadPrioridades();
+    } catch (e) {
+      setMessage({
+        type: "error",
+        text: e instanceof Error ? e.message : "No se pudo guardar la prioridad",
+      });
+    } finally {
+      setSavingPriorityId(null);
     }
   };
 
@@ -498,14 +613,114 @@ export default function ConfiguracionProyectosPage() {
 
       <ConfigFormCard>
         <ConfigSectionTitle>Prioridades y colores</ConfigSectionTitle>
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
-          <p className="text-sm font-semibold text-slate-800">Próximamente</p>
-          <p className="mt-1 max-w-2xl text-sm text-slate-600">
-            Las prioridades siguen usando los valores actuales del módulo Proyectos. La configuración editable de
-            colores queda preparada para una fase posterior, sin crear tablas ni cambiar la lógica del Kanban en este
-            micro-paso.
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+          <p className="max-w-2xl text-sm text-slate-600">
+            Configurá la etiqueta visible y los colores del badge en las tarjetas del Kanban. El código interno se
+            mantiene fijo para respetar <span className="font-mono">proyectos.prioridad</span>.
           </p>
+          <button
+            type="button"
+            onClick={() => void loadPrioridades()}
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Recargar
+          </button>
         </div>
+
+        {prioridadesLoading ? (
+          <p className="text-sm text-slate-500">Cargando prioridades...</p>
+        ) : prioridades.length === 0 ? (
+          <p className="text-sm text-slate-500">No hay prioridades configuradas para esta empresa.</p>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {prioridades.map((prioridad) => {
+              const draft = prioridadDrafts[prioridad.id] ?? toPrioridadDraft(prioridad);
+              return (
+                <div key={prioridad.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-bold text-slate-900">{prioridad.nombre}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        Código interno: <span className="font-mono">{prioridad.codigo}</span>
+                      </p>
+                    </div>
+                    <span
+                      className="rounded border px-2 py-1 text-xs font-semibold"
+                      style={{
+                        backgroundColor: draft.bg_color ?? draft.color ?? "#f1f5f9",
+                        color: draft.text_color ?? "#475569",
+                        borderColor: draft.border_color ?? draft.bg_color ?? draft.color ?? "#cbd5e1",
+                      }}
+                    >
+                      {draft.nombre || prioridad.codigo}
+                    </span>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label>
+                      <span className={F_LABEL}>Nombre visible</span>
+                      <input
+                        className={F_INPUT}
+                        value={draft.nombre}
+                        disabled={!canEdit}
+                        onChange={(e) => updatePrioridadDraft(prioridad.id, "nombre", e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      <span className={F_LABEL}>Orden</span>
+                      <input
+                        type="number"
+                        className={F_INPUT}
+                        value={draft.sort_order}
+                        disabled={!canEdit}
+                        onChange={(e) => updatePrioridadDraft(prioridad.id, "sort_order", Number(e.target.value))}
+                      />
+                    </label>
+                    <ColorField
+                      label="Color base"
+                      value={draft.color}
+                      disabled={!canEdit}
+                      onChange={(value) => updatePrioridadDraft(prioridad.id, "color", value)}
+                    />
+                    <ColorField
+                      label="Fondo badge"
+                      value={draft.bg_color}
+                      disabled={!canEdit}
+                      onChange={(value) => updatePrioridadDraft(prioridad.id, "bg_color", value)}
+                    />
+                    <ColorField
+                      label="Texto badge"
+                      value={draft.text_color}
+                      disabled={!canEdit}
+                      onChange={(value) => updatePrioridadDraft(prioridad.id, "text_color", value)}
+                    />
+                    <ColorField
+                      label="Borde badge"
+                      value={draft.border_color}
+                      disabled={!canEdit}
+                      onChange={(value) => updatePrioridadDraft(prioridad.id, "border_color", value)}
+                    />
+                    <ToggleField
+                      label="Activo"
+                      checked={draft.activo}
+                      disabled={!canEdit}
+                      onChange={(value) => updatePrioridadDraft(prioridad.id, "activo", value)}
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={!canEdit || savingPriorityId === prioridad.id}
+                    onClick={() => void savePrioridad(prioridad)}
+                    className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {savingPriorityId === prioridad.id ? "Guardando..." : "Guardar prioridad"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </ConfigFormCard>
     </GlobalConfigSubpageShell>
   );
@@ -532,6 +747,41 @@ function ToggleField({
         onChange={(e) => onChange(e.target.checked)}
       />
       <span>{label}</span>
+    </label>
+  );
+}
+
+function ColorField({
+  label,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string | null;
+  disabled?: boolean;
+  onChange: (value: string | null) => void;
+}) {
+  const safeValue = value && /^#[0-9a-fA-F]{6}$/.test(value) ? value : "#64748b";
+  return (
+    <label>
+      <span className={F_LABEL}>{label}</span>
+      <div className="flex gap-2">
+        <input
+          type="color"
+          className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1"
+          value={safeValue}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <input
+          className={F_INPUT}
+          value={value ?? ""}
+          placeholder="#64748b"
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value.trim() === "" ? null : e.target.value)}
+        />
+      </div>
     </label>
   );
 }

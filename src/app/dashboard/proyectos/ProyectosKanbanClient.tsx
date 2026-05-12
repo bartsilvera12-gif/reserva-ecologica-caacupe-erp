@@ -42,6 +42,17 @@ type DashboardData = {
   por_responsable: { usuario_id: string; rol: string; cantidad: number }[];
 };
 
+type PrioridadConfig = {
+  codigo: string;
+  nombre: string;
+  color: string | null;
+  bg_color: string | null;
+  text_color: string | null;
+  border_color: string | null;
+  sort_order: number;
+  activo: boolean;
+};
+
 function badgeSlaLabel(b: SlaBadge): string {
   if (b === "ok") return "A tiempo";
   if (b === "por_vencer") return "Por vencer";
@@ -66,6 +77,7 @@ function prioridadClass(p: string): string {
 export default function ProyectosKanbanClient() {
   const [estados, setEstados] = useState<EstadoRow[]>([]);
   const [proyectos, setProyectos] = useState<ProyectoCard[]>([]);
+  const [prioridadesConfig, setPrioridadesConfig] = useState<PrioridadConfig[]>([]);
   const [dash, setDash] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -89,12 +101,13 @@ export default function ProyectosKanbanClient() {
     if (filtroRc) sp.set("responsable_comercial_id", filtroRc);
     if (filtroRt) sp.set("responsable_tecnico_id", filtroRt);
 
-    const [rEst, rPr, rDash, rTipos, rUsers] = await Promise.all([
+    const [rEst, rPr, rDash, rTipos, rUsers, rPrioridades] = await Promise.all([
       fetchWithSupabaseSession("/api/proyectos/estados", { cache: "no-store" }),
       fetchWithSupabaseSession(`/api/proyectos?${sp.toString()}`, { cache: "no-store" }),
       fetchWithSupabaseSession("/api/proyectos/dashboard", { cache: "no-store" }),
       fetchWithSupabaseSession("/api/proyectos/tipos", { cache: "no-store" }),
       fetchWithSupabaseSession("/api/empresas/usuarios", { cache: "no-store" }),
+      fetchWithSupabaseSession("/api/configuracion/proyectos/prioridades", { cache: "no-store" }),
     ]);
 
     const jEst = (await rEst.json().catch(() => ({}))) as { success?: boolean; data?: EstadoRow[]; error?: string };
@@ -105,6 +118,10 @@ export default function ProyectosKanbanClient() {
       data?: { id: string; nombre: string }[];
     };
     const jUsers = (await rUsers.json().catch(() => ({}))) as { usuarios?: { id: string; nombre?: string }[] };
+    const jPrioridades = (await rPrioridades.json().catch(() => ({}))) as {
+      success?: boolean;
+      data?: { prioridades?: PrioridadConfig[] };
+    };
 
     if (!rEst.ok || !jEst.success) {
       setErr(jEst.error ?? "No se pudieron cargar estados");
@@ -122,6 +139,11 @@ export default function ProyectosKanbanClient() {
 
     if (jTipos.success && jTipos.data) setTipoOpts(jTipos.data);
     if (jUsers.usuarios) setUserOpts(jUsers.usuarios);
+    if (rPrioridades.ok && jPrioridades.success && jPrioridades.data?.prioridades) {
+      setPrioridadesConfig(jPrioridades.data.prioridades);
+    } else {
+      setPrioridadesConfig([]);
+    }
 
     setLoading(false);
   }, [q, filtroEstado, filtroTipo, filtroRc, filtroRt]);
@@ -139,6 +161,14 @@ export default function ProyectosKanbanClient() {
     }
     return m;
   }, [estados, proyectos]);
+
+  const prioridadByCodigo = useMemo(() => {
+    const m = new Map<string, PrioridadConfig>();
+    for (const prioridad of prioridadesConfig) {
+      if (prioridad.activo) m.set(prioridad.codigo, prioridad);
+    }
+    return m;
+  }, [prioridadesConfig]);
 
   async function cambiarEstado(proyectoId: string, estadoId: string) {
     const res = await fetchWithSupabaseSession(`/api/proyectos/${proyectoId}/cambiar-estado`, {
@@ -277,6 +307,7 @@ export default function ProyectosKanbanClient() {
                 </div>
                 <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-2">
                   {items.map((p) => {
+                    const prioridadConfig = prioridadByCodigo.get(p.prioridad);
                     const sla = slaDeadlineBadge({
                       fecha_prometida: p.fecha_prometida,
                       archivado: p.archivado,
@@ -302,8 +333,26 @@ export default function ProyectosKanbanClient() {
                             <span className="rounded px-1.5 py-0.5 text-[10px] font-medium text-slate-700 ring-1 ring-slate-200">
                               {p.proyecto_tipo?.nombre ?? "Tipo"}
                             </span>
-                            <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${prioridadClass(p.prioridad)}`}>
-                              {p.prioridad}
+                            <span
+                              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                                prioridadConfig ? "border" : prioridadClass(p.prioridad)
+                              }`}
+                              style={
+                                prioridadConfig
+                                  ? {
+                                      backgroundColor:
+                                        prioridadConfig.bg_color ?? prioridadConfig.color ?? undefined,
+                                      color: prioridadConfig.text_color ?? undefined,
+                                      borderColor:
+                                        prioridadConfig.border_color ??
+                                        prioridadConfig.bg_color ??
+                                        prioridadConfig.color ??
+                                        undefined,
+                                    }
+                                  : undefined
+                              }
+                            >
+                              {prioridadConfig?.nombre ?? p.prioridad}
                             </span>
                             <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${badgeSlaClass(sla)}`}>
                               SLA {badgeSlaLabel(sla)}
