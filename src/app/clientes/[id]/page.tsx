@@ -19,6 +19,7 @@ import {
   apiGetObligacionesTributariasCatalogo,
   apiPutClientePerfilTributario,
   apiCreateFactura,
+  apiCreateFacturaWithError,
   apiCreatePago,
   apiCreateSuscripcion,
   type BajaOperativaPreview,
@@ -253,6 +254,9 @@ export default function ClienteDetailPage() {
   const [modalFacturaContado, setModalFacturaContado] = useState(false);
   const [formFacturaContado, setFormFacturaContado] = useState({ monto: "", descripcion: "Venta al contado" });
   const [guardandoFacturaContado, setGuardandoFacturaContado] = useState(false);
+  /** Error visible en el modal "Factura al contado". Antes la API podía fallar (p. ej. PGRST106
+   *  para tenants erp_* no expuestos) y el botón parecía "no hacer nada". Ahora exponemos el motivo. */
+  const [errorFacturaContado, setErrorFacturaContado] = useState<string | null>(null);
 
   const [filasTiposServicio, setFilasTiposServicio] = useState<ClienteTipoServicioRow[]>(() => filasTiposDesdeSistemaEstatico());
   const labelTipoServicioMap = useMemo(() => {
@@ -760,11 +764,15 @@ export default function ClienteDetailPage() {
 
   async function emitirFacturaContadoDesdeModal() {
     const monto = parseFloat(formFacturaContado.monto) || 0;
-    if (monto <= 0 || !cliente) return;
+    if (monto <= 0 || !cliente) {
+      setErrorFacturaContado("El monto debe ser mayor a 0.");
+      return;
+    }
+    setErrorFacturaContado(null);
     setGuardandoFacturaContado(true);
     try {
       const hoy = new Date().toISOString().slice(0, 10);
-      const factura = await apiCreateFactura({
+      const result = await apiCreateFacturaWithError({
         cliente_id: id,
         fecha: hoy,
         fecha_vencimiento: hoy,
@@ -773,12 +781,16 @@ export default function ClienteDetailPage() {
         moneda: cliente.moneda_preferida ?? "GS",
         descripcion_linea: formFacturaContado.descripcion.trim() || "Venta al contado",
       });
-      if (factura) {
-        setModalFacturaContado(false);
-        setFormFacturaContado({ monto: "", descripcion: "Venta al contado" });
-        setActiveTab("estado_cuenta");
-        getFacturas(id).then(setFacturas);
+      if (!result.ok) {
+        setErrorFacturaContado(result.error);
+        return;
       }
+      setModalFacturaContado(false);
+      setFormFacturaContado({ monto: "", descripcion: "Venta al contado" });
+      setActiveTab("estado_cuenta");
+      getFacturas(id).then(setFacturas);
+    } catch (err) {
+      setErrorFacturaContado(err instanceof Error ? err.message : "No se pudo emitir la factura.");
     } finally {
       setGuardandoFacturaContado(false);
     }
@@ -941,6 +953,7 @@ export default function ClienteDetailPage() {
               type="button"
               onClick={() => {
                 setFormFacturaContado({ monto: "", descripcion: "Venta al contado" });
+                setErrorFacturaContado(null);
                 setModalFacturaContado(true);
               }}
               className="text-xs font-medium bg-white/15 hover:bg-white/25 text-white border border-white/30 px-3 py-1.5 rounded-lg transition-colors"
@@ -1764,6 +1777,7 @@ export default function ClienteDetailPage() {
                     type="button"
                     onClick={() => {
                       setFormFacturaContado({ monto: "", descripcion: "Venta al contado" });
+                      setErrorFacturaContado(null);
                       setModalFacturaContado(true);
                     }}
                     className="text-sm font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 px-3 py-1.5 rounded-lg"
@@ -2079,6 +2093,14 @@ export default function ClienteDetailPage() {
                   placeholder="Venta al contado"
                 />
               </div>
+              {errorFacturaContado ? (
+                <div
+                  role="alert"
+                  className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+                >
+                  {errorFacturaContado}
+                </div>
+              ) : null}
               <div className="flex gap-2 justify-end pt-2">
                 <button
                   type="button"

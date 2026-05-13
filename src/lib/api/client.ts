@@ -261,6 +261,20 @@ export async function apiCreateFactura(data: {
   return result.success ? result.data : null;
 }
 
+/**
+ * Variante con error expuesto. Útil para UI que necesita mostrar el mensaje cuando POST `/api/facturas`
+ * falla (p. ej. tenants `erp_*` con PG shim, validaciones de monto/tipo, errores de FK, etc.).
+ * El callsite original `apiCreateFactura` se mantiene para preservar todos los demás usos.
+ */
+export async function apiCreateFacturaWithError(data: Parameters<typeof apiCreateFactura>[0]): Promise<
+  | { ok: true; data: { id: string; [key: string]: unknown } }
+  | { ok: false; error: string }
+> {
+  const result = await apiPost<{ id: string; [key: string]: unknown }>("/api/facturas", data);
+  if (!result.success) return { ok: false, error: result.error };
+  return { ok: true, data: result.data };
+}
+
 export async function apiCreatePago(data: {
   factura_id: string;
   monto: number;

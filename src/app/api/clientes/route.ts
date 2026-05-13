@@ -136,25 +136,41 @@ export async function GET(request: NextRequest) {
     }
 
     const rows = (data ?? []) as Record<string, unknown>[];
+    /** Los enriquecimientos secundarios NO deben derribar el listado: si una tabla auxiliar no
+     *  está mapeada en el shim o un RPC dependiente falla en un tenant `erp_*`, el listado igual
+     *  debe responder con los clientes. */
     if (planActivo && rows.length > 0) {
       const ids = rows.map((r) => r.id).filter((id): id is string => typeof id === "string");
-      const planMap = await buildPlanActivoMap(supabase, auth.empresa_id, ids);
-      attachPlanesActivos(rows, planMap);
-    }
-
-    if (rows.length > 0) {
-      const ids = rows.map((r) => r.id).filter((id): id is string => typeof id === "string");
-      const perfilMap = await fetchPerfilTributarioActivosMap(supabase, auth.empresa_id, ids);
-      for (const r of rows) {
-        const id = typeof r.id === "string" ? r.id : "";
-        r.perfil_tributario_activo = id ? perfilMap.get(id) === true : false;
+      try {
+        const planMap = await buildPlanActivoMap(supabase, auth.empresa_id, ids);
+        attachPlanesActivos(rows, planMap);
+      } catch (e) {
+        console.error("[api/clientes] enrich plan activo:", e instanceof Error ? e.message : e);
       }
     }
 
     if (rows.length > 0) {
-      const vendedorIds = vendedorUsuarioIds(rows);
-      const vendedoresMap = await buildVendedoresResponsablesMap(auth.empresa_id, vendedorIds);
-      attachVendedoresResponsables(rows, vendedoresMap);
+      const ids = rows.map((r) => r.id).filter((id): id is string => typeof id === "string");
+      try {
+        const perfilMap = await fetchPerfilTributarioActivosMap(supabase, auth.empresa_id, ids);
+        for (const r of rows) {
+          const id = typeof r.id === "string" ? r.id : "";
+          r.perfil_tributario_activo = id ? perfilMap.get(id) === true : false;
+        }
+      } catch (e) {
+        console.error("[api/clientes] enrich perfil tributario:", e instanceof Error ? e.message : e);
+        for (const r of rows) r.perfil_tributario_activo = false;
+      }
+    }
+
+    if (rows.length > 0) {
+      try {
+        const vendedorIds = vendedorUsuarioIds(rows);
+        const vendedoresMap = await buildVendedoresResponsablesMap(auth.empresa_id, vendedorIds);
+        attachVendedoresResponsables(rows, vendedoresMap);
+      } catch (e) {
+        console.error("[api/clientes] enrich vendedores:", e instanceof Error ? e.message : e);
+      }
     }
 
     return NextResponse.json(successResponse(rows));

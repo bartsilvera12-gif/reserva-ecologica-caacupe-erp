@@ -55,6 +55,12 @@ const ALLOWED_TABLES = new Set([
   "marketing_historial_estados",
   "empresa_sifen_config",
   "cliente_tipos_servicio_catalogo",
+  "suscripciones",
+  "cliente_perfil_tributario",
+  "planes",
+  "facturas",
+  "factura_items",
+  "pagos",
 ]);
 
 function pgErr(message: string, code?: string): { message: string; code?: string } {
@@ -287,10 +293,13 @@ export function createTenantPgChatSupabaseShim(opts: TenantPgChatSupabaseShimOpt
     }
 
     private async run(): Promise<{ data: unknown; error: { message: string; code?: string } | null }> {
-      const tsql = tableSql(this.table);
       const params: unknown[] = [];
 
       try {
+        /** `tableSql` valida que la tabla esté en `ALLOWED_TABLES`. Si no lo está, lanza.
+         *  Necesitamos que ese error vuelva como `{ error }` (paridad con PostgREST/supabase-js),
+         *  NO como excepción no manejada que derribe el handler con 500. */
+        const tsql = tableSql(this.table);
         if (this.op === "select") {
           if (this.selectCountOpts?.count === "exact" && this.selectCountOpts.head) {
             const wh = this.buildWhere(params);
@@ -536,10 +545,27 @@ export function createTenantPgChatSupabaseShim(opts: TenantPgChatSupabaseShimOpt
       };
     },
 
-    rpc<T = unknown>(
+    async rpc<T = unknown>(
       fn: string,
       args?: Record<string, unknown>
     ): Promise<{ data: T | null; error: { message: string } | null }> {
+      /** Algunas funciones SQL viven en CADA schema tenant (no en `zentra_erp` solo) porque dependen
+       *  de tablas locales del schema (p. ej. `<schema>.facturas` + `<schema>.factura_correlativos`).
+       *  Delegar al catálogo `zentra_erp` reservaría el correlativo en el schema equivocado.
+       *  Para esas, ejecutamos PG directo en `<schema>.<fn>(...)`. */
+      if (fn === "next_numero_factura_empresa") {
+        try {
+          const empresaId = args?.p_empresa_id ?? null;
+          const prefijo = args?.p_prefijo_default ?? "FAC-";
+          const q = `SELECT "${schema}".next_numero_factura_empresa($1::uuid, $2::text) AS r`;
+          const r = await pool.query(q, [empresaId, prefijo]);
+          const v = r.rows?.[0]?.r ?? null;
+          return { data: v as T, error: null };
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          return { data: null, error: { message: msg } };
+        }
+      }
       return opts.rpcDelegate.rpc(fn, args ?? {}) as unknown as Promise<{
         data: T | null;
         error: { message: string } | null;
