@@ -10,6 +10,7 @@ import type { MetodoValuacion } from "@/lib/inventario/types";
 export default function NuevoProductoPage() {
   const router = useRouter();
   const [errorDuplicado, setErrorDuplicado] = useState<string | null>(null);
+  const [errorGeneral, setErrorGeneral] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     nombre: "",
@@ -67,6 +68,7 @@ export default function NuevoProductoPage() {
     if (generandoCodigo) return;
     setGenerandoCodigo(true);
     setErrorDuplicado(null);
+    setErrorGeneral(null);
     try {
       const res = await fetch("/api/productos/codigo-interno", {
         method: "POST",
@@ -77,10 +79,10 @@ export default function NuevoProductoPage() {
         setForm((prev) => ({ ...prev, codigo_barras: json.data.codigo as string }));
         setCodigoGeneradoInterno(true);
       } else {
-        setErrorDuplicado(json?.error ?? "No se pudo generar el código.");
+        setErrorGeneral(json?.error ?? "No se pudo generar el código.");
       }
     } catch (err) {
-      setErrorDuplicado(err instanceof Error ? err.message : "Error de red");
+      setErrorGeneral(err instanceof Error ? err.message : "Error de red");
     } finally {
       setGenerandoCodigo(false);
     }
@@ -91,6 +93,7 @@ export default function NuevoProductoPage() {
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) {
     setErrorDuplicado(null);
+    setErrorGeneral(null);
     if (e.target.name === "codigo_barras") setCodigoGeneradoInterno(false);
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   }
@@ -167,10 +170,13 @@ export default function NuevoProductoPage() {
     e.preventDefault();
     if (submitting) return;
     setErrorDuplicado(null);
+    setErrorGeneral(null);
 
-    const codigoManual = form.codigo_barras.trim();
-    if (codigoManual && /^INT-/i.test(codigoManual)) {
-      setErrorDuplicado('El prefijo "INT-" está reservado para códigos generados por el sistema. Dejá el campo vacío para autogenerar uno, o ingresá otro código.');
+    const codigoEnInput = form.codigo_barras.trim();
+    // Solo rechazar prefijo INT- si fue ESCRITO MANUALMENTE (no si vino del botón).
+    const esIntManual = !!codigoEnInput && /^INT-/i.test(codigoEnInput) && !codigoGeneradoInterno;
+    if (esIntManual) {
+      setErrorGeneral('El prefijo "INT-" está reservado para códigos internos generados por el sistema. Dejá el campo vacío y guardá, o usá el botón "Generar código interno".');
       return;
     }
 
@@ -184,10 +190,11 @@ export default function NuevoProductoPage() {
 
     setSubmitting(true);
     try {
-      // Si no hay codigo manual, pedir uno interno al backend (atomico, unico por empresa).
-      // Si el usuario ya generó uno con el botón "Generar código interno", reutilizamos esa marca.
-      let codigo: string | null = codigoManual || null;
-      let interno = codigoGeneradoInterno && !!codigoManual;
+      // Resolver codigo: si vino del botón → ya está en el input con interno=true.
+      // Si el usuario escribió uno → manual (interno=false).
+      // Si está vacío → pedir uno interno al backend.
+      let codigo: string | null = codigoEnInput || null;
+      let interno = codigoGeneradoInterno && !!codigoEnInput;
       if (!codigo) {
         try {
           const res = await fetch("/api/productos/codigo-interno", {
@@ -204,20 +211,30 @@ export default function NuevoProductoPage() {
         }
       }
 
-      const guardado = await saveProducto({
-        nombre: form.nombre.trim().toUpperCase(),
-        sku: form.sku.trim().toUpperCase(),
-        costo_promedio: parseFloat(form.costo_promedio) || 0,
-        precio_venta: parseFloat(form.precio_venta) || 0,
-        stock_actual: parseInt(form.stock_actual) || 0,
-        stock_minimo: parseInt(form.stock_minimo) || 0,
-        unidad_medida: form.unidad_medida.trim().toUpperCase(),
-        metodo_valuacion: form.metodo_valuacion,
-        codigo_barras: codigo,
-        codigo_barras_interno: interno,
-      });
+      let guardado;
+      try {
+        guardado = await saveProducto({
+          nombre: form.nombre.trim().toUpperCase(),
+          sku: form.sku.trim().toUpperCase(),
+          costo_promedio: parseFloat(form.costo_promedio) || 0,
+          precio_venta: parseFloat(form.precio_venta) || 0,
+          stock_actual: parseInt(form.stock_actual) || 0,
+          stock_minimo: parseInt(form.stock_minimo) || 0,
+          unidad_medida: form.unidad_medida.trim().toUpperCase(),
+          metodo_valuacion: form.metodo_valuacion,
+          codigo_barras: codigo,
+          codigo_barras_interno: interno,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "No se pudo guardar el producto.";
+        setErrorGeneral(msg);
+        return;
+      }
 
-      if (!guardado) return;
+      if (!guardado) {
+        setErrorGeneral("No se pudo guardar el producto. Revisá los datos e intentá nuevamente.");
+        return;
+      }
 
       // Subir imagen (post-creacion, con producto_id real)
       if (imagenFile) {
@@ -276,7 +293,14 @@ export default function NuevoProductoPage() {
       <div className="bg-white rounded-xl shadow p-6 max-w-3xl">
         <form className="space-y-6" onSubmit={handleSubmit}>
 
-          {/* Error de duplicado */}
+          {/* Error general (validacion de codigo, duplicado de codigo barras, etc.) */}
+          {errorGeneral && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="text-sm text-red-700">{errorGeneral}</p>
+            </div>
+          )}
+
+          {/* Error de duplicado (mismo SKU o mismo nombre) */}
           {errorDuplicado && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-1">
               <p className="text-sm font-semibold text-red-700">

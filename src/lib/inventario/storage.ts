@@ -168,6 +168,19 @@ export async function saveProducto(
 
   if (error) {
     console.error("[inventario] saveProducto:", error.message);
+    // Surface known unique-violations con mensaje claro para la UI.
+    // codigo Postgres 23505 = unique_violation.
+    const code = (error as { code?: string }).code;
+    const msg = error.message ?? "";
+    if (code === "23505" && /codigo_barras/i.test(msg)) {
+      throw new Error("Ya existe otro producto con el mismo código de barras en esta empresa.");
+    }
+    if (code === "23505" && /sku/i.test(msg)) {
+      throw new Error("Ya existe otro producto con el mismo SKU en esta empresa.");
+    }
+    if (code === "23505") {
+      throw new Error("Ya existe un registro con un valor único conflictivo.");
+    }
     return null;
   }
 
@@ -232,6 +245,14 @@ export async function updateProducto(
     .single();
 
   if (error) {
+    const code = (error as { code?: string }).code;
+    const msg = error.message ?? "";
+    if (code === "23505" && /codigo_barras/i.test(msg)) {
+      throw new Error("Ya existe otro producto con el mismo código de barras en esta empresa.");
+    }
+    if (code === "23505" && /sku/i.test(msg)) {
+      throw new Error("Ya existe otro producto con el mismo SKU en esta empresa.");
+    }
     console.error("[inventario] updateProducto:", error.message);
     return null;
   }

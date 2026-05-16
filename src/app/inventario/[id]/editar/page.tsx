@@ -15,6 +15,7 @@ export default function EditarProductoPage() {
 
   const [cargando, setCargando] = useState(true);
   const [errorDuplicado, setErrorDuplicado] = useState<string | null>(null);
+  const [errorGeneral, setErrorGeneral] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     nombre: "",
@@ -39,6 +40,7 @@ export default function EditarProductoPage() {
     if (generandoCodigo) return;
     setGenerandoCodigo(true);
     setErrorDuplicado(null);
+    setErrorGeneral(null);
     try {
       const res = await fetch("/api/productos/codigo-interno", {
         method: "POST",
@@ -52,10 +54,10 @@ export default function EditarProductoPage() {
           codigo_barras_interno: true,
         }));
       } else {
-        setErrorDuplicado(json?.error ?? "No se pudo generar el código.");
+        setErrorGeneral(json?.error ?? "No se pudo generar el código.");
       }
     } catch (err) {
-      setErrorDuplicado(err instanceof Error ? err.message : "Error de red");
+      setErrorGeneral(err instanceof Error ? err.message : "Error de red");
     } finally {
       setGenerandoCodigo(false);
     }
@@ -95,6 +97,7 @@ export default function EditarProductoPage() {
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) {
     setErrorDuplicado(null);
+    setErrorGeneral(null);
     if (e.target.name === "codigo_barras") {
       const next = e.target.value;
       // Si el codigo cambia respecto al original guardado, deja de ser "interno".
@@ -110,6 +113,7 @@ export default function EditarProductoPage() {
 
   function handleCostoChange(costo: number) {
     setErrorDuplicado(null);
+    setErrorGeneral(null);
     const markup = parseFloat(form.markup);
     const precio = parseFloat(form.precio_venta);
     if (!isNaN(costo) && costo > 0 && !isNaN(markup)) {
@@ -125,6 +129,7 @@ export default function EditarProductoPage() {
 
   function handleMarkupChange(e: React.ChangeEvent<HTMLInputElement>) {
     setErrorDuplicado(null);
+    setErrorGeneral(null);
     const markup = parseFloat(e.target.value);
     const costo = parseFloat(form.costo_promedio);
     if (!isNaN(markup) && !isNaN(costo) && costo > 0) {
@@ -137,6 +142,7 @@ export default function EditarProductoPage() {
 
   function handlePrecioChange(precio: number) {
     setErrorDuplicado(null);
+    setErrorGeneral(null);
     const costo = parseFloat(form.costo_promedio);
     if (!isNaN(precio) && !isNaN(costo) && costo > 0) {
       const nuevoMarkup = ((precio - costo) / costo) * 100;
@@ -150,6 +156,7 @@ export default function EditarProductoPage() {
     e.preventDefault();
     if (submitting) return;
     setErrorDuplicado(null);
+    setErrorGeneral(null);
 
     const codigoIngresado = form.codigo_barras.trim();
     // Validar: si cambio el codigo y empieza con INT- pero NO fue generado por el sistema,
@@ -161,7 +168,7 @@ export default function EditarProductoPage() {
       /^INT-/i.test(codigoIngresado) &&
       !form.codigo_barras_interno
     ) {
-      setErrorDuplicado('El prefijo "INT-" está reservado para códigos generados por el sistema. Usá otro código o dejá el actual.');
+      setErrorGeneral('El prefijo "INT-" está reservado para códigos internos generados por el sistema. Usá otro código o dejá el actual.');
       return;
     }
 
@@ -199,8 +206,16 @@ export default function EditarProductoPage() {
           (form.codigo_barras_interno === true || /^INT-/i.test(codigoIngresado));
       }
 
-      const actualizado = await updateProducto(id, updatePayload);
-      if (actualizado) router.push("/inventario");
+      try {
+        const actualizado = await updateProducto(id, updatePayload);
+        if (actualizado) {
+          router.push("/inventario");
+        } else {
+          setErrorGeneral("No se pudo guardar los cambios. Revisá los datos e intentá nuevamente.");
+        }
+      } catch (err) {
+        setErrorGeneral(err instanceof Error ? err.message : "No se pudieron guardar los cambios.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -235,6 +250,11 @@ export default function EditarProductoPage() {
 
       <div className="bg-white rounded-xl shadow p-6 max-w-3xl">
         <form className="space-y-6" onSubmit={handleSubmit}>
+          {errorGeneral && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="text-sm text-red-700">{errorGeneral}</p>
+            </div>
+          )}
           {errorDuplicado && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4">
               <p className="text-sm font-semibold text-red-700">{errorDuplicado}</p>
