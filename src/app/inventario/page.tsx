@@ -226,9 +226,6 @@ export default function InventarioPage() {
               className="w-64 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#0EA5E9] focus:outline-none bg-white"
             />
           </div>
-          <p className="text-xs text-gray-400">
-            Los productos ingresan desde <span className="font-medium text-gray-500">Compras</span>
-          </p>
         </div>
 
         {/* Filtros por columna — fila 1 (SKU/Costo/Precio) oculta para UX simplificada */}
@@ -364,10 +361,10 @@ export default function InventarioPage() {
                 <th className="py-3 pr-4 font-medium">Unidad</th>
                 <th className="py-3 pr-4 font-medium">Ubicación</th>
                 <th className="py-3 pr-4 font-medium">Valuación</th>
-                <th className="py-3 font-medium text-right">
+                <th className="py-3 pr-6 font-medium text-right">
                   <span title="(precio - costo) / precio × 100">Margen s/venta</span>
                 </th>
-                <th className="py-3 font-medium w-20"></th>
+                <th className="py-3 pl-4 font-medium text-center w-28">Acción</th>
               </tr>
             </thead>
 
@@ -383,9 +380,9 @@ export default function InventarioPage() {
                         {(() => {
                           const v = p.es_vendible !== false;
                           const i = p.es_insumo === true;
+                          // Mixto/Insumo se siguen mostrando; Vendible queda oculto (redundante: ya hay tab).
                           if (v && i) return <span className="inline-flex items-center rounded-full bg-purple-100 text-purple-700 text-[10px] font-medium px-2 py-0.5">Mixto</span>;
                           if (i) return <span className="inline-flex items-center rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-medium px-2 py-0.5">Insumo</span>;
-                          if (v) return <span className="inline-flex items-center rounded-full bg-sky-100 text-sky-700 text-[10px] font-medium px-2 py-0.5">Vendible</span>;
                           return null;
                         })()}
                       </div>
@@ -420,13 +417,13 @@ export default function InventarioPage() {
                         {p.metodo_valuacion}
                       </span>
                     </td>
-                    <td className={`py-4 text-right tabular-nums font-semibold ${margenColor(margen)}`}>
+                    <td className={`py-4 pr-6 text-right tabular-nums font-semibold ${margenColor(margen)}`}>
                       {margen.toFixed(2)}%
                     </td>
-                    <td className="py-4">
+                    <td className="py-4 pl-4 text-center">
                       <Link
                         href={`/inventario/${p.id}/editar`}
-                        className="text-sm text-gray-500 hover:text-gray-800 underline"
+                        className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition-colors"
                       >
                         Editar
                       </Link>

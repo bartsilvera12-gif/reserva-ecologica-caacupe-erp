@@ -1,24 +1,24 @@
 @import "tailwindcss";
 
-/* Neura ERP - Paleta SaaS (Stripe/Linear/Vercel) */
+/* Neura ERP — En lo de Mari (color de marca teal #4FAEB2) */
 :root {
   --background: #F8FAFC;
   --foreground: #0F172A;
   --foreground-muted: #475569;
   --card: #FFFFFF;
-  /* ZENTRA — identidad lateral (azul profundo; logo oficial en blanco) */
+  /* Sidebar: navy de fondo + acento teal de la marca Mari */
   --zentra-sidebar: #0a2540;
   --zentra-sidebar-elevated: #0c2d4d;
   --zentra-sidebar-border: rgba(255, 255, 255, 0.08);
   --zentra-sidebar-hover: rgba(255, 255, 255, 0.08);
-  --zentra-sidebar-active: rgba(56, 189, 248, 0.16);
-  --zentra-sidebar-accent: #38bdf8;
+  --zentra-sidebar-active: rgba(79, 174, 178, 0.18);
+  --zentra-sidebar-accent: #4FAEB2;
   --zentra-login-bg-mid: #0b2f4c;
   --zentra-login-bg-deep: #051525;
   --sidebar: var(--zentra-sidebar);
-  --primary: #0EA5E9;
-  --primary-hover: #0284C7;
-  --primary-light: #E0F2FE;
+  --primary: #4FAEB2;
+  --primary-hover: #3E8C90;
+  --primary-light: #E0F2F3;
   --border: #E2E8F0;
   /* Badges de estado */
   --badge-success-bg: #DCFCE7;
@@ -34,11 +34,11 @@
   --foreground: #F8FAFC;
   --foreground-muted: #94A3B8;
   --card: #1E293B;
-  /* Lateral ERP: misma identidad ZENTRA en modo oscuro */
+  /* Lateral ERP: misma identidad en modo oscuro */
   --sidebar: var(--zentra-sidebar);
-  --primary: #38BDF8;
-  --primary-hover: #0EA5E9;
-  --primary-light: #0C4A6E;
+  --primary: #4FAEB2;
+  --primary-hover: #3E8C90;
+  --primary-light: #1E4D4F;
   --border: #334155;
   --badge-success-bg: #14532D;
   --badge-success-text: #86EFAC;
@@ -118,9 +118,32 @@ body {
 /* Fondo pantalla login (solo layout visual) */
 .zentra-login-bg {
   background:
-    radial-gradient(ellipse 100% 70% at 50% 0%, rgba(56, 189, 248, 0.14), transparent 52%),
+    radial-gradient(ellipse 100% 70% at 50% 0%, rgba(79, 174, 178, 0.14), transparent 52%),
     linear-gradient(168deg, var(--zentra-login-bg-mid) 0%, var(--zentra-sidebar) 42%, var(--zentra-login-bg-deep) 100%);
 }
+
+/* =============================================================================
+   Override de colores brand — Mari (#4FAEB2)
+   Reemplaza usos hex literales (Tailwind arbitrary values) en toda la app
+   sin tocar 293+ archivos. Solo afecta clases existentes; no toca semánticos
+   (green/red/amber/etc.).
+   ============================================================================= */
+.bg-\[\#0EA5E9\]   { background-color: #4FAEB2 !important; }
+.bg-\[\#0284C7\]   { background-color: #3E8C90 !important; }
+.bg-\[\#38BDF8\]   { background-color: #4FAEB2 !important; }
+.hover\:bg-\[\#0EA5E9\]:hover { background-color: #4FAEB2 !important; }
+.hover\:bg-\[\#0284C7\]:hover { background-color: #3E8C90 !important; }
+
+.text-\[\#0EA5E9\] { color: #4FAEB2 !important; }
+.text-\[\#0284C7\] { color: #3E8C90 !important; }
+.text-\[\#38BDF8\] { color: #4FAEB2 !important; }
+.hover\:text-\[\#0284C7\]:hover { color: #3E8C90 !important; }
+
+.border-\[\#0EA5E9\] { border-color: #4FAEB2 !important; }
+.border-\[\#0284C7\] { border-color: #3E8C90 !important; }
+
+.focus\:ring-\[\#0EA5E9\]:focus { --tw-ring-color: #4FAEB2 !important; }
+.focus\:border-\[\#0EA5E9\]:focus { border-color: #4FAEB2 !important; }
 
 
 
