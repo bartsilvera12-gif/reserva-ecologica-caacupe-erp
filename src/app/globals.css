@@ -156,5 +156,15 @@ body {
     linear-gradient(180deg, #1d6669 0%, #19585b 35%, #144649 100%);
 }
 
+/* =============================================================================
+   Dashboard — shell oscuro teal estilo Zentra
+   ============================================================================= */
+.zentra-dashboard-shell {
+  background:
+    radial-gradient(ellipse 100% 70% at 50% 0%, rgba(20, 184, 166, 0.08), transparent 55%),
+    radial-gradient(ellipse 100% 50% at 100% 0%, rgba(255, 255, 255, 0.04), transparent 60%),
+    linear-gradient(168deg, #143638 0%, #0E2E2F 45%, #082021 100%);
+}
+
 
 

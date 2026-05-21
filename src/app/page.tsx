@@ -51,12 +51,12 @@ import {
 
 // ── ZENTRA (solo dashboard / esta página) ─────────────────────────────────────
 const Z = {
-  bg:       "#0B1C3D",
-  surface:  "#111F4A",
-  card:     "#14235A",
-  accent:   "#2563EB",
+  bg:       "#0E2E2F",
+  surface:  "#143638",
+  card:     "#1A4143",
+  accent:   "#14B8A6",
   text:     "#FFFFFF",
-  muted:    "#AAB4D6",
+  muted:    "#9CC2BF",
   success:  "#22C55E",
   error:    "#EF4444",
 } as const;
@@ -2118,8 +2118,8 @@ export default function DashboardPage() {
   if (!config) {
     return (
       <div
-        className="flex min-h-[40vh] items-center justify-center rounded-2xl py-24 text-sm"
-        style={{ backgroundColor: Z.bg, color: Z.muted }}
+        className="zentra-dashboard-shell flex min-h-[40vh] items-center justify-center rounded-2xl py-24 text-sm"
+        style={{ color: Z.muted }}
       >
         Cargando…
       </div>
@@ -2151,8 +2151,8 @@ export default function DashboardPage() {
   if (dashScope.kind === "empty") {
     return (
       <div
-        className="space-y-8 rounded-2xl border border-white/10 px-4 py-8 sm:px-6 md:px-8"
-        style={{ backgroundColor: Z.bg, color: Z.muted }}
+        className="zentra-dashboard-shell space-y-8 rounded-2xl border border-white/10 px-4 py-8 sm:px-6 md:px-8"
+        style={{ color: Z.muted }}
       >
         <header className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex items-start gap-4">
@@ -2189,8 +2189,8 @@ export default function DashboardPage() {
 
   return (
     <div
-      className="space-y-8 rounded-2xl border border-white/10 px-4 py-8 sm:px-6 md:px-8"
-      style={{ backgroundColor: Z.bg, color: Z.muted }}
+      className="zentra-dashboard-shell space-y-8 rounded-2xl border border-white/10 px-4 py-8 sm:px-6 md:px-8"
+      style={{ color: Z.muted }}
     >
       <header className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-4">
