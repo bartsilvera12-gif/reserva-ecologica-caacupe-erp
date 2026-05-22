@@ -239,34 +239,34 @@ export default function EditarProductoPage() {
     if (submitting) return;
     setErrorDuplicado(null);
     setErrorGeneral(null);
-
-    const codigoIngresado = form.codigo_barras.trim();
-    // Validar: si cambio el codigo y empieza con INT- pero NO fue generado por el sistema,
-    // rechazar (prefijo reservado). Si vino del botón "Generar código interno",
-    // form.codigo_barras_interno=true y se acepta.
-    if (
-      codigoIngresado &&
-      codigoIngresado !== codigoOriginal &&
-      /^INT-/i.test(codigoIngresado) &&
-      !form.codigo_barras_interno
-    ) {
-      setErrorGeneral('El prefijo "INT-" está reservado para códigos internos generados por el sistema. Usá otro código o dejá el actual.');
-      return;
-    }
-
-    const duplicado = await productoExiste(form.sku, form.nombre);
-    if (duplicado && duplicado.id !== id) {
-      setErrorDuplicado(`Ya existe "${duplicado.nombre}" con SKU ${duplicado.sku}.`);
-      return;
-    }
-
     setSubmitting(true);
+
     try {
-      // Reglas de codigo en edicion:
-      // - Si quedo igual al original -> no tocar el campo (preservar codigo_barras_interno).
-      // - Si cambio y no esta vacio -> codigo_barras_interno = false (manual).
-      // - Si quedo vacio -> codigo_barras = null, codigo_barras_interno = false.
-      //   (No auto-regeneramos en edicion: evita sorprender al usuario.)
+      const codigoIngresado = form.codigo_barras.trim();
+      // Validar: si cambio el codigo y empieza con INT- pero NO fue generado por el sistema,
+      // rechazar (prefijo reservado).
+      if (
+        codigoIngresado &&
+        codigoIngresado !== codigoOriginal &&
+        /^INT-/i.test(codigoIngresado) &&
+        !form.codigo_barras_interno
+      ) {
+        setErrorGeneral('El prefijo "INT-" está reservado para códigos internos generados por el sistema. Usá otro código o dejá el actual.');
+        return;
+      }
+
+      // Pre-chequeo de duplicado: tolerante a fallos de red — si la consulta falla,
+      // seguimos. El backend igual valida unicidad en el PATCH.
+      try {
+        const duplicado = await productoExiste(form.sku, form.nombre);
+        if (duplicado && duplicado.id !== id) {
+          setErrorDuplicado(`Ya existe "${duplicado.nombre}" con SKU ${duplicado.sku}.`);
+          return;
+        }
+      } catch (err) {
+        console.warn("[inventario/editar] productoExiste failed, ignorando:", err);
+      }
+
       const cambioCodigo = codigoIngresado !== (codigoOriginal ?? "");
       const updatePayload: Parameters<typeof updateProducto>[1] = {
         nombre: form.nombre.trim().toUpperCase(),
@@ -275,7 +275,7 @@ export default function EditarProductoPage() {
         precio_venta: parseFloat(form.precio_venta) || 0,
         stock_actual: parseInt(form.stock_actual) || 0,
         stock_minimo: parseInt(form.stock_minimo) || 0,
-        unidad_medida: form.unidad_medida.trim().toUpperCase(),
+        unidad_medida: form.unidad_medida.trim().toUpperCase() || "UNIDAD",
         metodo_valuacion: form.metodo_valuacion,
         categoria_principal_id: categoriaId,
         ubicacion_principal_id: ubicacionId,
@@ -292,24 +292,20 @@ export default function EditarProductoPage() {
       };
       if (cambioCodigo) {
         updatePayload.codigo_barras = codigoIngresado || null;
-        // Si el codigo arranca con INT-, asumimos que es interno (generado por el sistema).
-        // Si el usuario marco form.codigo_barras_interno (clic en "Generar código interno"),
-        // tambien respetar esa marca. Caso contrario, manual.
         updatePayload.codigo_barras_interno =
           codigoIngresado.length > 0 &&
           (form.codigo_barras_interno === true || /^INT-/i.test(codigoIngresado));
       }
 
-      try {
-        const actualizado = await updateProducto(id, updatePayload);
-        if (actualizado) {
-          router.push("/inventario");
-        } else {
-          setErrorGeneral("No se pudo guardar los cambios. Revisá los datos e intentá nuevamente.");
-        }
-      } catch (err) {
-        setErrorGeneral(err instanceof Error ? err.message : "No se pudieron guardar los cambios.");
+      const actualizado = await updateProducto(id, updatePayload);
+      if (actualizado) {
+        router.push("/inventario");
+      } else {
+        setErrorGeneral("No se pudo guardar los cambios. Revisá los datos e intentá nuevamente.");
       }
+    } catch (err) {
+      console.error("[inventario/editar] handleSubmit error:", err);
+      setErrorGeneral(err instanceof Error ? err.message : "No se pudieron guardar los cambios.");
     } finally {
       setSubmitting(false);
     }
@@ -726,7 +722,7 @@ export default function EditarProductoPage() {
                 onChange={handleChange}
                 className={inputClass}
                 min={0}
-                required
+                required={showStock}
               />
               <p className="mt-1 text-xs text-gray-400">
                 Para ajustes de stock, preferí registrar un <Link href="/inventario/movimientos/nuevo" className="underline">movimiento</Link>.
@@ -741,7 +737,7 @@ export default function EditarProductoPage() {
                 onChange={handleChange}
                 className={inputClass}
                 min={0}
-                required
+                required={showStock}
               />
             </div>
           </div>
