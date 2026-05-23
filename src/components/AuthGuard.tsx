@@ -3,10 +3,10 @@
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import ZentraLoader from "@/components/ZentraLoader";
 import { BootProvider, useBoot } from "@/components/BootContext";
 import { getCurrentUser, getSession } from "@/lib/auth";
+import { getModuleAccessCached } from "@/lib/modulos/module-access-cache";
 import { isBootstrapSuperAdminEmail } from "@/lib/auth/super-admin-bootstrap-email";
 import {
   firstAccessibleHref,
@@ -67,9 +67,7 @@ function AuthGuardInner({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const res = await fetchWithSupabaseSession("/api/empresas/module-access", {
-        cache: "no-store",
-      });
+      const { ok, data } = await getModuleAccessCached();
       if (cancelled) return;
 
       let superAdmin = false;
@@ -79,13 +77,7 @@ function AuthGuardInner({ children }: { children: React.ReactNode }) {
 
       const bootstrapSuper = isBootstrapSuperAdminEmail(session.user.email ?? null);
 
-      if (res.ok) {
-        const data = (await res.json()) as {
-          superAdmin?: boolean;
-          slugs?: string[];
-          inactiveSlugs?: string[];
-          strictAllowlist?: boolean;
-        };
+      if (ok) {
         superAdmin = !!data.superAdmin || bootstrapSuper;
         slugs = Array.isArray(data.slugs) ? data.slugs : [];
         inactiveSlugs = Array.isArray(data.inactiveSlugs) ? data.inactiveSlugs : [];

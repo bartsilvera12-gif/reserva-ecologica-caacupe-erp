@@ -44,6 +44,7 @@ import type { ModuloEmpresa } from "@/lib/empresas/actions";
 import { getFavoritos, toggleFavorito } from "@/lib/favorites";
 import { canAccessSidebarSlug } from "@/lib/modulos/route-slug-map";
 import { useBoot } from "@/components/BootContext";
+import { getModuleAccessCached } from "@/lib/modulos/module-access-cache";
 
 type MenuItem = {
   key: string;
@@ -367,9 +368,7 @@ export default function Sidebar() {
           return;
         }
 
-        const res = await fetchWithSupabaseSession("/api/empresas/module-access", {
-          cache: "no-store",
-        });
+        const { ok, data: body } = await getModuleAccessCached();
         if (cancelled) return;
 
         let superA = false;
@@ -378,13 +377,7 @@ export default function Sidebar() {
 
         let inactiveList: string[] = [];
         let strict = false;
-        if (res.ok) {
-          const body = (await res.json()) as {
-            superAdmin?: boolean;
-            modulos?: ModuloEmpresa[];
-            inactiveSlugs?: string[];
-            strictAllowlist?: boolean;
-          };
+        if (ok) {
           superA = !!body.superAdmin || bootstrapSuper;
           modList = Array.isArray(body.modulos) ? body.modulos : [];
           inactiveList = Array.isArray(body.inactiveSlugs) ? body.inactiveSlugs : [];

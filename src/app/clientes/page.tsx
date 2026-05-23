@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
+import EdgeScrollArea from "@/components/ui/EdgeScrollArea";
 import { getClientes, clienteNombre } from "@/lib/clientes/storage";
 import type { Cliente } from "@/lib/clientes/types";
 import { etiquetaVisibleTipoServicio, type ClienteTipoServicioRow } from "@/lib/clientes/tipo-servicio-catalogo";
@@ -571,7 +572,7 @@ export default function ClientesPage() {
             )}
           </div>
         ) : /* tabla */ (
-          <div className="overflow-x-auto">
+          <EdgeScrollArea>
             <table className="w-full min-w-full">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
@@ -598,7 +599,7 @@ export default function ClientesPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </EdgeScrollArea>
         )}
       </div>
 
