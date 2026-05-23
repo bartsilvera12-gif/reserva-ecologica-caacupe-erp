@@ -230,6 +230,7 @@ function NavItem({
         <div className={`flex items-center gap-0.5 rounded-lg text-sm font-medium transition-colors ${rowTone}`}>
           <Link
             href={item.href}
+            prefetch={false}
             className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5"
             title={item.label}
           >
@@ -270,6 +271,7 @@ function NavItem({
                 <Link
                   key={c.href}
                   href={c.href}
+                  prefetch={false}
                   className={`block rounded-lg px-3 py-2 text-sm transition-all ${
                     menuChildPathActive(p, c.href, c.exactMatch)
                       ? "bg-[color:var(--zentra-sidebar-active)] text-white font-medium shadow-[inset_3px_0_0_var(--zentra-sidebar-accent)]"
@@ -289,6 +291,7 @@ function NavItem({
   return (
     <Link
       href={item.href}
+      prefetch={false}
       className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all ${
         isActive
           ? "bg-[color:var(--zentra-sidebar-active)] text-white shadow-[inset_3px_0_0_var(--zentra-sidebar-accent)]"
