@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import EdgeScrollArea from "@/components/ui/EdgeScrollArea";
+import { FancySelect } from "@/components/ui/FancySelect";
 import { getClientes, clienteNombre } from "@/lib/clientes/storage";
 import type { Cliente } from "@/lib/clientes/types";
 import { etiquetaVisibleTipoServicio, type ClienteTipoServicioRow } from "@/lib/clientes/tipo-servicio-catalogo";
@@ -432,51 +433,58 @@ export default function ClientesPage() {
           onChange={(e) => setBusqueda(e.target.value)}
           className="flex-1 min-w-48 border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-[#0EA5E9] focus:outline-none transition-all"
         />
-        <select
+        <FancySelect
           value={filtroEstado}
-          onChange={(e) => setFiltroEstado(e.target.value as "" | "activo" | "inactivo")}
-          className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-[#0EA5E9] focus:outline-none"
-        >
-          <option value="">Todos los estados</option>
-          <option value="activo">Activo</option>
-          <option value="inactivo">Inactivo</option>
-        </select>
-        <select
+          onChange={(v) => setFiltroEstado(v as "" | "activo" | "inactivo")}
+          ariaLabel="Filtrar por estado"
+          className="w-44"
+          size="sm"
+          options={[
+            { value: "", label: "Todos los estados" },
+            { value: "activo", label: "Activo" },
+            { value: "inactivo", label: "Inactivo" },
+          ]}
+        />
+        <FancySelect
           value={filtroTipo}
-          onChange={(e) => setFiltroTipo(e.target.value as "" | "empresa" | "persona")}
-          className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-[#0EA5E9] focus:outline-none"
-        >
-          <option value="">Todos los tipos</option>
-          <option value="empresa">Empresa</option>
-          <option value="persona">Persona</option>
-        </select>
-        <select
+          onChange={(v) => setFiltroTipo(v as "" | "empresa" | "persona")}
+          ariaLabel="Filtrar por tipo"
+          className="w-44"
+          size="sm"
+          options={[
+            { value: "", label: "Todos los tipos" },
+            { value: "empresa", label: "Empresa" },
+            { value: "persona", label: "Persona" },
+          ]}
+        />
+        <FancySelect
           value={filtroOrigen}
-          onChange={(e) => setFiltroOrigen(e.target.value as "" | "CRM" | "VENTA" | "MANUAL")}
-          className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-[#0EA5E9] focus:outline-none"
-        >
-          <option value="">Todos los orígenes</option>
-          <option value="CRM">CRM</option>
-          <option value="VENTA">Venta</option>
-          <option value="MANUAL">Manual</option>
-        </select>
-        <select
+          onChange={(v) => setFiltroOrigen(v as "" | "CRM" | "VENTA" | "MANUAL")}
+          ariaLabel="Filtrar por origen"
+          className="w-44"
+          size="sm"
+          options={[
+            { value: "", label: "Todos los orígenes" },
+            { value: "CRM", label: "CRM" },
+            { value: "VENTA", label: "Venta" },
+            { value: "MANUAL", label: "Manual" },
+          ]}
+        />
+        <FancySelect
           value={filtroTipoServicio}
-          onChange={(e) => setFiltroTipoServicio(e.target.value)}
-          className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-[#0EA5E9] focus:outline-none"
-        >
-          <option value="">Tipo servicio</option>
-          {filasTipoCatalogo.map((t) => (
-            <option key={t.slug} value={t.slug}>
-              {t.nombre}
-            </option>
-          ))}
-          {slugsExtraFiltro.map((slug) => (
-            <option key={slug} value={slug}>
-              {etiquetaVisibleTipoServicio(slug, mapNombreTipo)}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => setFiltroTipoServicio(v)}
+          ariaLabel="Filtrar por tipo de servicio"
+          className="w-44"
+          size="sm"
+          options={[
+            { value: "", label: "Tipo servicio" },
+            ...filasTipoCatalogo.map((t) => ({ value: t.slug, label: t.nombre })),
+            ...slugsExtraFiltro.map((slug) => ({
+              value: slug,
+              label: etiquetaVisibleTipoServicio(slug, mapNombreTipo),
+            })),
+          ]}
+        />
         {hayFiltros && (
           <button
             onClick={() => { setBusqueda(""); setFiltroEstado(""); setFiltroOrigen(""); setFiltroTipo(""); setFiltroTipoServicio(""); }}
