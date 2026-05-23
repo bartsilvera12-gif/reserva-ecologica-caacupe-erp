@@ -86,18 +86,22 @@ function MetricCard({
   label: string; value: string; sub?: string; accent?: boolean;
 }) {
   return (
-    <div className={`rounded-xl border px-5 py-4 flex flex-col gap-1 ${
-      accent ? "bg-[#0EA5E9] border-[#0EA5E9]" : "bg-white border-slate-200"
+    <div className={`rounded-2xl border px-5 py-4 flex flex-col gap-1 shadow-sm ${
+      accent
+        ? "bg-[#4FAEB2] border-[#4FAEB2] ring-1 ring-[#4FAEB2]/25"
+        : "bg-white border-[#4FAEB2]/30 ring-1 ring-[#4FAEB2]/10"
     }`}>
-      <span className="text-xs font-medium uppercase tracking-wide text-gray-400">
+      <span className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${
+        accent ? "text-white/90" : "text-[#4FAEB2]"
+      }`}>
         {label}
       </span>
       <span className={`text-2xl font-bold tabular-nums leading-tight ${
-        accent ? "text-white" : "text-gray-800"
+        accent ? "text-white" : "text-[#3F8E91]"
       }`}>
         {value}
       </span>
-      {sub && <span className="text-xs text-gray-400">{sub}</span>}
+      {sub && <span className={`text-xs ${accent ? "text-white/80" : "text-slate-500"}`}>{sub}</span>}
     </div>
   );
 }
