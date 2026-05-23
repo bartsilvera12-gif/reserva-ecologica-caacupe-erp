@@ -157,7 +157,7 @@ export default function ComprasPage() {
                 </tr>
               ) : (
                 filtradas.map((c) => (
-                  <tr key={c.id} className="border-b border-slate-200 last:border-0 hover:bg-slate-50 transition-colors">
+                  <tr key={c.id} className="border-b border-slate-200 last:border-0 hover:bg-[#4FAEB2]/[0.04] transition-colors">
                     <td className="py-4 pr-4 font-mono text-xs text-gray-500">
                       {c.numero_control}
                     </td>

@@ -586,7 +586,7 @@ export default function ClientesPage() {
                 {filtrados.map((c) => (
                   <tr
                     key={c.id}
-                    className="border-b border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer group"
+                    className="border-b border-slate-200 hover:bg-[#4FAEB2]/[0.04] transition-colors cursor-pointer group"
                     onClick={() => window.location.href = `/clientes/${c.id}`}
                   >
                     {visibleColumns.map((col) => (

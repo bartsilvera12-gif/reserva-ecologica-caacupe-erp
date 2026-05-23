@@ -118,7 +118,7 @@ export default function UsuariosPage() {
             </thead>
             <tbody className="divide-y divide-slate-200">
               {filtrados.map((usr) => (
-                <tr key={usr.id} className={`hover:bg-slate-50 transition-colors ${usr.estado === "inactivo" ? "opacity-60" : ""}`}>
+                <tr key={usr.id} className={`hover:bg-[#4FAEB2]/[0.04] transition-colors ${usr.estado === "inactivo" ? "opacity-60" : ""}`}>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <div

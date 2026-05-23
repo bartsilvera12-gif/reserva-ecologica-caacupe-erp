@@ -108,7 +108,7 @@ export default function GastosPage() {
             </thead>
             <tbody className="divide-y divide-slate-200">
               {gastos.map((g) => (
-                <tr key={g.id} className="hover:bg-slate-50 transition-colors">
+                <tr key={g.id} className="hover:bg-[#4FAEB2]/[0.04] transition-colors">
                   <td className="px-5 py-3.5 text-sm text-gray-600">{formatFecha(g.fecha)}</td>
                   <td className="px-5 py-3.5 text-sm font-medium text-gray-800">{g.categoria || "—"}</td>
                   <td className="px-5 py-3.5 text-sm text-gray-600 max-w-[200px] truncate">

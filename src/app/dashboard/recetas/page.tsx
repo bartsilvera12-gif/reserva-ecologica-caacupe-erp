@@ -106,7 +106,7 @@ export default function RecetasListPage() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {recetas.map((r) => (
-                <tr key={r.id} className="hover:bg-gray-50">
+                <tr key={r.id} className="hover:bg-[#4FAEB2]/[0.04] transition-colors">
                   <td className="px-4 py-2 font-medium text-gray-900">
                     {r.nombre ?? <span className="text-gray-400">(sin nombre)</span>}
                   </td>

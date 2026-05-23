@@ -323,7 +323,7 @@ export default function VentasPage() {
                 filtradas.map((v) => {
                   const cantTotal = v.items.reduce((s, i) => s + i.cantidad, 0);
                   return (
-                    <tr key={v.id} className="border-b border-slate-200 last:border-0 hover:bg-slate-50 transition-colors">
+                    <tr key={v.id} className="border-b border-slate-200 last:border-0 hover:bg-[#4FAEB2]/[0.04] transition-colors">
                       <td className="py-4 pr-4 font-mono text-xs text-gray-500 align-middle">
                         {v.numero_control}
                       </td>
