@@ -400,7 +400,7 @@ export default function NuevaVentaPage() {
     <div className="space-y-8">
 
       <div>
-        <h1 className="text-3xl font-bold text-gray-800">Nueva venta</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Nueva venta</h1>
         <p className="text-gray-600">
           Agregá productos del menú o reventa. Al confirmar se registra la venta y se genera el pedido.
         </p>
@@ -409,7 +409,7 @@ export default function NuevaVentaPage() {
       <form onSubmit={handleSubmit} className="space-y-6 max-w-7xl">
 
         {/* ── SECCIÓN 1: Agregar producto ───────────────────────────────────── */}
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 sm:p-6">
           <SectionTitle>Agregar producto</SectionTitle>
 
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
@@ -596,7 +596,7 @@ export default function NuevaVentaPage() {
         </div>
 
         {/* ── SECCIÓN 3: Carrito + totales + confirmar ─────────────────────── */}
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 sm:p-6">
           <SectionTitle>Productos en esta venta</SectionTitle>
 
           {items.length === 0 ? (
@@ -605,17 +605,20 @@ export default function NuevaVentaPage() {
             </div>
           ) : (
             <>
+              {/* min-w fuerza scroll horizontal en mobile (9 columnas).
+                  Columnas secundarias (SKU, Subtotal, IVA Gs) se ocultan
+                  progresivamente: en mobile solo Producto/Cant/Precio/Total/eliminar. */}
               <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
+                <table className="w-full min-w-[760px] sm:min-w-0 text-sm text-left">
                   <thead>
                     <tr className="bg-slate-50 text-slate-600 text-sm font-semibold">
                       <th className="py-2.5 pr-3 font-medium">Producto</th>
-                      <th className="py-2.5 pr-3 font-medium">SKU</th>
+                      <th className="py-2.5 pr-3 font-medium hidden md:table-cell">SKU</th>
                       <th className="py-2.5 pr-3 font-medium text-right">Cant.</th>
                       <th className="py-2.5 pr-3 font-medium text-right">Precio unit.</th>
-                      <th className="py-2.5 pr-3 font-medium text-center">IVA</th>
-                      <th className="py-2.5 pr-3 font-medium text-right">Subtotal</th>
-                      <th className="py-2.5 pr-3 font-medium text-right">IVA Gs.</th>
+                      <th className="py-2.5 pr-3 font-medium text-center hidden md:table-cell">IVA</th>
+                      <th className="py-2.5 pr-3 font-medium text-right hidden lg:table-cell">Subtotal</th>
+                      <th className="py-2.5 pr-3 font-medium text-right hidden lg:table-cell">IVA Gs.</th>
                       <th className="py-2.5 pr-3 font-medium text-right">Total</th>
                       <th className="py-2.5 font-medium"></th>
                     </tr>
@@ -626,7 +629,7 @@ export default function NuevaVentaPage() {
                         <td className="py-3 pr-3 font-medium text-gray-800">
                           {item.producto_nombre}
                         </td>
-                        <td className="py-3 pr-3 font-mono text-xs text-gray-500">
+                        <td className="py-3 pr-3 font-mono text-xs text-gray-500 hidden md:table-cell">
                           {item.sku}
                         </td>
                         <td className="py-3 pr-3 text-right tabular-nums">
@@ -635,15 +638,15 @@ export default function NuevaVentaPage() {
                         <td className="py-3 pr-3 text-right tabular-nums text-gray-600 text-xs">
                           {formatGs(item.precio_venta)}
                         </td>
-                        <td className="py-3 pr-3 text-center">
+                        <td className="py-3 pr-3 text-center hidden md:table-cell">
                           <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600">
                             {ivaLabel[item.tipo_iva]}
                           </span>
                         </td>
-                        <td className="py-3 pr-3 text-right tabular-nums text-gray-600 text-xs">
+                        <td className="py-3 pr-3 text-right tabular-nums text-gray-600 text-xs hidden lg:table-cell">
                           {formatGs(item.subtotal)}
                         </td>
-                        <td className="py-3 pr-3 text-right tabular-nums text-gray-500 text-xs">
+                        <td className="py-3 pr-3 text-right tabular-nums text-gray-500 text-xs hidden lg:table-cell">
                           {item.monto_iva > 0 ? formatGs(item.monto_iva) : "—"}
                         </td>
                         <td className="py-3 pr-3 text-right tabular-nums font-semibold text-gray-800">
@@ -653,7 +656,7 @@ export default function NuevaVentaPage() {
                           <button
                             type="button"
                             onClick={() => handleEliminarLinea(idx)}
-                            className="text-red-400 hover:text-red-700 transition-colors p-1 rounded hover:bg-red-50"
+                            className="inline-flex items-center justify-center min-w-[40px] min-h-[40px] text-red-400 hover:text-red-700 transition-colors rounded hover:bg-red-50"
                             title="Eliminar producto"
                           >
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
@@ -908,21 +911,22 @@ export default function NuevaVentaPage() {
             </div>
           )}
 
-          {/* Acciones */}
-          <div className="mt-6 flex gap-4">
-            <button
-              type="submit"
-              disabled={!ventaValida}
-              className="bg-[#0EA5E9] hover:bg-[#0284C7] text-white px-6 py-3 rounded-lg text-sm font-medium transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
-            >
-              Confirmar venta
-            </button>
+          {/* Acciones — stack vertical full-width en mobile (mas facil de tappear),
+              fila en sm+. Confirmar en orden visual primero (primary). */}
+          <div className="mt-6 flex flex-col-reverse sm:flex-row gap-3">
             <button
               type="button"
               onClick={() => router.push("/ventas")}
-              className="border border-slate-200 px-6 py-3 rounded-lg text-sm hover:bg-slate-50 transition-colors"
+              className="border border-slate-200 px-6 py-3 rounded-lg text-sm hover:bg-slate-50 transition-colors min-h-[48px] w-full sm:w-auto"
             >
               Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={!ventaValida}
+              className="bg-[#0EA5E9] hover:bg-[#0284C7] text-white px-6 py-3 rounded-lg text-sm font-medium transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 min-h-[48px] w-full sm:w-auto"
+            >
+              Confirmar venta
             </button>
           </div>
 

@@ -188,10 +188,17 @@ export default function ProductPickerModal({
           </p>
         </div>
 
-        {/* Body: lista + panel detalle */}
+        {/* Body: lista + panel detalle.
+            MASTER/DETAIL responsive:
+              MOBILE (< lg): lista full-width cuando NO hay seleccion; cuando seleccionas
+                             un producto, se oculta y aparece el panel detalle full-width
+                             (con boton "Volver" para cerrar la seleccion).
+              DESKTOP (>= lg): ambos lado a lado (60% / 40%).
+            Antes el panel detalle era "hidden lg:flex" -> en mobile NO se veia el form
+            para agregar el producto a la venta, por eso el usuario no podia cargar. */}
         <div className="flex flex-1 overflow-hidden">
           {/* LISTA */}
-          <div className="w-full lg:w-3/5 border-r border-slate-200 overflow-y-auto">
+          <div className={`${sel ? "hidden lg:block" : "block"} w-full lg:w-3/5 lg:border-r border-slate-200 overflow-y-auto`}>
             {loading && <div className="p-6 text-center text-sm text-slate-400">Buscando...</div>}
             {!loading && error && <div className="m-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>}
             {!loading && !error && items.length === 0 && (
@@ -256,13 +263,26 @@ export default function ProductPickerModal({
           </div>
 
           {/* PANEL DETALLE */}
-          <div className="hidden lg:flex w-2/5 flex-col overflow-y-auto bg-slate-50">
+          <div className={`${sel ? "flex" : "hidden lg:flex"} w-full lg:w-2/5 flex-col overflow-y-auto bg-slate-50`}>
             {!sel ? (
               <div className="flex-1 flex items-center justify-center text-sm text-slate-400 p-6 text-center">
                 Seleccioná un producto de la lista para ver detalle y agregar a la venta.
               </div>
             ) : (
               <div className="p-5 space-y-4">
+                {/* Boton "Volver a la lista" — solo mobile (en desktop la lista esta al lado).
+                    Tap target 40x40px. */}
+                <button
+                  type="button"
+                  onClick={() => setSel(null)}
+                  className="lg:hidden inline-flex items-center gap-1.5 -ml-1 min-h-[40px] px-2 rounded-md text-sm font-medium text-slate-600 hover:bg-slate-200/60 hover:text-slate-900 transition-colors"
+                  aria-label="Volver a la lista de productos"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path fillRule="evenodd" d="M12.78 5.22a.75.75 0 0 1 0 1.06L9.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
+                  </svg>
+                  Volver a la lista
+                </button>
                 <div className="w-full h-44 rounded-xl bg-white border border-slate-200 flex items-center justify-center overflow-hidden">
                   {sel.imagen_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
