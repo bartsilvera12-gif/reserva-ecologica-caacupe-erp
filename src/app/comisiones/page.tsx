@@ -4,7 +4,7 @@ import { ChevronDown, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { ConfigMetricCard } from "@/components/config/global-config-primitives";
-import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
+import { fetchWithSupabaseSession, isAbortError } from "@/lib/api/fetch-with-supabase-session";
 
 const BASE_LABEL: Record<string, string> = {
   pago_registrado: "Cobros registrados",
@@ -576,13 +576,18 @@ export default function ComisionesPage() {
   const [data, setData] = useState<PreviewPayload | null>(null);
   const [sellerMonth, setSellerMonth] = useState("");
 
-  const load = useCallback(async (opts?: { mes?: string }) => {
+  const load = useCallback(async (opts?: { mes?: string; signal?: AbortSignal }) => {
     setLoading(true);
     setError(null);
     try {
       const qs = opts?.mes ? `?mes=${encodeURIComponent(opts.mes)}` : "";
-      const res = await fetchWithSupabaseSession(`/api/comisiones/preview${qs}`, { cache: "no-store" });
+      const res = await fetchWithSupabaseSession(`/api/comisiones/preview${qs}`, {
+        cache: "no-store",
+        signal: opts?.signal,
+      });
+      if (opts?.signal?.aborted) return;
       const json = (await res.json()) as { success?: boolean; data?: PreviewPayload; error?: string };
+      if (opts?.signal?.aborted) return;
       if (!res.ok || json.success !== true || !json.data) {
         throw new Error(json.error ?? `Error ${res.status}`);
       }
@@ -591,14 +596,17 @@ export default function ComisionesPage() {
         setSellerMonth(json.data.meta.periodo_mes ?? currentMonthInputValue());
       }
     } catch (e) {
+      if (isAbortError(e)) return;
       setError(e instanceof Error ? e.message : "Error");
     } finally {
-      setLoading(false);
+      if (!opts?.signal?.aborted) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void load();
+    const ctrl = new AbortController();
+    void load({ signal: ctrl.signal });
+    return () => ctrl.abort();
   }, [load]);
 
   if (loading) {

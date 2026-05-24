@@ -739,12 +739,18 @@ export function ConversacionesClient({
   }, [loadConversations, inboxFilterKey]);
 
   useEffect(() => {
+    // cancelled flag: si la pagina de conversaciones se desmonta (user navega a otro
+    // modulo) antes de que estos dos RPCs respondan, evitamos setState-after-unmount.
+    // No usamos AbortController porque los wrappers (listChatQueues, fetchSupervisorAgentLoads)
+    // no aceptan signal — son llamadas via cliente Supabase, no fetch directo.
+    let cancelled = false;
     listChatQueues()
-      .then(setOpsQueues)
-      .catch(() => setOpsQueues([]));
+      .then((v) => { if (!cancelled) setOpsQueues(v); })
+      .catch(() => { if (!cancelled) setOpsQueues([]); });
     fetchSupervisorAgentLoads()
-      .then(setOpsAgentLoads)
-      .catch(() => setOpsAgentLoads([]));
+      .then((v) => { if (!cancelled) setOpsAgentLoads(v); })
+      .catch(() => { if (!cancelled) setOpsAgentLoads([]); });
+    return () => { cancelled = true; };
   }, []);
 
   const patchInboxQuery = useCallback(
@@ -829,15 +835,20 @@ export function ConversacionesClient({
   }
 
   useEffect(() => {
+    // Mismo patron: cancelled flag para evitar setState tras unmount.
+    let cancelled = false;
     fetchChatChannels()
       .then((ch) => {
+        if (cancelled) return;
         setHasActiveChannel(ch.some((c) => c.activo));
         setInboxChannels(ch.filter((c) => c.activo));
       })
       .catch(() => {
+        if (cancelled) return;
         setHasActiveChannel(null);
         setInboxChannels([]);
       });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -845,10 +856,15 @@ export function ConversacionesClient({
       setBotFlowsChecked(true);
       return;
     }
+    // cancelled flag: si el modo cambia o el componente se desmonta antes
+    // de que termine el RPC, no actualizamos state obsoleto.
+    let cancelled = false;
     void hasEmpresaActiveChatFlows().then((v) => {
+      if (cancelled) return;
       setHasActiveBotFlows(v);
       setBotFlowsChecked(true);
     });
+    return () => { cancelled = true; };
   }, [mode]);
 
   useEffect(() => {

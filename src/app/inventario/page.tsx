@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getProductos } from "@/lib/inventario/storage";
 import type { Producto, MetodoValuacion } from "@/lib/inventario/types";
@@ -78,9 +78,17 @@ export default function InventarioPage() {
     return () => { cancelled = true; };
   }, [refreshKey]);
 
-  const ubicacionById = new Map(ubicaciones.map((u) => [u.id, u]));
+  // Map se reconstruia en cada render del componente (cualquier setState de
+  // filtro): O(N) basura por keystroke. useMemo lo cachea hasta que cambia ubicaciones.
+  const ubicacionById = useMemo(
+    () => new Map(ubicaciones.map((u) => [u.id, u])),
+    [ubicaciones],
+  );
 
-  const productos = todos.filter((p) => {
+  // Lista filtrada: el filter recorre `todos` en cada keystroke de los filtros.
+  // Con catalogos de 500-5000 productos esto era visible (lag al tipear).
+  // useMemo solo recalcula cuando cambian las dependencias relevantes.
+  const productos = useMemo(() => todos.filter((p) => {
     // Nombre — fold accents/diacritics ("atun" matchea "ATÚN")
     if (filtroPorNombre.trim() !== "" &&
         !foldText(p.nombre).includes(foldText(filtroPorNombre.trim())))
@@ -147,7 +155,18 @@ export default function InventarioPage() {
     }
 
     return true;
-  });
+  }), [
+    todos,
+    filtroPorNombre,
+    filtroPorSku,
+    filtroPorCosto,
+    filtroPorPrecio,
+    filtroValuacion,
+    filtroUbicacion,
+    soloStockBajo,
+    filtroTipo,
+    tab,
+  ]);
 
   const hayFiltrosActivos =
     filtroPorNombre || filtroPorSku || filtroPorCosto ||
