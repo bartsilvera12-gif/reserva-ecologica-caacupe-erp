@@ -13,6 +13,9 @@ import {
   TrendingUp,
   TrendingDown,
   ChevronRight,
+  Wallet,
+  Boxes,
+  Home as HomeIcon,
 } from "lucide-react";
 import {
   esFacturaAnulada,
@@ -146,6 +149,8 @@ type Props = {
   notasCredito: NotaCreditoDashRow[];
 };
 
+type Seccion = "inicio" | "financiero" | "inventario";
+
 export default function MobileDashboard({
   clientes,
   facturas,
@@ -156,6 +161,7 @@ export default function MobileDashboard({
   notasCredito,
 }: Props) {
   const [periodo, setPeriodo] = useState<Periodo>("hoy");
+  const [seccion, setSeccion] = useState<Seccion>("inicio");
   const { desde, hasta } = useMemo(() => getRangoFechas(periodo), [periodo]);
 
   // ── Cálculos memoizados ──────────────────────────────────────────────────
@@ -237,6 +243,102 @@ export default function MobileDashboard({
     return { stockCritico, vencidas };
   }, [productos, facturas]);
 
+  // ── Métricas FINANCIERO ────────────────────────────────────────────────
+  // Cohorte fiscal: facturas emitidas en período, no anuladas.
+  // facturado = obligación cobro al emitir; cartera = saldo vivo; recaudado = facturado - cartera.
+  const financieroMetrics = useMemo(() => {
+    const facturasPeriodo = facturas.filter(
+      (f) => !esFacturaAnulada(f.estado) && inRange(f.fecha, desde, hasta),
+    );
+    const facturadoCohort = facturasPeriodo.reduce(
+      (s, f) => s + (Number(f.monto) || 0),
+      0,
+    );
+    const carteraPendiente = facturasPeriodo.reduce((s, f) => {
+      const saldo = Number(f.saldo);
+      return s + (Number.isFinite(saldo) && saldo > 0 ? saldo : 0);
+    }, 0);
+    const recaudado = Math.max(0, facturadoCohort - carteraPendiente);
+    const pctCobranza = facturadoCohort > 0 ? (recaudado / facturadoCohort) * 100 : 0;
+
+    // Composición contado vs crédito (por tipo factura del período)
+    let contado = 0;
+    let credito = 0;
+    for (const f of facturasPeriodo) {
+      const monto = Number(f.monto) || 0;
+      const tipo = (f.tipo ?? "").trim().toLowerCase();
+      if (tipo === "contado") contado += monto;
+      else credito += monto;
+    }
+    const totalComp = contado + credito;
+    const pctContado = totalComp > 0 ? (contado / totalComp) * 100 : 0;
+
+    return {
+      facturadoCohort,
+      carteraPendiente,
+      recaudado,
+      pctCobranza,
+      contado,
+      credito,
+      pctContado,
+      pctCredito: 100 - pctContado,
+    };
+  }, [facturas, desde, hasta]);
+
+  // Top 5 deudores: clientes con mayor saldo pendiente (cartera total, no por período)
+  const topDeudores = useMemo(() => {
+    const saldoPorCliente = new Map<string, number>();
+    for (const f of facturas) {
+      if (esFacturaAnulada(f.estado) || esFacturaCorregidaNc(f.estado)) continue;
+      const saldo = Number(f.saldo);
+      if (!Number.isFinite(saldo) || saldo <= 0) continue;
+      const cid = String(f.cliente_id);
+      saldoPorCliente.set(cid, (saldoPorCliente.get(cid) ?? 0) + saldo);
+    }
+    const arr = Array.from(saldoPorCliente.entries()).map(([cid, saldo]) => {
+      const cliente = clientes.find((c) => String(c.id) === cid);
+      const nombre = cliente?.empresa?.trim() || cliente?.nombre_contacto?.trim() || `Cliente ${cid.slice(0, 8)}`;
+      return { id: cid, nombre, saldo };
+    });
+    arr.sort((a, b) => b.saldo - a.saldo);
+    return arr.slice(0, 5);
+  }, [facturas, clientes]);
+
+  // ── Métricas INVENTARIO ────────────────────────────────────────────────
+  const inventarioMetrics = useMemo(() => {
+    const totalProductos = productos.length;
+    const totalUnidades = productos.reduce((s, p) => s + Number(p.stock_actual ?? 0), 0);
+    const valorTotal = productos.reduce(
+      (s, p) => s + Number(p.stock_actual ?? 0) * Number(p.costo_promedio ?? 0),
+      0,
+    );
+
+    let saludable = 0;
+    let bajo = 0;
+    let critico = 0;
+    for (const p of productos) {
+      const actual = Number(p.stock_actual ?? 0);
+      const minimo = Number(p.stock_minimo ?? 0);
+      if (actual <= 0) critico++;
+      else if (actual <= minimo) bajo++;
+      else saludable++;
+    }
+
+    return { totalProductos, totalUnidades, valorTotal, saludable, bajo, critico };
+  }, [productos]);
+
+  // Top 5 productos críticos (más necesitados de reposición)
+  const productosCriticos = useMemo(() => {
+    return productos
+      .filter((p) => Number(p.stock_actual ?? 0) <= Number(p.stock_minimo ?? 0))
+      .map((p) => ({
+        ...p,
+        deficit: Math.max(0, Number(p.stock_minimo ?? 0) - Number(p.stock_actual ?? 0)),
+      }))
+      .sort((a, b) => b.deficit - a.deficit)
+      .slice(0, 5);
+  }, [productos]);
+
   // Últimas ventas (top 5 más recientes en el período)
   const ultimasVentas = useMemo(() => {
     return ventas
@@ -273,8 +375,17 @@ export default function MobileDashboard({
             </button>
           ))}
         </div>
+        {/* Selector de seccion: Inicio / Financiero / Inventario */}
+        <div className="mt-2 grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-xl">
+          <SectionTab active={seccion === "inicio"} onClick={() => setSeccion("inicio")} icon={HomeIcon} label="Inicio" />
+          <SectionTab active={seccion === "financiero"} onClick={() => setSeccion("financiero")} icon={Wallet} label="Financiero" />
+          <SectionTab active={seccion === "inventario"} onClick={() => setSeccion("inventario")} icon={Boxes} label="Inventario" />
+        </div>
       </div>
 
+      {/* ════════════════════════ INICIO ════════════════════════ */}
+      {seccion === "inicio" && (
+      <>
       {/* ── KPI principal: Facturado ── */}
       <div className="bg-gradient-to-br from-[#4FAEB2] to-[#3F8E91] rounded-2xl p-5 text-white shadow-md">
         <p className="text-[10px] font-bold uppercase tracking-widest opacity-90 mb-2">
@@ -457,6 +568,255 @@ export default function MobileDashboard({
           </Link>
         </div>
       )}
+      </>
+      )}
+
+      {/* ════════════════════════ FINANCIERO ════════════════════════ */}
+      {seccion === "financiero" && (
+      <>
+        {/* KPI principal: cartera pendiente del período */}
+        <div className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-2xl p-5 text-white shadow-md">
+          <p className="text-[10px] font-bold uppercase tracking-widest opacity-90 mb-2">
+            Cartera pendiente del período
+          </p>
+          <p className="text-3xl font-bold tabular-nums leading-tight">
+            {formatGsCompact(financieroMetrics.carteraPendiente)}
+          </p>
+          <p className="text-xs opacity-90 mt-1">
+            Saldo vivo de facturas emitidas {PERIODO_LABELS[periodo].toLowerCase()}
+          </p>
+        </div>
+
+        {/* Facturado + Recaudado */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Facturado</p>
+            <p className="text-lg font-bold text-slate-900 tabular-nums">
+              {formatGsCompact(financieroMetrics.facturadoCohort)}
+            </p>
+            <p className="text-[11px] text-slate-500 mt-0.5">cohorte fiscal</p>
+          </div>
+          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <TrendingUp className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Recaudado</p>
+            </div>
+            <p className="text-lg font-bold text-slate-900 tabular-nums">
+              {formatGsCompact(financieroMetrics.recaudado)}
+            </p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              {financieroMetrics.pctCobranza.toFixed(1)}% del cohorte
+            </p>
+          </div>
+        </div>
+
+        {/* Barra progreso cobranza */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-slate-700">Cobranza del cohorte</p>
+            <p className="text-xs font-bold tabular-nums text-emerald-700">
+              {financieroMetrics.pctCobranza.toFixed(1)}%
+            </p>
+          </div>
+          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-full transition-all"
+              style={{ width: `${Math.min(100, financieroMetrics.pctCobranza)}%` }}
+            />
+          </div>
+          <p className="text-[11px] text-slate-500 mt-2">
+            Recaudado {formatGs(financieroMetrics.recaudado)} de{" "}
+            {formatGs(financieroMetrics.facturadoCohort)} facturado.
+          </p>
+        </div>
+
+        {/* Composición Contado vs Crédito */}
+        {financieroMetrics.facturadoCohort > 0 && (
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2 px-1">
+              Composición {PERIODO_LABELS[periodo].toLowerCase()}
+            </p>
+            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-3">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-slate-700">Contado</span>
+                  <span className="text-xs tabular-nums font-bold text-emerald-700">
+                    {formatGs(financieroMetrics.contado)} · {financieroMetrics.pctContado.toFixed(0)}%
+                  </span>
+                </div>
+                <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-500 rounded-full"
+                    style={{ width: `${financieroMetrics.pctContado}%` }}
+                  />
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-slate-700">Crédito / mensual</span>
+                  <span className="text-xs tabular-nums font-bold text-sky-700">
+                    {formatGs(financieroMetrics.credito)} · {financieroMetrics.pctCredito.toFixed(0)}%
+                  </span>
+                </div>
+                <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-sky-500 rounded-full"
+                    style={{ width: `${financieroMetrics.pctCredito}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Top deudores */}
+        {topDeudores.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-2 px-1">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                Top deudores (cartera total)
+              </p>
+              <Link href="/clientes" className="text-[11px] font-medium text-[#4FAEB2] active:underline">
+                Ver todos →
+              </Link>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 shadow-sm">
+              {topDeudores.map((d, idx) => (
+                <Link
+                  key={d.id}
+                  href={`/clientes/${d.id}`}
+                  className="flex items-center justify-between gap-3 px-4 py-3 active:bg-slate-50 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <span className="shrink-0 w-7 h-7 rounded-full bg-amber-100 text-amber-800 text-xs font-bold flex items-center justify-center">
+                      {idx + 1}
+                    </span>
+                    <p className="text-sm font-medium text-slate-900 truncate">{d.nombre}</p>
+                  </div>
+                  <p className="text-sm font-bold text-amber-700 tabular-nums shrink-0">
+                    {formatGsCompact(d.saldo)}
+                  </p>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+      </>
+      )}
+
+      {/* ════════════════════════ INVENTARIO ════════════════════════ */}
+      {seccion === "inventario" && (
+      <>
+        {/* KPI principal: valor total inventario */}
+        <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-2xl p-5 text-white shadow-md">
+          <p className="text-[10px] font-bold uppercase tracking-widest opacity-90 mb-2">
+            Valor total del inventario
+          </p>
+          <p className="text-3xl font-bold tabular-nums leading-tight">
+            {formatGsCompact(inventarioMetrics.valorTotal)}
+          </p>
+          <p className="text-xs opacity-90 mt-1">
+            {inventarioMetrics.totalProductos} productos ·{" "}
+            {inventarioMetrics.totalUnidades.toLocaleString("es-PY")} unidades
+          </p>
+        </div>
+
+        {/* Stock críticos arriba si los hay */}
+        {inventarioMetrics.critico > 0 && (
+          <Link
+            href="/inventario"
+            className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl p-3 active:bg-red-100 transition-colors"
+          >
+            <div className="shrink-0 w-9 h-9 rounded-full bg-red-100 flex items-center justify-center">
+              <AlertTriangle className="h-5 w-5 text-red-700" aria-hidden />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-red-900">
+                {inventarioMetrics.critico} producto{inventarioMetrics.critico === 1 ? "" : "s"} sin stock
+              </p>
+              <p className="text-[11px] text-red-700 mt-0.5">Tocá para reponer</p>
+            </div>
+            <ChevronRight className="h-5 w-5 text-red-600 shrink-0" aria-hidden />
+          </Link>
+        )}
+
+        {/* Estado del stock: 3 KPIs */}
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2 px-1">
+            Estado del stock
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-white rounded-xl border border-emerald-200 p-3 shadow-sm">
+              <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-700">Saludable</p>
+              <p className="text-xl font-bold text-emerald-700 tabular-nums mt-1">{inventarioMetrics.saludable}</p>
+            </div>
+            <div className="bg-white rounded-xl border border-amber-200 p-3 shadow-sm">
+              <p className="text-[9px] font-bold uppercase tracking-wider text-amber-700">Bajo</p>
+              <p className="text-xl font-bold text-amber-700 tabular-nums mt-1">{inventarioMetrics.bajo}</p>
+            </div>
+            <div className="bg-white rounded-xl border border-red-200 p-3 shadow-sm">
+              <p className="text-[9px] font-bold uppercase tracking-wider text-red-700">Sin stock</p>
+              <p className="text-xl font-bold text-red-700 tabular-nums mt-1">{inventarioMetrics.critico}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Acciones rápidas inventario */}
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2 px-1">
+            Acciones
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <QuickAction href="/inventario/nuevo" icon={Plus} label="Nuevo producto" color="emerald" />
+            <QuickAction href="/inventario/movimientos/nuevo" icon={Package} label="Movimiento" color="sky" />
+          </div>
+        </div>
+
+        {/* Productos críticos (top 5 que más necesitan reposición) */}
+        {productosCriticos.length > 0 ? (
+          <div>
+            <div className="flex items-center justify-between mb-2 px-1">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                Necesitan reposición
+              </p>
+              <Link href="/inventario" className="text-[11px] font-medium text-[#4FAEB2] active:underline">
+                Ver todos →
+              </Link>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 shadow-sm">
+              {productosCriticos.map((p) => {
+                const actual = Number(p.stock_actual ?? 0);
+                const minimo = Number(p.stock_minimo ?? 0);
+                const sinStock = actual <= 0;
+                return (
+                  <Link
+                    key={String(p.id)}
+                    href={`/inventario/${p.id}/editar`}
+                    className="flex items-center justify-between gap-3 px-4 py-3 active:bg-slate-50 transition-colors"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-900 truncate">{p.nombre}</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5 font-mono">{p.sku}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className={`text-sm font-bold tabular-nums ${sinStock ? "text-red-700" : "text-amber-700"}`}>
+                        {actual} / {minimo}
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">actual / mín</p>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-6 px-4 bg-emerald-50 rounded-xl border border-dashed border-emerald-300">
+            <p className="text-sm font-medium text-emerald-800">✓ Todo el stock está saludable</p>
+            <p className="text-[11px] text-emerald-700 mt-1">No hay productos por reponer</p>
+          </div>
+        )}
+      </>
+      )}
     </div>
   );
 }
@@ -524,5 +884,37 @@ function SummaryRow({
       </div>
       <p className={`text-sm font-bold tabular-nums shrink-0 ${valueColor}`}>{value}</p>
     </div>
+  );
+}
+
+/**
+ * Tab del selector de sección (Inicio / Financiero / Inventario).
+ * Estilo segmented control: el activo tiene fondo blanco con shadow.
+ */
+function SectionTab({
+  active,
+  onClick,
+  icon: Icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: typeof HomeIcon;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex flex-col items-center justify-center gap-0.5 py-2 rounded-lg text-[11px] font-semibold transition-all min-h-[44px] ${
+        active
+          ? "bg-white text-[#4FAEB2] shadow-sm"
+          : "text-slate-600 active:bg-slate-200/60"
+      }`}
+      aria-pressed={active}
+    >
+      <Icon className="h-4 w-4" aria-hidden />
+      <span>{label}</span>
+    </button>
   );
 }
