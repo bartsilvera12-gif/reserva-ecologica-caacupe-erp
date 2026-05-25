@@ -44,7 +44,7 @@ import type { ModuloEmpresa } from "@/lib/empresas/actions";
 import { getFavoritos, toggleFavorito } from "@/lib/favorites";
 import { canAccessSidebarSlug } from "@/lib/modulos/route-slug-map";
 import { useBoot } from "@/components/BootContext";
-import { getModuleAccessCached } from "@/lib/modulos/module-access-cache";
+import { getModuleAccessCached, peekModuleAccessCache } from "@/lib/modulos/module-access-cache";
 
 type MenuItem = {
   key: string;
@@ -325,9 +325,22 @@ function NavItem({
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const [modulos, setModulos] = useState<ModuloEmpresa[]>([]);
-  const [inactiveSlugsList, setInactiveSlugsList] = useState<string[]>([]);
-  const [strictAllowlist, setStrictAllowlist] = useState(false);
+  // ── Hidratación SÍNCRONA desde cache (localStorage) ───────────────────────
+  // Si hay cache válido del último login, arrancamos con módulos + cargando=false.
+  // Esto elimina el flash "Cargando…" cuando Chrome descarta la pestaña en
+  // background y la remonta al volver (tab discarding).
+  // El refetch en el useEffect de abajo sigue ocurriendo en background como
+  // stale-while-revalidate, pero sin ocultar el menú.
+  const cachedAccess = peekModuleAccessCache();
+  const [modulos, setModulos] = useState<ModuloEmpresa[]>(() =>
+    Array.isArray(cachedAccess?.modulos) ? cachedAccess!.modulos! : [],
+  );
+  const [inactiveSlugsList, setInactiveSlugsList] = useState<string[]>(() =>
+    Array.isArray(cachedAccess?.inactiveSlugs) ? cachedAccess!.inactiveSlugs! : [],
+  );
+  const [strictAllowlist, setStrictAllowlist] = useState<boolean>(
+    !!cachedAccess?.strictAllowlist,
+  );
   const [favoritos, setFavoritos] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
@@ -335,8 +348,12 @@ export default function Sidebar() {
     sorteos: true,
     compras: true,
   });
-  const [cargando, setCargando] = useState(true);
-  const [esSuperAdmin, setEsSuperAdmin] = useState(false);
+  // cargando arranca en false si ya hidratamos desde cache; el spinner solo
+  // aparece en el primer login real, no al volver a la pestaña.
+  const [cargando, setCargando] = useState<boolean>(
+    !(cachedAccess && (cachedAccess.modulos?.length || cachedAccess.slugs?.length)),
+  );
+  const [esSuperAdmin, setEsSuperAdmin] = useState<boolean>(!!cachedAccess?.superAdmin);
   /** Filtro visual del menú (no altera permisos ni rutas). */
   const [menuSearchQuery, setMenuSearchQuery] = useState("");
   const { setSidebarReady, mobileSidebarOpen, setMobileSidebarOpen } = useBoot();
@@ -364,9 +381,17 @@ export default function Sidebar() {
   useEffect(() => {
     let cancelled = false;
 
-    async function cargarMenuDesdeSesion(session: Session | null) {
+    async function cargarMenuDesdeSesion(
+      session: Session | null,
+      opts?: { forceRefresh?: boolean },
+    ) {
       try {
-        setCargando(true);
+        // Stale-while-revalidate: solo mostramos "Cargando…" si NO tenemos
+        // módulos en estado. Si ya hay módulos (hidratados del cache o de un
+        // fetch previo), refrescamos en background sin ocultar el menú.
+        // Esto evita el flash de loader al volver a la pestaña o ante eventos
+        // SIGNED_IN/USER_UPDATED de Supabase que en realidad no cambian nada.
+        setCargando((prev) => (modulos.length === 0 ? true : prev));
         if (cancelled) return;
         if (!session?.user) {
           setModulos([]);
@@ -374,7 +399,9 @@ export default function Sidebar() {
           return;
         }
 
-        const { ok, data: body } = await getModuleAccessCached();
+        const { ok, data: body } = await getModuleAccessCached({
+          forceRefresh: opts?.forceRefresh,
+        });
         if (cancelled) return;
 
         let superA = false;
@@ -449,7 +476,11 @@ export default function Sidebar() {
       //    cada vez que el usuario vuelve a la tab del ERP.
       // Eventos que SI re-cargan: SIGNED_IN, SIGNED_OUT, USER_UPDATED.
       if (event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED") return;
-      void cargarMenuDesdeSesion(session);
+      // SIGNED_IN puede significar usuario nuevo (sesión cambió) — forzamos
+      // refresh del cache para no servir módulos del usuario anterior.
+      // USER_UPDATED: cambió el JWT del mismo user (raro), también refrescamos.
+      const forceRefresh = event === "SIGNED_IN" || event === "USER_UPDATED";
+      void cargarMenuDesdeSesion(session, { forceRefresh });
     });
 
     return () => {
