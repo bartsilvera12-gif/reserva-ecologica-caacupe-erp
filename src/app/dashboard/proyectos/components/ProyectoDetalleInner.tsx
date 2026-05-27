@@ -412,7 +412,7 @@ export default function ProyectoDetalleInner({
 
       <div className={variant === "modal" ? "min-h-0 flex-1 overflow-y-auto pr-1" : ""}>
         {tab === "resumen" ? (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 lg:grid-cols-2">
             <div className={panelCls}>
               <h2 className="text-sm font-semibold text-slate-200">Resumen del proyecto</h2>
               <dl className="mt-4 space-y-3 text-sm">

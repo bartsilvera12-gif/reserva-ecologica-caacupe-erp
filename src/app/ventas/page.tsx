@@ -247,9 +247,9 @@ export default function VentasPage() {
       </div>
 
       {/* ── Tabla de ventas ───────────────────────────────────────────────────── */}
-      <div className="bg-white border border-slate-200 rounded-xl shadow-sm ring-1 ring-[#4FAEB2]/15 p-6">
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-[#4FAEB2]/15 sm:p-5 lg:p-6">
 
-        <div className="flex justify-between items-center mb-5">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-xl font-semibold">Órdenes de venta</h2>
           <Link
             href="/ventas/nueva"
@@ -266,7 +266,7 @@ export default function VentasPage() {
             placeholder="Buscar por número, producto o SKU..."
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
-            className={`${inputFilterClass} min-w-64`}
+            className={`${inputFilterClass} min-w-0 flex-1 sm:min-w-64`}
           />
           <FancySelect
             value={filtroTipo}
@@ -309,17 +309,17 @@ export default function VentasPage() {
         {/* Tabla — min-w fuerza scroll horizontal en mobile; columnas secundarias
             (Items, Cant total, IVA, Pago) se ocultan progresivamente. */}
         <EdgeScrollArea>
-          <table className="w-full min-w-[1000px] lg:min-w-0 text-left text-sm">
+          <table className="w-full min-w-[760px] lg:min-w-0 text-left text-sm">
             <thead>
               <tr className="bg-slate-50 text-slate-600 text-sm font-semibold">
                 <th className="py-3 pr-4 font-medium">Número</th>
                 <th className="py-3 pr-4 font-medium">Productos</th>
-                <th className="py-3 pr-4 font-medium text-center hidden md:table-cell">Ítems</th>
+                <th className="hidden py-3 pr-4 text-center font-medium lg:table-cell">Ítems</th>
                 <th className="py-3 pr-4 font-medium text-right hidden lg:table-cell">Cant. total</th>
                 <th className="py-3 pr-4 font-medium hidden lg:table-cell">IVA</th>
                 <th className="py-3 pr-4 font-medium text-right">Total</th>
-                <th className="py-3 pr-4 font-medium hidden md:table-cell">Tipo</th>
-                <th className="py-3 pr-4 font-medium hidden md:table-cell">Pago</th>
+                <th className="hidden py-3 pr-4 font-medium lg:table-cell">Tipo</th>
+                <th className="hidden py-3 pr-4 font-medium lg:table-cell">Pago</th>
                 <th className="py-3 pr-4 font-medium">Fecha</th>
                 <th className="py-3 font-medium text-center">Ticket</th>
               </tr>
@@ -344,7 +344,7 @@ export default function VentasPage() {
                       <td className="py-4 pr-4 align-middle">
                         <ResumenProductos v={v} />
                       </td>
-                      <td className="py-4 pr-4 text-center align-middle hidden md:table-cell">
+                      <td className="hidden py-4 pr-4 text-center align-middle lg:table-cell">
                         <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-semibold text-gray-600">
                           {v.items.length}
                         </span>
@@ -360,14 +360,14 @@ export default function VentasPage() {
                       <td className="py-4 pr-4 text-right tabular-nums font-semibold text-gray-800 align-middle">
                         {formatGs(v.total)}
                       </td>
-                      <td className="py-4 pr-4 align-middle hidden md:table-cell">
+                      <td className="hidden py-4 pr-4 align-middle lg:table-cell">
                         <span className={`px-2 py-1 rounded-full text-xs font-semibold ${tipoVentaBadge[v.tipo_venta]}`}>
                           {v.tipo_venta === "CONTADO"
                             ? "Contado"
                             : `Crédito ${v.plazo_dias ?? ""}d`}
                         </span>
                       </td>
-                      <td className="py-4 pr-4 align-middle text-xs text-gray-600 hidden md:table-cell">
+                      <td className="hidden py-4 pr-4 align-middle text-xs text-gray-600 lg:table-cell">
                         {v.metodo_pago === "tarjeta" ? "Tarjeta"
                           : v.metodo_pago === "transferencia" ? "Transfer."
                           : v.metodo_pago === "efectivo" ? "Efectivo"

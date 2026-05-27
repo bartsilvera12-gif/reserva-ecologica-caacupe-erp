@@ -462,7 +462,7 @@ export default function ProyectosKanbanClient() {
   }
 
   return (
-    <div className="mx-auto max-w-[1800px] space-y-4 p-4 md:p-6">
+    <div className="mx-auto max-w-[1800px] space-y-4 p-0 lg:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -478,9 +478,9 @@ export default function ProyectosKanbanClient() {
           <h1 className="mt-1 text-lg font-semibold tracking-tight text-slate-900">Pedidos</h1>
           <p className="mt-0.5 text-xs text-slate-500">Tablero de cocina — pedidos por modalidad y estado.</p>
         </div>
-        <div className="flex items-center">
+        <div className="flex w-full items-center sm:w-auto">
           <input
-            className="w-72 rounded-md border border-slate-200 px-3 py-1.5 text-sm"
+            className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm sm:w-72"
             placeholder="Buscar título o cliente…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -511,7 +511,7 @@ export default function ProyectosKanbanClient() {
             Ahora: "overflow-auto" cubre X+Y, cada KanbanColumnView tiene
             min-w-[260px] fijo (no flex-1), el contenedor crece con el contenido
             y el usuario puede deslizar de izquierda a derecha. */}
-        <div className="max-h-[calc(100vh-260px)] min-h-[520px] overflow-auto rounded-xl pb-4 overscroll-x-contain">
+        <div className="max-h-[calc(100svh-300px)] min-h-[420px] overflow-auto rounded-xl pb-4 overscroll-x-contain sm:min-h-[520px] lg:max-h-[calc(100vh-260px)]">
           <div className="flex min-h-full gap-2">
             {kanbanColumns.map((col) => {
               const items = byColumn.get(col.id) ?? [];
@@ -594,7 +594,7 @@ function KanbanColumnView({ col, children }: KanbanColumnViewProps) {
       // imposibles de leer en mobile. Ahora: ancho fijo de 260px (sin flex-1)
       // para que el contenedor scrollee horizontalmente con todas las columnas
       // legibles. shrink-0 evita que se compriman.
-      className={`flex w-[260px] shrink-0 flex-col rounded-lg border bg-slate-50/80 transition-colors ${
+      className={`flex w-[82vw] max-w-[320px] shrink-0 flex-col rounded-lg border bg-slate-50/80 transition-colors sm:w-[300px] lg:w-[260px] ${
         isOver && !col.inactiveFallback
           ? "border-indigo-300 bg-indigo-50/70 ring-2 ring-indigo-100"
           : "border-slate-200"

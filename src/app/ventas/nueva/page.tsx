@@ -412,10 +412,10 @@ export default function NuevaVentaPage() {
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 sm:p-6">
           <SectionTitle>Agregar producto</SectionTitle>
 
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-end">
 
             {/* ── Combobox con búsqueda — 4 cols ────────────────────────────── */}
-            <div className="md:col-span-4" ref={comboContainerRef}>
+            <div className="lg:col-span-4" ref={comboContainerRef}>
               <label className={labelClass}>
                 Producto
                 <span className="ml-1 text-gray-400 font-normal normal-case tracking-normal text-xs">
@@ -518,7 +518,7 @@ export default function NuevaVentaPage() {
             </div>
 
             {/* Cantidad — 2 cols */}
-            <div className="md:col-span-2">
+            <div className="lg:col-span-2">
               <label className={labelClass}>Cantidad</label>
               <input
                 type="number"
@@ -532,7 +532,7 @@ export default function NuevaVentaPage() {
             </div>
 
             {/* Precio — 2 cols */}
-            <div className="md:col-span-2">
+            <div className="lg:col-span-2">
               <label className={labelClass}>Precio (Gs.)</label>
               <MontoInput
                 value={lineaPrecio}
@@ -545,7 +545,7 @@ export default function NuevaVentaPage() {
             </div>
 
             {/* IVA — 2 cols */}
-            <div className="md:col-span-2">
+            <div className="lg:col-span-2">
               <label className={labelClass}>IVA</label>
               <SegmentedControl<TipoIvaVenta>
                 value={lineaIva}
@@ -559,7 +559,7 @@ export default function NuevaVentaPage() {
             </div>
 
             {/* Botón — 2 cols */}
-            <div className="md:col-span-2 flex flex-col">
+            <div className="flex flex-col lg:col-span-2">
               <label className="invisible text-xs mb-1.5">.</label>
               <button
                 type="button"
@@ -613,10 +613,10 @@ export default function NuevaVentaPage() {
                   <thead>
                     <tr className="bg-slate-50 text-slate-600 text-sm font-semibold">
                       <th className="py-2.5 pr-3 font-medium">Producto</th>
-                      <th className="py-2.5 pr-3 font-medium hidden md:table-cell">SKU</th>
+                      <th className="hidden py-2.5 pr-3 font-medium lg:table-cell">SKU</th>
                       <th className="py-2.5 pr-3 font-medium text-right">Cant.</th>
                       <th className="py-2.5 pr-3 font-medium text-right">Precio unit.</th>
-                      <th className="py-2.5 pr-3 font-medium text-center hidden md:table-cell">IVA</th>
+                      <th className="hidden py-2.5 pr-3 text-center font-medium lg:table-cell">IVA</th>
                       <th className="py-2.5 pr-3 font-medium text-right hidden lg:table-cell">Subtotal</th>
                       <th className="py-2.5 pr-3 font-medium text-right hidden lg:table-cell">IVA Gs.</th>
                       <th className="py-2.5 pr-3 font-medium text-right">Total</th>
@@ -629,7 +629,7 @@ export default function NuevaVentaPage() {
                         <td className="py-3 pr-3 font-medium text-gray-800">
                           {item.producto_nombre}
                         </td>
-                        <td className="py-3 pr-3 font-mono text-xs text-gray-500 hidden md:table-cell">
+                        <td className="hidden py-3 pr-3 font-mono text-xs text-gray-500 lg:table-cell">
                           {item.sku}
                         </td>
                         <td className="py-3 pr-3 text-right tabular-nums">
@@ -638,7 +638,7 @@ export default function NuevaVentaPage() {
                         <td className="py-3 pr-3 text-right tabular-nums text-gray-600 text-xs">
                           {formatGs(item.precio_venta)}
                         </td>
-                        <td className="py-3 pr-3 text-center hidden md:table-cell">
+                        <td className="hidden py-3 pr-3 text-center lg:table-cell">
                           <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600">
                             {ivaLabel[item.tipo_iva]}
                           </span>
@@ -672,7 +672,7 @@ export default function NuevaVentaPage() {
 
               {/* Totales + Cobro (vuelto) */}
               <div className="mt-5 flex justify-end">
-                <div className="w-full md:w-80 space-y-3">
+                <div className="w-full space-y-3 lg:w-80">
                   <div className="space-y-1.5">
                     <div className="flex justify-between text-sm text-gray-600">
                       <span>Subtotal</span>
@@ -788,7 +788,7 @@ export default function NuevaVentaPage() {
             </div>
 
             {modalidad === "local" && (
-              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Número de mesa</label>
                   <input
@@ -813,7 +813,7 @@ export default function NuevaVentaPage() {
             )}
 
             {modalidad === "delivery" && (
-              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Nombre cliente</label>
                   <input
@@ -836,7 +836,7 @@ export default function NuevaVentaPage() {
                     className={inputClass}
                   />
                 </div>
-                <div className="md:col-span-2">
+                <div className="lg:col-span-2">
                   <label className="block text-xs font-medium text-slate-600 mb-1">
                     Dirección de entrega <span className="text-red-500">*</span>
                   </label>
@@ -848,7 +848,7 @@ export default function NuevaVentaPage() {
                     className={inputClass}
                   />
                 </div>
-                <div className="md:col-span-2">
+                <div className="lg:col-span-2">
                   <label className="block text-xs font-medium text-slate-600 mb-1">Observación</label>
                   <input
                     type="text"
@@ -862,7 +862,7 @@ export default function NuevaVentaPage() {
             )}
 
             {modalidad === "carry_out" && (
-              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Nombre cliente</label>
                   <input
@@ -883,7 +883,7 @@ export default function NuevaVentaPage() {
                     className={inputClass}
                   />
                 </div>
-                <div className="md:col-span-2">
+                <div className="lg:col-span-2">
                   <label className="block text-xs font-medium text-slate-600 mb-1">Observación</label>
                   <input
                     type="text"

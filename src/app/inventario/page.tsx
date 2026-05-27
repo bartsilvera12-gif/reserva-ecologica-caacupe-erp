@@ -218,7 +218,7 @@ export default function InventarioPage() {
 
       {/* Tabs gastronómicos (filtran por tipo de producto) */}
       <div className="border-b border-gray-200">
-        <nav className="-mb-px flex gap-6" aria-label="Tabs">
+        <nav className="-mb-px flex gap-6 overflow-x-auto" aria-label="Tabs">
           {([
             { id: "reventa", label: "Reventa", subtitle: "Productos comprados y revendidos" },
             { id: "menu",    label: "Menú",    subtitle: "Productos preparados por el local" },
@@ -241,7 +241,7 @@ export default function InventarioPage() {
         </nav>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl shadow-sm ring-1 ring-[#4FAEB2]/15 p-6">
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-[#4FAEB2]/15 sm:p-5 lg:p-6">
 
         <div className="flex flex-wrap justify-between items-center gap-3 mb-5">
           <div className="flex items-center gap-3 flex-wrap">
@@ -257,7 +257,7 @@ export default function InventarioPage() {
               placeholder="Buscar por nombre..."
               value={filtroPorNombre}
               onChange={(e) => setFiltroPorNombre(e.target.value)}
-              className="w-64 border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#0EA5E9] focus:outline-none bg-white"
+              className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#0EA5E9] focus:outline-none sm:w-64 sm:flex-none"
             />
           </div>
         </div>
@@ -385,20 +385,20 @@ export default function InventarioPage() {
           {/* min-w-[1100px] fuerza scroll horizontal real en mobile; en >=lg
               vuelve a comportarse natural. Columnas no críticas (SKU, Unidad,
               Ubicacion, Valuacion, Margen) se ocultan progresivamente. */}
-          <table className="w-full min-w-[1100px] lg:min-w-0 text-left text-sm">
+          <table className="w-full min-w-[780px] lg:min-w-0 text-left text-sm">
 
             <thead>
               <tr className="bg-slate-50 text-slate-600 text-sm font-semibold">
                 <th className="py-3 pr-4 font-medium">Nombre</th>
-                <th className="py-3 pr-4 font-medium hidden md:table-cell">SKU</th>
+                <th className="hidden py-3 pr-4 font-medium lg:table-cell">SKU</th>
                 <th className="py-3 pr-4 font-medium">Costo Prom.</th>
                 <th className="py-3 pr-4 font-medium">Precio Venta</th>
                 <th className={`py-3 pr-4 font-medium text-center ${tab === "reventa" ? "" : "hidden"}`}>Stock</th>
-                <th className={`py-3 pr-4 font-medium text-center ${tab === "reventa" ? "hidden md:table-cell" : "hidden"}`}>Stock Mín.</th>
+                <th className={`py-3 pr-4 text-center font-medium ${tab === "reventa" ? "hidden lg:table-cell" : "hidden"}`}>Stock Mín.</th>
                 <th className="py-3 pr-4 font-medium hidden lg:table-cell">Unidad</th>
                 <th className="py-3 pr-4 font-medium hidden lg:table-cell">Ubicación</th>
                 <th className="py-3 pr-4 font-medium hidden lg:table-cell">Valuación</th>
-                <th className="py-3 pr-6 font-medium text-right hidden md:table-cell">
+                <th className="hidden py-3 pr-6 text-right font-medium lg:table-cell">
                   <span title="(precio - costo) / precio × 100">Margen s/venta</span>
                 </th>
                 <th className="py-3 pl-4 font-medium text-center w-28">Acción</th>
@@ -424,7 +424,7 @@ export default function InventarioPage() {
                         })()}
                       </div>
                     </td>
-                    <td className="py-4 pr-4 text-gray-500 font-mono hidden md:table-cell">{p.sku}</td>
+                    <td className="hidden py-4 pr-4 font-mono text-gray-500 lg:table-cell">{p.sku}</td>
                     <td className="py-4 pr-4 text-gray-700">{formatGs(p.costo_promedio)}</td>
                     <td className="py-4 pr-4 text-gray-700">{formatGs(p.precio_venta)}</td>
                     <td className={`py-4 pr-4 text-center ${tab === "reventa" ? "" : "hidden"}`}>
@@ -432,7 +432,7 @@ export default function InventarioPage() {
                         {p.stock_actual}
                       </span>
                     </td>
-                    <td className={`py-4 pr-4 text-center text-gray-500 ${tab === "reventa" ? "hidden md:table-cell" : "hidden"}`}>{p.stock_minimo}</td>
+                    <td className={`py-4 pr-4 text-center text-gray-500 ${tab === "reventa" ? "hidden lg:table-cell" : "hidden"}`}>{p.stock_minimo}</td>
                     <td className="py-4 pr-4 text-gray-600 hidden lg:table-cell">{p.unidad_medida}</td>
                     <td className="py-4 pr-4 text-gray-600 text-xs hidden lg:table-cell">
                       {p.ubicacion_principal_id
@@ -454,7 +454,7 @@ export default function InventarioPage() {
                         {p.metodo_valuacion}
                       </span>
                     </td>
-                    <td className={`py-4 pr-6 text-right tabular-nums font-semibold hidden md:table-cell ${margenColor(margen)}`}>
+                    <td className={`hidden py-4 pr-6 text-right font-semibold tabular-nums lg:table-cell ${margenColor(margen)}`}>
                       {margen.toFixed(2)}%
                     </td>
                     <td className="py-4 pl-4 text-center">

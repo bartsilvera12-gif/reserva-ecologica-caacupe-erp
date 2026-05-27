@@ -569,7 +569,7 @@ export default function Sidebar() {
           type="button"
           aria-label="Cerrar menú"
           onClick={() => setMobileSidebarOpen(false)}
-          className="fixed inset-0 z-40 bg-slate-900/55 backdrop-blur-sm md:hidden"
+          className="fixed inset-0 z-40 bg-slate-900/55 backdrop-blur-sm lg:hidden"
         />
       ) : null}
 
@@ -578,10 +578,10 @@ export default function Sidebar() {
         initial={false}
         animate={{ width: collapsed ? 80 : 260 }}
         transition={{ duration: 0.2 }}
-        className={`zentra-sidebar-bg flex h-svh min-h-0 shrink-0 flex-col border-r border-[color:var(--zentra-sidebar-border)] md:relative md:translate-x-0 ${
+        className={`zentra-sidebar-bg flex h-svh min-h-0 shrink-0 flex-col border-r border-[color:var(--zentra-sidebar-border)] lg:relative lg:z-auto lg:translate-x-0 lg:shadow-none ${
           mobileSidebarOpen
             ? "fixed inset-y-0 left-0 z-50 translate-x-0 shadow-2xl transition-transform duration-200"
-            : "fixed inset-y-0 left-0 z-50 -translate-x-full md:translate-x-0 transition-transform duration-200"
+            : "fixed inset-y-0 left-0 z-50 -translate-x-full lg:translate-x-0 transition-transform duration-200"
         }`}
       >
       {/* Logo oficial ZENTRA (blanco sobre azul marca) */}

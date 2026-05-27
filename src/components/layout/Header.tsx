@@ -90,14 +90,14 @@ export default function Header() {
       <button
         type="button"
         onClick={() => setMobileSidebarOpen(!mobileSidebarOpen)}
-        className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-slate-100 hover:text-[#3F8E91] md:hidden"
+        className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-slate-100 hover:text-[#3F8E91] lg:hidden"
         aria-label="Abrir menú"
       >
         <Menu className="h-5 w-5" />
       </button>
 
       {/* Spacer en desktop para empujar el resto a la derecha */}
-      <div className="hidden md:block md:flex-1" />
+      <div className="hidden lg:block lg:flex-1" />
 
       <div className="flex items-center gap-2">
         {/* Notificaciones */}

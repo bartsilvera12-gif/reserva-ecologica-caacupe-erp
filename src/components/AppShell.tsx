@@ -25,7 +25,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             en desktop donde no hay barra inferior. */}
         <main
           id="neura-main-content"
-          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain p-4 pb-20 sm:p-6 md:pb-6"
+          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain p-4 pb-20 sm:p-6 sm:pb-24 lg:pb-6"
         >
           {children}
         </main>

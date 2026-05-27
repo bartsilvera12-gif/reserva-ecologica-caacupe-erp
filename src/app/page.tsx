@@ -2170,7 +2170,7 @@ export default function DashboardPage() {
       {/* MOBILE (< md=768px): dashboard rediseñado especialmente para mobile.
           Touch-first, KPIs apilados, acciones rápidas grandes, alertas, cards
           en vez de tablas. Layout COMPLETAMENTE distinto al desktop. */}
-      <div className="md:hidden">
+      <div className="lg:hidden">
         <MobileDashboard
           clientes={clientes}
           facturas={facturas}
@@ -2185,7 +2185,7 @@ export default function DashboardPage() {
       {/* DESKTOP (>= md=768px): dashboard original con todos los sub-tabs,
           gráficos, tablas. Intacto, cero cambios. */}
       <div
-      className="hidden md:block zentra-dashboard-shell space-y-8 rounded-2xl border border-slate-200 px-4 py-8 sm:px-6 md:px-8"
+      className="hidden lg:block zentra-dashboard-shell space-y-8 rounded-2xl border border-slate-200 px-4 py-8 sm:px-6 md:px-8"
       style={{ color: Z.muted }}
     >
       <header className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">

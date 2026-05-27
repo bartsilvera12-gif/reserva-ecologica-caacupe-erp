@@ -50,10 +50,10 @@ export default function MobileBottomNav() {
     <nav
       // Fijo en la parte inferior, full-width, solo mobile.
       // z-40 para quedar arriba del contenido pero por debajo de modales (z-100+).
-      className="md:hidden fixed bottom-0 inset-x-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur-sm shadow-[0_-2px_8px_rgba(0,0,0,0.04)] pb-[env(safe-area-inset-bottom)]"
+      className="fixed bottom-0 inset-x-0 z-40 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_8px_rgba(0,0,0,0.04)] backdrop-blur-sm lg:hidden"
       aria-label="Navegación principal mobile"
     >
-      <div className="grid grid-cols-5">
+      <div className="mx-auto grid max-w-3xl grid-cols-5">
         {ITEMS.map((item) => {
           const Icon = item.icon;
           const active = isActive(pathname, item);
@@ -61,7 +61,7 @@ export default function MobileBottomNav() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-[10px] font-medium transition-colors active:bg-slate-100 ${
+              className={`flex min-h-[56px] flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors active:bg-slate-100 sm:min-h-[64px] sm:text-[11px] ${
                 active ? "text-[#4FAEB2]" : "text-slate-500 hover:text-slate-800"
               }`}
               aria-current={active ? "page" : undefined}
@@ -75,7 +75,7 @@ export default function MobileBottomNav() {
         <button
           type="button"
           onClick={() => setMobileSidebarOpen(true)}
-          className="flex flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-[10px] font-medium text-slate-500 hover:text-slate-800 active:bg-slate-100 transition-colors"
+          className="flex min-h-[56px] flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium text-slate-500 transition-colors hover:text-slate-800 active:bg-slate-100 sm:min-h-[64px] sm:text-[11px]"
           aria-label="Abrir menú completo"
         >
           <Menu className="h-5 w-5 text-slate-500" aria-hidden />
