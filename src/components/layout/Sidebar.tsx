@@ -642,15 +642,15 @@ export default function Sidebar() {
             : "fixed inset-y-0 left-0 z-50 -translate-x-full lg:translate-x-0 transition-transform duration-200"
         }`}
       >
-      {/* Logo oficial Reserva Ecológica Caacupé (sobre fondo negro) */}
+      {/* Logo oficial ZENTRA (blanco sobre azul marca) */}
       <div className="flex h-[7.25rem] shrink-0 items-center justify-between gap-2 border-b border-[color:var(--zentra-sidebar-border)] bg-[color:var(--zentra-sidebar-elevated)]/35 px-3 py-2.5">
         <Link href="/" className={`flex items-center justify-center min-w-0 flex-1 overflow-hidden`}>
           <div
-            className={`relative flex items-center justify-center overflow-hidden rounded-xl bg-black ${collapsed ? "h-11 w-11 p-1" : "h-[4.5rem] w-full max-w-[200px] p-2"}`}
+            className={`relative flex items-center justify-center ${collapsed ? "h-11 w-11" : "h-[4.5rem] w-full max-w-[200px]"}`}
           >
             <Image
-              src="/brand/reservacaacupe-logo.png"
-              alt="Reserva Ecológica Caacupé"
+              src="/brand/zentra-logo-official.png"
+              alt="ZENTRA"
               width={400}
               height={220}
               sizes={collapsed ? "44px" : "200px"}

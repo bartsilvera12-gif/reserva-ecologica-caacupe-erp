@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Bell, ChevronDown, LogOut, Menu } from "lucide-react";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
@@ -100,6 +101,19 @@ export default function Header() {
       <div className="hidden lg:block lg:flex-1" />
 
       <div className="flex items-center gap-2">
+        {/* Logo del cliente (Reserva Ecológica Caacupé) sobre fondo negro */}
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-black">
+          <Image
+            src="/brand/reservacaacupe-logo.png"
+            alt="Reserva Ecológica Caacupé"
+            width={80}
+            height={80}
+            sizes="40px"
+            className="h-full w-full object-contain p-0.5"
+            priority
+          />
+        </div>
+
         {/* Notificaciones */}
         <button
           type="button"
