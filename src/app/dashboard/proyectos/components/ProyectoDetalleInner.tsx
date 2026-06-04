@@ -305,6 +305,34 @@ export default function ProyectoDetalleInner({
   const esWeb = codigoTipo === "web";
   const esSaas = codigoTipo === "saas";
   const briefCoerced = coalesceBriefData(proyecto?.brief_data);
+  // Pedidos (gastronomía): el resumen muestra datos del pedido en vez de campos web/SaaS.
+  const briefRaw: Record<string, unknown> =
+    proyecto?.brief_data && typeof proyecto.brief_data === "object" && !Array.isArray(proyecto.brief_data)
+      ? (proyecto.brief_data as Record<string, unknown>)
+      : {};
+  const esPedido = codigoTipo === "pedido";
+  const pedidoModalidad = typeof briefRaw.modalidad === "string" ? briefRaw.modalidad : null;
+  const pedidoModalidadLabel =
+    pedidoModalidad === "local"
+      ? "En local"
+      : pedidoModalidad === "delivery"
+        ? "Delivery"
+        : pedidoModalidad === "carry_out"
+          ? "Retiro / Carry out"
+          : "—";
+  const pedidoMesa = typeof briefRaw.mesa === "string" ? briefRaw.mesa : null;
+  const pedidoTelefono = typeof briefRaw.cliente_telefono === "string" ? briefRaw.cliente_telefono : null;
+  const pedidoDireccion = typeof briefRaw.direccion_entrega === "string" ? briefRaw.direccion_entrega : null;
+  const pedidoControl = typeof briefRaw.numero_control === "string" ? briefRaw.numero_control : null;
+  const pedidoObservacion = typeof briefRaw.observacion === "string" ? briefRaw.observacion : null;
+  const pedidoItems = Array.isArray(briefRaw.items)
+    ? (briefRaw.items as Array<Record<string, unknown>>).map((it) => ({
+        nombre: typeof it.producto_nombre === "string" ? it.producto_nombre : "—",
+        cantidad: typeof it.cantidad === "number" ? it.cantidad : Number(it.cantidad) || 0,
+      }))
+    : [];
+  const pedidoTotal = Number(proyecto?.monto_vendido ?? 0);
+  const fmtGs = (n: number) => "Gs. " + Math.round(n || 0).toLocaleString("es-PY");
   const saasModuloIds = saasForm.modulos_necesarios
     .map((modulo) => modulo.id)
     .filter((id): id is string => typeof id === "string" && id.length > 0);
@@ -420,27 +448,87 @@ export default function ProyectoDetalleInner({
                   <dt className={labelCls}>Cliente</dt>
                   <dd className="text-right text-slate-900">{clienteNombre(proyecto)}</dd>
                 </div>
-                <div className="flex justify-between gap-3 border-b border-slate-200 pb-2">
-                  <dt className={labelCls}>Vendedor / comercial</dt>
-                  <dd className="text-right text-slate-900">
-                    {(proyecto as { responsable_comercial?: { nombre?: string } }).responsable_comercial?.nombre ?? "—"}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-3 border-b border-slate-200 pb-2">
-                  <dt className={labelCls}>Técnico responsable</dt>
-                  <dd className="text-right text-slate-900">
-                    {(proyecto as { responsable_tecnico?: { nombre?: string } }).responsable_tecnico?.nombre ?? "—"}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-3 border-b border-slate-200 pb-2">
-                  <dt className={labelCls}>Fecha prometida</dt>
-                  <dd className="text-right text-slate-900">
-                    {proyecto.fecha_prometida != null && String(proyecto.fecha_prometida).trim() !== ""
-                      ? formatFechaPyFull(String(proyecto.fecha_prometida))
-                      : "—"}
-                  </dd>
-                </div>
-                {esSaas ? (
+                {!esPedido ? (
+                  <>
+                    <div className="flex justify-between gap-3 border-b border-slate-200 pb-2">
+                      <dt className={labelCls}>Vendedor / comercial</dt>
+                      <dd className="text-right text-slate-900">
+                        {(proyecto as { responsable_comercial?: { nombre?: string } }).responsable_comercial?.nombre ?? "—"}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-3 border-b border-slate-200 pb-2">
+                      <dt className={labelCls}>Técnico responsable</dt>
+                      <dd className="text-right text-slate-900">
+                        {(proyecto as { responsable_tecnico?: { nombre?: string } }).responsable_tecnico?.nombre ?? "—"}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-3 border-b border-slate-200 pb-2">
+                      <dt className={labelCls}>Fecha prometida</dt>
+                      <dd className="text-right text-slate-900">
+                        {proyecto.fecha_prometida != null && String(proyecto.fecha_prometida).trim() !== ""
+                          ? formatFechaPyFull(String(proyecto.fecha_prometida))
+                          : "—"}
+                      </dd>
+                    </div>
+                  </>
+                ) : null}
+                {esPedido ? (
+                  <>
+                    <div className="flex justify-between gap-3 border-b border-slate-200 pb-2">
+                      <dt className={labelCls}>Modalidad</dt>
+                      <dd className="text-right font-medium text-slate-900">{pedidoModalidadLabel}</dd>
+                    </div>
+                    {pedidoModalidad === "local" && pedidoMesa ? (
+                      <div className="flex justify-between gap-3 border-b border-slate-200 pb-2">
+                        <dt className={labelCls}>Mesa</dt>
+                        <dd className="text-right text-slate-900">{pedidoMesa}</dd>
+                      </div>
+                    ) : null}
+                    {pedidoTelefono ? (
+                      <div className="flex justify-between gap-3 border-b border-slate-200 pb-2">
+                        <dt className={labelCls}>Teléfono</dt>
+                        <dd className="text-right text-slate-900">{pedidoTelefono}</dd>
+                      </div>
+                    ) : null}
+                    {pedidoDireccion ? (
+                      <div className="flex justify-between gap-3 border-b border-slate-200 pb-2">
+                        <dt className={labelCls}>Dirección de entrega</dt>
+                        <dd className="max-w-[60%] text-right text-slate-900">{pedidoDireccion}</dd>
+                      </div>
+                    ) : null}
+                    {pedidoControl ? (
+                      <div className="flex justify-between gap-3 border-b border-slate-200 pb-2">
+                        <dt className={labelCls}>N° de control</dt>
+                        <dd className="text-right tabular-nums text-slate-900">{pedidoControl}</dd>
+                      </div>
+                    ) : null}
+                    {pedidoItems.length > 0 ? (
+                      <div className="border-b border-slate-200 pb-2">
+                        <dt className={`${labelCls} mb-1`}>Ítems</dt>
+                        <ul className="space-y-0.5">
+                          {pedidoItems.map((it, idx) => (
+                            <li key={idx} className="flex items-baseline gap-1.5 text-slate-900">
+                              <span className="font-semibold tabular-nums">{it.cantidad}×</span>
+                              <span className="truncate">{it.nombre}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                    {pedidoObservacion ? (
+                      <div className="border-b border-slate-200 pb-2">
+                        <dt className={`${labelCls} mb-1`}>Observación</dt>
+                        <dd className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[13px] italic text-amber-900">
+                          {pedidoObservacion}
+                        </dd>
+                      </div>
+                    ) : null}
+                    <div className="flex justify-between gap-3 border-b border-slate-200 pb-2">
+                      <dt className={labelCls}>Total</dt>
+                      <dd className="text-right text-base font-semibold tabular-nums text-slate-900">{fmtGs(pedidoTotal)}</dd>
+                    </div>
+                  </>
+                ) : esSaas ? (
                   <>
                     <div className="flex justify-between gap-3 border-b border-slate-200 pb-2">
                       <dt className={labelCls}>Empresa SaaS / ERP</dt>
