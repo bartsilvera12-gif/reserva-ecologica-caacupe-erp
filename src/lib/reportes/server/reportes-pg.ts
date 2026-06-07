@@ -18,6 +18,11 @@ import type {
   MovimientoEstadoCuenta,
   ProveedoresReporte,
   ProveedorReporteRow,
+  ComprasReporte,
+  CompraReporteRow,
+  ItemCompradoRow,
+  CompraProveedorTotal,
+  CompraProductoTotal,
 } from "@/lib/reportes/types";
 
 function pool() {
@@ -180,5 +185,94 @@ export async function getReporteProveedores(
     compraPromedio: conCompras > 0 ? totalComprado / conCompras : 0,
     ultimaCompra: ultima.rows[0] ? { ...ultima.rows[0], total: num(ultima.rows[0].total) } : null,
     proveedores: provList.rows.map((r) => ({ ...r, cantidad: num(r.cantidad), total: num(r.total) })),
+  };
+}
+
+// ── Compras (modelo PLANO: N filas en `compras` por numero_control) ───────────
+
+export async function getReporteCompras(
+  schemaRaw: string,
+  empresaId: string,
+  b: MesBounds
+): Promise<ComprasReporte> {
+  const schema = assertAllowedChatDataSchema(schemaRaw);
+  const tC = quoteSchemaTable(schema, "compras");
+  const p = pool();
+  const per = `c.empresa_id=$1::uuid AND c.fecha>=$2::timestamptz AND c.fecha<=$3::timestamptz`;
+  const args = [empresaId, b.start, b.end];
+
+  // Totales: compras distintas (numero_control), líneas (count *) y total (suma de líneas).
+  const totQ = p.query<{ compras: number; items: number; total: number }>(
+    `SELECT count(DISTINCT numero_control)::int AS compras, count(*)::int AS items,
+            COALESCE(SUM(total),0)::float8 AS total
+       FROM ${tC} c WHERE ${per}`, args);
+  // Compra más alta: total agrupado por numero_control.
+  const masAltaQ = p.query<{ numero_control: string; proveedor_nombre: string; total: number }>(
+    `SELECT numero_control, MIN(proveedor_nombre) AS proveedor_nombre, SUM(total)::float8 AS total
+       FROM ${tC} c WHERE ${per} GROUP BY numero_control ORDER BY total DESC LIMIT 1`, args);
+  const provMayorQ = p.query<{ proveedor_nombre: string; total: number }>(
+    `SELECT proveedor_nombre, SUM(total)::float8 AS total FROM ${tC} c WHERE ${per}
+      GROUP BY proveedor_id, proveedor_nombre ORDER BY total DESC LIMIT 1`, args);
+  const prodCantQ = p.query<{ producto_nombre: string; cantidad: number }>(
+    `SELECT producto_nombre, SUM(cantidad)::float8 AS cantidad FROM ${tC} c WHERE ${per}
+      GROUP BY producto_id, producto_nombre ORDER BY cantidad DESC LIMIT 1`, args);
+  const prodGastoQ = p.query<{ producto_nombre: string; gasto: number }>(
+    `SELECT producto_nombre, SUM(total)::float8 AS gasto FROM ${tC} c WHERE ${per}
+      GROUP BY producto_id, producto_nombre ORDER BY gasto DESC LIMIT 1`, args);
+  // Total por proveedor (lista).
+  const porProvQ = p.query<CompraProveedorTotal>(
+    `SELECT proveedor_nombre, count(DISTINCT numero_control)::int AS compras, SUM(total)::float8 AS total
+       FROM ${tC} c WHERE ${per} GROUP BY proveedor_id, proveedor_nombre ORDER BY total DESC`, args);
+  // Total por producto (lista).
+  const porProdQ = p.query<CompraProductoTotal>(
+    `SELECT producto_nombre, SUM(cantidad)::float8 AS cantidad, SUM(total)::float8 AS gasto
+       FROM ${tC} c WHERE ${per} GROUP BY producto_id, producto_nombre ORDER BY gasto DESC`, args);
+  // Detalle por compra (agrupado por numero_control). tiene_comprobante = bool_or sobre las líneas.
+  const comprasQ = p.query<CompraReporteRow>(
+    `SELECT numero_control, MIN(fecha) AS fecha, MIN(proveedor_nombre) AS proveedor_nombre,
+            count(*)::int AS items_count, SUM(subtotal)::float8 AS subtotal,
+            SUM(monto_iva)::float8 AS monto_iva, SUM(total)::float8 AS total,
+            MIN(tipo_pago) AS tipo_pago, MIN(nro_timbrado) AS nro_timbrado,
+            bool_or(comprobante_storage_path IS NOT NULL) AS tiene_comprobante
+       FROM ${tC} c WHERE ${per}
+      GROUP BY numero_control ORDER BY MIN(fecha) DESC, numero_control DESC`, args);
+  // Detalle por línea (una fila de compras = una línea).
+  const itemsQ = p.query<ItemCompradoRow>(
+    `SELECT numero_control, fecha, proveedor_nombre, producto_nombre,
+            cantidad::float8 AS cantidad, costo_unitario::float8 AS costo_unitario,
+            total::float8 AS total_linea
+       FROM ${tC} c WHERE ${per} ORDER BY fecha DESC, numero_control DESC`, args);
+
+  const [tot, masAlta, provMayor, prodCant, prodGasto, porProv, porProd, compras, items] =
+    await Promise.all([totQ, masAltaQ, provMayorQ, prodCantQ, prodGastoQ, porProvQ, porProdQ, comprasQ, itemsQ]);
+
+  return {
+    mes: b.mes,
+    totalComprado: num(tot.rows[0]?.total),
+    cantidad: num(tot.rows[0]?.compras),
+    cantidadItems: num(tot.rows[0]?.items),
+    compraMasAlta: masAlta.rows[0]
+      ? { numero_control: masAlta.rows[0].numero_control, proveedor_nombre: masAlta.rows[0].proveedor_nombre, total: num(masAlta.rows[0].total) }
+      : null,
+    proveedorMayor: provMayor.rows[0] ? { proveedor_nombre: provMayor.rows[0].proveedor_nombre, total: num(provMayor.rows[0].total) } : null,
+    productoMasComprado: prodCant.rows[0] ? { producto_nombre: prodCant.rows[0].producto_nombre, cantidad: num(prodCant.rows[0].cantidad) } : null,
+    productoMayorGasto: prodGasto.rows[0] ? { producto_nombre: prodGasto.rows[0].producto_nombre, gasto: num(prodGasto.rows[0].gasto) } : null,
+    porProveedor: porProv.rows.map((r) => ({ ...r, compras: num(r.compras), total: num(r.total) })),
+    porProducto: porProd.rows.map((r) => ({ ...r, cantidad: num(r.cantidad), gasto: num(r.gasto) })),
+    compras: compras.rows.map((c) => ({
+      ...c,
+      items_count: num(c.items_count),
+      subtotal: num(c.subtotal),
+      monto_iva: num(c.monto_iva),
+      total: num(c.total),
+      nro_timbrado: c.nro_timbrado || null,
+      tiene_comprobante: c.tiene_comprobante === true,
+    })),
+    items: items.rows.map((i) => ({
+      ...i,
+      cantidad: num(i.cantidad),
+      costo_unitario: num(i.costo_unitario),
+      total_linea: num(i.total_linea),
+    })),
   };
 }
