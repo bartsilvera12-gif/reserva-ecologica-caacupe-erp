@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createGasto, updateGasto } from "@/lib/gastos/actions";
 import MontoInput from "@/components/ui/MontoInput";
 import type { Gasto, GastoInput } from "@/lib/gastos/actions";
+import { hoyAsuncionYmd } from "@/lib/fecha/asuncion";
 
 const fLabel = "block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1";
 const fInput =
@@ -27,7 +28,7 @@ export default function GastoForm({ gasto, onSuccess }: Props) {
     tipo: gasto?.tipo ?? "variable",
     recurrente: gasto?.recurrente ?? false,
     frecuencia: gasto?.frecuencia ?? "",
-    fecha: gasto?.fecha ?? new Date().toISOString().slice(0, 10),
+    fecha: gasto?.fecha ?? hoyAsuncionYmd(),
   });
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) {

@@ -6,6 +6,7 @@ import EdgeScrollArea from "@/components/ui/EdgeScrollArea";
 import { FancySelect } from "@/components/ui/FancySelect";
 import MobileFab from "@/components/ui/MobileFab";
 import { getVentas } from "@/lib/ventas/storage";
+import { esMismoDiaAsuncion } from "@/lib/fecha/asuncion";
 import type { Venta, TipoVenta, TipoIvaVenta } from "@/lib/ventas/types";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -47,14 +48,11 @@ const ivaLabel: Record<TipoIvaVenta, string> = {
 // ── Métricas del día ──────────────────────────────────────────────────────────
 
 function esDeHoy(iso: string): boolean {
+  // Compara por día calendario de Paraguay (America/Asuncion), no por el TZ del
+  // runtime: una venta hecha de noche PY se guarda con fecha UTC del día siguiente
+  // y con `getDate()` local se contaría/descartaría mal.
   try {
-    const fecha = new Date(iso);
-    const hoy   = new Date();
-    return (
-      fecha.getFullYear() === hoy.getFullYear() &&
-      fecha.getMonth()    === hoy.getMonth()    &&
-      fecha.getDate()     === hoy.getDate()
-    );
+    return esMismoDiaAsuncion(iso);
   } catch {
     return false;
   }
@@ -215,6 +213,7 @@ export default function VentasPage() {
           Resumen de hoy —{" "}
           {new Date().toLocaleDateString("es-PY", {
             weekday: "long", day: "numeric", month: "long", year: "numeric",
+            timeZone: "America/Asuncion",
           })}
         </p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

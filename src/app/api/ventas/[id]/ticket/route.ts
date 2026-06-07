@@ -17,7 +17,22 @@ import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
  * No toca SIFEN, no genera XML, no usa timbrado.
  */
 
-const NEGOCIO = "EN LO DE MARI";
+/**
+ * Nombre del negocio en el ticket. Orden de preferencia:
+ *   1) process.env.NEURA_CLIENT_NAME (instancia dedicada monocliente)
+ *   2) empresas.nombre_empresa de la empresa de la venta
+ *   3) fallback seguro
+ * Nunca se hardcodea otra marca.
+ */
+const NEGOCIO_FALLBACK = "Reserva Ecológica Caacupé";
+
+function resolveNegocio(nombreEmpresa?: string | null): string {
+  const env = (process.env.NEURA_CLIENT_NAME ?? "").trim();
+  if (env) return env;
+  const e = (nombreEmpresa ?? "").trim();
+  if (e) return e;
+  return NEGOCIO_FALLBACK;
+}
 
 // ── Clasificación PIZZERÍA / PLANCHA ───────────────────────────────────────
 // Primary: categoría hija del producto. Fallback: prefijo de SKU.
@@ -147,8 +162,9 @@ function renderCopia(opts: {
   brief: PedidoBrief | null;
   fontPx: number;
   isLast: boolean;
+  negocio: string;
 }): string {
-  const { tipo, venta, items, brief, fontPx, isLast } = opts;
+  const { tipo, venta, items, brief, fontPx, isLast, negocio } = opts;
   const showPrices = tipo === "cliente";
   const sectorBadge = tipo === "pizzeria" ? "COMANDA PIZZERÍA" : tipo === "plancha" ? "COMANDA PLANCHA" : "";
   const modalidad = modalidadLabel(brief?.modalidad);
@@ -216,7 +232,7 @@ function renderCopia(opts: {
     : `<div class="footer-cocina">${formatFecha(venta.fecha)}</div>`;
 
   return `<section class="paper ${isLast ? "last" : ""}">
-    ${headerCocina || `<h1>${NEGOCIO}</h1>`}
+    ${headerCocina || `<h1>${escapeHtml(negocio)}</h1>`}
     <div class="meta">
       ${escapeHtml(venta.numero_control)}<br>
       ${formatFecha(venta.fecha)}
@@ -256,6 +272,20 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   if (vQ.error) return new NextResponse(`Error: ${vQ.error.message}`, { status: 500 });
   if (!vQ.data) return new NextResponse("Venta no encontrada", { status: 404 });
   const venta = vQ.data as unknown as VentaRow;
+
+  // Nombre del negocio para el encabezado (env → empresa → fallback). Nunca hardcode.
+  let nombreEmpresa: string | null = null;
+  try {
+    const eQ = await ctx.supabase
+      .from("empresas")
+      .select("nombre_empresa")
+      .eq("id", empresaId)
+      .maybeSingle();
+    nombreEmpresa = (eQ.data as { nombre_empresa?: string | null } | null)?.nombre_empresa ?? null;
+  } catch {
+    nombreEmpresa = null;
+  }
+  const negocio = resolveNegocio(nombreEmpresa);
 
   // Items
   const iQ = await ctx.supabase
@@ -346,7 +376,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
 
   const seccionesHtml = copias
     .map((tipo, idx) =>
-      renderCopia({ tipo, venta, items, brief, fontPx, isLast: idx === copias.length - 1 })
+      renderCopia({ tipo, venta, items, brief, fontPx, isLast: idx === copias.length - 1, negocio })
     )
     .join("");
 
@@ -354,7 +384,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
 <html lang="es">
 <head>
 <meta charset="utf-8" />
-<title>Ticket ${escapeHtml(venta.numero_control)} — ${NEGOCIO}</title>
+<title>Ticket ${escapeHtml(venta.numero_control)} — ${escapeHtml(negocio)}</title>
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
