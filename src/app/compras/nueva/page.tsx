@@ -115,7 +115,7 @@ export default function NuevaCompraPage() {
   const [mostrarFormProducto, setMostrarFormProducto] = useState(false);
   const [formProducto, setFormProducto] = useState({
     nombre: "", sku: "", unidad_medida: "Unidad", metodo_valuacion: "CPP" as MetodoValuacion,
-    stock_minimo: "0", precio_venta_sugerido: "",
+    stock_minimo: "0", precio_venta_sugerido: "", tipo: "reventa" as "reventa" | "menu" | "materia",
   });
   const [errorSku, setErrorSku] = useState<string | null>(null);
   const [productoCreado, setProductoCreado] = useState<string | null>(null);
@@ -336,25 +336,37 @@ export default function NuevaCompraPage() {
     setErrorSku(null);
     const dup = await productoExiste(formProducto.sku, formProducto.nombre);
     if (dup) { setErrorSku(`Ya existe un producto con ese SKU o nombre ("${dup.nombre}" — ${dup.sku}).`); return; }
+    // Mapear el tipo elegido a los flags del producto (igual que en Inventario → Nuevo).
+    const flags =
+      formProducto.tipo === "materia"
+        ? { es_vendible: false, es_insumo: true, controla_stock: false }
+        : formProducto.tipo === "menu"
+        ? { es_vendible: true, es_insumo: false, controla_stock: false }
+        : { es_vendible: true, es_insumo: false, controla_stock: true };
     const creado = await saveProducto({
       nombre: formProducto.nombre.trim().toUpperCase(), sku: formProducto.sku.trim().toUpperCase(),
       unidad_medida: formProducto.unidad_medida.toUpperCase(), metodo_valuacion: formProducto.metodo_valuacion,
       stock_actual: 0, stock_minimo: parseInt(formProducto.stock_minimo) || 0,
       costo_promedio: nlCostoPYG || 0, precio_venta: parseFloat(formProducto.precio_venta_sugerido) || 0,
+      ...flags,
     });
     if (!creado) return;
+    // Insert optimista para que la línea reconozca de inmediato si es insumo (precio opcional).
+    setProductos((prev) => (prev.some((p) => p.id === creado.id) ? prev : [...prev, creado]));
     recargarProductos();
+    const creadoInsumo = formProducto.tipo === "materia";
     setNl((prev) => ({
       ...prev, producto_id: creado.id,
-      precio_venta: formProducto.precio_venta_sugerido || prev.precio_venta,
+      // Para materia prima dejamos el precio vacío (es opcional).
+      precio_venta: creadoInsumo ? "" : (formProducto.precio_venta_sugerido || prev.precio_venta),
     }));
     setProductoCreado(creado.nombre);
     setMostrarFormProducto(false);
-    setFormProducto({ nombre: "", sku: "", unidad_medida: "Unidad", metodo_valuacion: "CPP", stock_minimo: "0", precio_venta_sugerido: "" });
+    setFormProducto({ nombre: "", sku: "", unidad_medida: "Unidad", metodo_valuacion: "CPP", stock_minimo: "0", precio_venta_sugerido: "", tipo: "reventa" });
   }
   function handleCancelarProducto() {
     setMostrarFormProducto(false);
-    setFormProducto({ nombre: "", sku: "", unidad_medida: "Unidad", metodo_valuacion: "CPP", stock_minimo: "0", precio_venta_sugerido: "" });
+    setFormProducto({ nombre: "", sku: "", unidad_medida: "Unidad", metodo_valuacion: "CPP", stock_minimo: "0", precio_venta_sugerido: "", tipo: "reventa" });
     setErrorSku(null);
   }
 
@@ -564,6 +576,26 @@ export default function NuevaCompraPage() {
                   <InlineFormBox titulo="Nuevo producto" onCancel={handleCancelarProducto} onSave={handleAgregarProducto}
                     saveDisabled={!formProducto.nombre.trim() || !formProducto.sku.trim()}>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div className="col-span-2">
+                        <label className={labelSmClass}>Tipo de producto</label>
+                        <SegmentedControl<"reventa" | "menu" | "materia"> small value={formProducto.tipo}
+                          options={[
+                            { value: "reventa", label: "Reventa" },
+                            { value: "menu", label: "Menú" },
+                            { value: "materia", label: "Materia prima" },
+                          ]}
+                          onChange={(v) => setFormProducto((prev) => ({
+                            ...prev,
+                            tipo: v,
+                            // Materia prima suele medirse en gramos; si está en "Unidad", sugerimos "G".
+                            unidad_medida: v === "materia" && prev.unidad_medida === "Unidad" ? "G" : prev.unidad_medida,
+                          }))} />
+                        {formProducto.tipo === "materia" && (
+                          <p className="mt-1.5 text-xs text-amber-600">
+                            Materia prima / insumo: se usa en recetas. No requiere precio de venta.
+                          </p>
+                        )}
+                      </div>
                       <div>
                         <label className={labelSmClass}>Nombre <span className="text-red-500">*</span></label>
                         <input type="text" name="nombre" value={formProducto.nombre} onChange={handleProductoInputChange}
@@ -590,12 +622,14 @@ export default function NuevaCompraPage() {
                         <input type="number" name="stock_minimo" value={formProducto.stock_minimo} onChange={handleProductoInputChange}
                           placeholder="Ej: 5" min={0} className={inputSmClass} />
                       </div>
-                      <div className="col-span-2">
-                        <label className={labelSmClass}>Precio de venta sugerido (Gs.)</label>
-                        <MontoInput value={formProducto.precio_venta_sugerido}
-                          onChange={(n) => setFormProducto((prev) => ({ ...prev, precio_venta_sugerido: String(n) }))}
-                          placeholder="Ej: 25000" className={inputSmClass} decimals={false} />
-                      </div>
+                      {formProducto.tipo !== "materia" && (
+                        <div className="col-span-2">
+                          <label className={labelSmClass}>Precio de venta sugerido (Gs.)</label>
+                          <MontoInput value={formProducto.precio_venta_sugerido}
+                            onChange={(n) => setFormProducto((prev) => ({ ...prev, precio_venta_sugerido: String(n) }))}
+                            placeholder="Ej: 25000" className={inputSmClass} decimals={false} />
+                        </div>
+                      )}
                     </div>
                   </InlineFormBox>
                 )}
