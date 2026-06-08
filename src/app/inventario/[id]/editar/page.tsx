@@ -56,6 +56,8 @@ export default function EditarProductoPage() {
   const [codigoOriginal, setCodigoOriginal] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [generandoCodigo, setGenerandoCodigo] = useState(false);
+  const [generandoSku, setGenerandoSku] = useState(false);
+  const [skuPatrones, setSkuPatrones] = useState<{ prefix: string; siguiente: string }[]>([]);
 
   // Relaciones
   const [categoriaId, setCategoriaId] = useState<string | null>(null);
@@ -104,25 +106,53 @@ export default function EditarProductoPage() {
     return () => { cancel = true; };
   }, []);
 
-  async function handleGenerarCodigoInterno() {
+  useEffect(() => {
+    let cancel = false;
+    fetch(`/api/productos/sku-sugerencias?tipo=${tipoGastro}`, { credentials: "include", cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => { if (!cancel && j?.success) setSkuPatrones(j.data?.patrones ?? []); })
+      .catch(() => {});
+    return () => { cancel = true; };
+  }, [tipoGastro]);
+
+  async function handleGenerarSku() {
+    if (generandoSku) return;
+    setGenerandoSku(true);
+    setErrorDuplicado(null);
+    try {
+      const res = await fetch(`/api/productos/sku-sugerencias?tipo=${tipoGastro}`, { credentials: "include", cache: "no-store" });
+      const json = await res.json();
+      if (res.ok && json?.success && json.data?.sugerido) {
+        setForm((prev) => ({ ...prev, sku: json.data.sugerido as string }));
+        setSkuPatrones(json.data.patrones ?? []);
+      }
+    } catch { /* no bloquea */ } finally {
+      setGenerandoSku(false);
+    }
+  }
+
+  function handleSelectPatron(e: React.ChangeEvent<HTMLSelectElement>) {
+    const sig = e.target.value;
+    if (sig) setForm((prev) => ({ ...prev, sku: sig }));
+    e.target.value = "";
+  }
+
+  async function handleGenerarCodigoBarras() {
     if (generandoCodigo) return;
     setGenerandoCodigo(true);
     setErrorDuplicado(null);
     setErrorGeneral(null);
     try {
-      const res = await fetch("/api/productos/codigo-interno", {
-        method: "POST",
-        credentials: "include",
-      });
+      const res = await fetch("/api/productos/codigo-barras", { method: "POST", credentials: "include" });
       const json = await res.json();
       if (res.ok && json?.success && json.data?.codigo) {
         setForm((prev) => ({
           ...prev,
           codigo_barras: json.data.codigo as string,
-          codigo_barras_interno: true,
+          codigo_barras_interno: false,
         }));
       } else {
-        setErrorGeneral(json?.error ?? "No se pudo generar el código.");
+        setErrorGeneral(json?.error ?? "No se pudo generar el código de barras.");
       }
     } catch (err) {
       setErrorGeneral(err instanceof Error ? err.message : "Error de red");
@@ -188,13 +218,8 @@ export default function EditarProductoPage() {
     setErrorDuplicado(null);
     setErrorGeneral(null);
     if (e.target.name === "codigo_barras") {
-      const next = e.target.value;
-      // Si el codigo cambia respecto al original guardado, deja de ser "interno".
-      setForm((prev) => ({
-        ...prev,
-        codigo_barras: next,
-        codigo_barras_interno: next === (codigoOriginal ?? "") ? prev.codigo_barras_interno : false,
-      }));
+      // El código de barras siempre es real/escaneable (no interno).
+      setForm((prev) => ({ ...prev, codigo_barras: e.target.value, codigo_barras_interno: false }));
       return;
     }
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -255,17 +280,6 @@ export default function EditarProductoPage() {
 
     try {
       const codigoIngresado = form.codigo_barras.trim();
-      // Validar: si cambio el codigo y empieza con INT- pero NO fue generado por el sistema,
-      // rechazar (prefijo reservado).
-      if (
-        codigoIngresado &&
-        codigoIngresado !== codigoOriginal &&
-        /^INT-/i.test(codigoIngresado) &&
-        !form.codigo_barras_interno
-      ) {
-        showErr('El prefijo "INT-" está reservado para códigos internos generados por el sistema. Usá otro código o dejá el actual.');
-        return;
-      }
 
       // Pre-chequeo de duplicado: tolerante a fallos de red — si la consulta falla,
       // seguimos. El backend igual valida unicidad en el PATCH.
@@ -307,9 +321,7 @@ export default function EditarProductoPage() {
       };
       if (cambioCodigo) {
         updatePayload.codigo_barras = codigoIngresado || null;
-        updatePayload.codigo_barras_interno =
-          codigoIngresado.length > 0 &&
-          (form.codigo_barras_interno === true || /^INT-/i.test(codigoIngresado));
+        updatePayload.codigo_barras_interno = false; // los códigos de barras son reales (no internos)
       }
 
       console.log("[inventario/editar] sending PATCH", { id, payloadKeys: Object.keys(updatePayload) });
@@ -416,16 +428,40 @@ export default function EditarProductoPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <div>
               <label className={labelClass}>
-                SKU{tipoGastro === "reventa" ? "" : <span className="text-xs font-normal text-gray-400 ml-1">(opcional)</span>}
+                SKU interno{tipoGastro === "reventa" ? "" : <span className="text-xs font-normal text-gray-400 ml-1">(opcional)</span>}
               </label>
-              <input
-                type="text"
-                name="sku"
-                value={form.sku}
-                onChange={handleChange}
-                className={`${inputClass} uppercase`}
-                required={tipoGastro === "reventa"}
-              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  name="sku"
+                  value={form.sku}
+                  onChange={handleChange}
+                  placeholder="Ej: REV-0001"
+                  className={`${inputClass} uppercase flex-1`}
+                  required={tipoGastro === "reventa"}
+                />
+                <button
+                  type="button"
+                  onClick={handleGenerarSku}
+                  disabled={generandoSku}
+                  className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-[#3F8E91] hover:bg-[#4FAEB2]/5 disabled:opacity-50"
+                >
+                  {generandoSku ? "…" : "Generar SKU"}
+                </button>
+              </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                <select
+                  onChange={handleSelectPatron}
+                  defaultValue=""
+                  className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-600 outline-none focus:ring-2 focus:ring-[#0EA5E9]"
+                >
+                  <option value="">Usar patrón existente…</option>
+                  {skuPatrones.map((p) => (
+                    <option key={p.prefix} value={p.siguiente}>{p.prefix} → {p.siguiente}</option>
+                  ))}
+                </select>
+                <span className="text-[11px] text-gray-400">Código interno editable. Podés ajustar el número final.</span>
+              </div>
             </div>
             <div className={tipoGastro === "menu" ? "hidden" : ""}>
               <label className={labelClass}>Unidad de medida</label>
@@ -453,40 +489,34 @@ export default function EditarProductoPage() {
           </div>
 
           {/* Codigo de barras */}
-          <div>
-            <label className={labelClass}>
-              Código de barras
-              {form.codigo_barras_interno && form.codigo_barras && form.codigo_barras === codigoOriginal && (
-                <span className="ml-2 align-middle text-[10px] uppercase tracking-wider bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded">
-                  Interno
-                </span>
-              )}
-            </label>
-            <input
-              type="text"
-              name="codigo_barras"
-              value={form.codigo_barras}
-              onChange={handleChange}
-              placeholder="Escaneá o escribí — dejá vacío para autogenerar"
-              className={inputClass}
-              autoComplete="off"
-            />
-            {!form.codigo_barras.trim() && (
-              <div className="mt-2">
-                <button
-                  type="button"
-                  onClick={handleGenerarCodigoInterno}
-                  disabled={generandoCodigo}
-                  className="inline-flex items-center gap-1.5 text-xs font-medium text-sky-700 hover:text-sky-900 border border-sky-200 hover:bg-sky-50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                    <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.433a.75.75 0 0 0 0-1.5H3.989a.75.75 0 0 0-.75.75v4.242a.75.75 0 0 0 1.5 0v-2.43l.31.31a7 7 0 0 0 11.712-3.138.75.75 0 0 0-1.449-.39Zm1.23-3.723a.75.75 0 0 0 .219-.53V2.929a.75.75 0 0 0-1.5 0v2.431l-.31-.31A7 7 0 0 0 3.239 8.188a.75.75 0 1 0 1.448.389A5.5 5.5 0 0 1 13.89 6.11l.311.31h-2.432a.75.75 0 0 0 0 1.5h4.243a.75.75 0 0 0 .53-.219Z" clipRule="evenodd" />
-                  </svg>
-                  {generandoCodigo ? "Generando..." : "Generar código interno"}
-                </button>
-                <span className="ml-2 text-xs text-gray-400">(opcional)</span>
-              </div>
-            )}
+          <div className="border-t border-slate-100 pt-5">
+            <label className={labelClass}>Código de barras</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                name="codigo_barras"
+                value={form.codigo_barras}
+                onChange={handleChange}
+                placeholder="Escaneá, escribí o generá (EAN-13)"
+                className={`${inputClass} flex-1`}
+                inputMode="numeric"
+                autoComplete="off"
+              />
+              <button
+                type="button"
+                onClick={handleGenerarCodigoBarras}
+                disabled={generandoCodigo}
+                className="shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-sky-700 hover:text-sky-900 border border-sky-200 hover:bg-sky-50 px-3 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                  <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.433a.75.75 0 0 0 0-1.5H3.989a.75.75 0 0 0-.75.75v4.242a.75.75 0 0 0 1.5 0v-2.43l.31.31a7 7 0 0 0 11.712-3.138.75.75 0 0 0-1.449-.39Zm1.23-3.723a.75.75 0 0 0 .219-.53V2.929a.75.75 0 0 0-1.5 0v2.431l-.31-.31A7 7 0 0 0 3.239 8.188a.75.75 0 1 0 1.448.389A5.5 5.5 0 0 1 13.89 6.11l.311.31h-2.432a.75.75 0 0 0 0 1.5h4.243a.75.75 0 0 0 .53-.219Z" clipRule="evenodd" />
+                </svg>
+                {generandoCodigo ? "Generando…" : "Generar código de barras"}
+              </button>
+            </div>
+            <p className="mt-1.5 text-xs text-gray-400">
+              Código escaneable para lector o etiqueta (EAN-13). Debe ser único. (opcional)
+            </p>
           </div>
 
           {/* Imagen del producto */}
