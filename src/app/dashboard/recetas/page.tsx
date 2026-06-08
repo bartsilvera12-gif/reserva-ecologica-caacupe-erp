@@ -9,6 +9,7 @@ type RecetaRow = {
   id: string;
   producto_id: string;
   nombre: string | null;
+  producto_nombre: string | null;
   rendimiento_cantidad: number;
   rendimiento_unidad: string | null;
   activa: boolean;
@@ -110,7 +111,11 @@ export default function RecetasListPage() {
               {recetas.map((r) => (
                 <tr key={r.id} className="hover:bg-[#4FAEB2]/[0.04] transition-colors">
                   <td className="px-4 py-2 font-medium text-gray-900">
-                    {r.nombre ?? <span className="text-gray-400">(sin nombre)</span>}
+                    {r.nombre?.trim()
+                      ? r.nombre
+                      : r.producto_nombre
+                        ? <span>Receta: {r.producto_nombre}</span>
+                        : <span className="text-gray-400">(sin nombre)</span>}
                   </td>
                   <td className="px-4 py-2 text-gray-700">
                     {r.rendimiento_cantidad} {r.rendimiento_unidad ?? ""}

@@ -52,22 +52,31 @@ export type RecetaCosteo = {
 export async function listRecetas(sb: AppSupabaseClient, empresaId: string) {
   const { data, error } = await sb
     .from("recetas")
-    .select("id, producto_id, nombre, rendimiento_cantidad, rendimiento_unidad, activa, updated_at")
+    .select("id, producto_id, nombre, rendimiento_cantidad, rendimiento_unidad, activa, updated_at, productos(nombre)")
     .eq("empresa_id", empresaId)
     .order("updated_at", { ascending: false });
   if (error) throw new Error(error.message);
-  return data ?? [];
+  // Aplanar el nombre del producto para el fallback de nombre de receta.
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    ...r,
+    producto_nombre: (r.productos as { nombre?: string } | null)?.nombre ?? null,
+  }));
 }
 
 export async function getReceta(sb: AppSupabaseClient, empresaId: string, id: string) {
   const { data, error } = await sb
     .from("recetas")
-    .select("*")
+    .select("*, productos(nombre)")
     .eq("empresa_id", empresaId)
     .eq("id", id)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  return data as RecetaRow | null;
+  if (!data) return null;
+  const row = data as Record<string, unknown>;
+  return {
+    ...(row as unknown as RecetaRow),
+    producto_nombre: (row.productos as { nombre?: string } | null)?.nombre ?? null,
+  } as RecetaRow & { producto_nombre: string | null };
 }
 
 export async function listRecetaItems(sb: AppSupabaseClient, recetaId: string) {

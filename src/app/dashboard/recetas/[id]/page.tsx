@@ -10,11 +10,15 @@ type Receta = {
   id: string;
   producto_id: string;
   nombre: string | null;
+  producto_nombre: string | null;
   rendimiento_cantidad: number;
   rendimiento_unidad: string | null;
   notas: string | null;
   activa: boolean;
 };
+
+const UNIDADES_RENDIMIENTO = ["UNIDAD", "PAQUETE", "PORCION", "FRASCO", "BOLSA", "DOCENA"];
+const UNIDADES_INSUMO = ["G", "KG", "ML", "L", "UNIDAD"];
 type Item = {
   id: string;
   insumo_producto_id: string;
@@ -222,7 +226,7 @@ export default function EditarRecetaPage() {
         <div className="flex items-center gap-3">
           <ChefHat className="h-7 w-7 text-amber-600" />
           <h1 className="text-2xl font-semibold">
-            {receta.nombre ?? "Receta"}
+            {receta.nombre?.trim() || (receta.producto_nombre ? `Receta: ${receta.producto_nombre}` : "Receta")}
           </h1>
         </div>
         <button
@@ -243,6 +247,7 @@ export default function EditarRecetaPage() {
           <div className="rounded-md bg-white border border-gray-200 p-4">
             <div className="text-xs text-gray-500 uppercase">Costo unitario</div>
             <div className="text-lg font-semibold text-gray-900">{fmtGs(costeo.costo_unitario)}</div>
+            <div className="text-xs text-gray-500">costo total / rendimiento</div>
           </div>
           <div className="rounded-md bg-white border border-gray-200 p-4">
             <div className="text-xs text-gray-500 uppercase">Margen</div>
@@ -254,9 +259,16 @@ export default function EditarRecetaPage() {
           <div className="rounded-md bg-white border border-gray-200 p-4">
             <div className="text-xs text-gray-500 uppercase">Unidades posibles</div>
             <div className="text-lg font-semibold text-gray-900">
-              {costeo.unidades_posibles == null ? "—" : costeo.unidades_posibles}
+              {costeo.unidades_posibles == null
+                ? "—"
+                : Math.floor(costeo.unidades_posibles * (receta.rendimiento_cantidad || 1)).toLocaleString("es-PY")}
+              {receta.rendimiento_unidad ? <span className="ml-1 text-xs font-normal text-gray-400">{receta.rendimiento_unidad}</span> : null}
             </div>
-            <div className="text-xs text-gray-500">según stock de insumos</div>
+            <div className="text-xs text-gray-500">
+              {costeo.unidades_posibles == null
+                ? "según stock de insumos"
+                : `${costeo.unidades_posibles} lote(s) × ${receta.rendimiento_cantidad} — según stock de materia prima`}
+            </div>
           </div>
         </div>
       )}
@@ -269,38 +281,53 @@ export default function EditarRecetaPage() {
 
       {/* Header form */}
       <div className="bg-white p-5 rounded-md border border-gray-200 mb-6">
-        <h2 className="text-sm font-semibold text-gray-700 mb-3">Datos de la receta</h2>
+        <h2 className="text-sm font-semibold text-gray-700 mb-1">Datos de la receta</h2>
+        <p className="text-xs text-gray-500 mb-3">
+          El <b>rendimiento</b> es cuántas unidades produce esta receta con los insumos indicados.
+          Ej: 1.500 G de avena + 300 G de miel para producir <b>10 paquetes</b>.
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="md:col-span-3">
-            <label className="block text-xs font-medium text-gray-600 mb-1">Nombre</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Nombre de la receta</label>
             <input
               type="text"
               value={receta.nombre ?? ""}
               onChange={(e) => setReceta({ ...receta, nombre: e.target.value })}
+              placeholder={receta.producto_nombre ? `Ej: Receta de ${receta.producto_nombre}` : "Ej: Granola Orgánica 250g"}
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
             />
+            <p className="mt-1 text-[11px] text-gray-400">
+              Si lo dejás vacío, se mostrará el nombre del producto: <b>{receta.producto_nombre ?? "—"}</b>.
+            </p>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Rendimiento</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Rendimiento (cantidad)</label>
             <input
               type="number"
-              step="0.01"
+              step="1"
               min="0.01"
               value={receta.rendimiento_cantidad}
               onChange={(e) => setReceta({ ...receta, rendimiento_cantidad: Number(e.target.value) || 1 })}
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
             />
+            <p className="mt-1 text-[11px] text-gray-400">¿Cuántas unidades produce?</p>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Unidad</label>
-            <input
-              type="text"
+            <label className="block text-xs font-medium text-gray-600 mb-1">Unidad de rendimiento</label>
+            <select
               value={receta.rendimiento_unidad ?? ""}
               onChange={(e) => setReceta({ ...receta, rendimiento_unidad: e.target.value })}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-            />
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white"
+            >
+              <option value="">— Elegí —</option>
+              {UNIDADES_RENDIMIENTO.map((u) => <option key={u} value={u}>{u}</option>)}
+              {receta.rendimiento_unidad && !UNIDADES_RENDIMIENTO.includes(receta.rendimiento_unidad) && (
+                <option value={receta.rendimiento_unidad}>{receta.rendimiento_unidad}</option>
+              )}
+            </select>
+            <p className="mt-1 text-[11px] text-gray-400">paquetes, unidades, frascos…</p>
           </div>
-          <div className="flex items-end">
+          <div className="flex items-end pb-6">
             <label className="inline-flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -333,7 +360,12 @@ export default function EditarRecetaPage() {
 
       {/* Items */}
       <div className="bg-white p-5 rounded-md border border-gray-200">
-        <h2 className="text-sm font-semibold text-gray-700 mb-3">Insumos</h2>
+        <h2 className="text-sm font-semibold text-gray-700 mb-1">Insumos (materia prima)</h2>
+        <p className="text-xs text-gray-500 mb-3">
+          Cargá cada materia prima con la <b>cantidad usada</b> para todo el rendimiento, su <b>unidad de consumo</b>
+          y la <b>merma %</b> (desperdicio). La merma aumenta el consumo real del insumo. El costo se calcula con el
+          costo promedio de cada insumo; las <b>unidades posibles</b> salen del stock disponible de materia prima.
+        </p>
 
         {items.length === 0 && (
           <div className="text-sm text-gray-500 mb-3">
@@ -350,13 +382,13 @@ export default function EditarRecetaPage() {
             <thead className="text-left text-xs text-gray-500 uppercase">
               <tr>
                 <th className="py-2">Insumo</th>
-                <th className="py-2">Cantidad</th>
-                <th className="py-2 hidden md:table-cell">Unidad</th>
+                <th className="py-2">Cantidad usada</th>
+                <th className="py-2 hidden md:table-cell">U. consumo</th>
                 <th className="py-2 hidden lg:table-cell">Merma</th>
-                <th className="py-2 hidden md:table-cell">Costo unit.</th>
+                <th className="py-2 hidden md:table-cell">Costo/u. insumo</th>
                 <th className="py-2">Subcosto</th>
                 <th className="py-2 hidden lg:table-cell">Stock</th>
-                <th className="py-2 hidden lg:table-cell">Unid. posibles</th>
+                <th className="py-2 hidden lg:table-cell">Alcanza para</th>
                 <th className="py-2"></th>
               </tr>
             </thead>
@@ -364,13 +396,15 @@ export default function EditarRecetaPage() {
               {costeo.items.map((row) => (
                 <tr key={row.item_id}>
                   <td className="py-2 font-medium text-gray-800">{row.insumo_nombre}</td>
-                  <td className="py-2">{row.cantidad}</td>
+                  <td className="py-2 tabular-nums">{Number(row.cantidad).toLocaleString("es-PY")} <span className="text-xs text-gray-400">{row.unidad_medida ?? ""}</span></td>
                   <td className="py-2 text-gray-600 hidden md:table-cell">{row.unidad_medida ?? "—"}</td>
                   <td className="py-2 text-gray-600 hidden lg:table-cell">{(row.merma_pct * 100).toFixed(0)}%</td>
-                  <td className="py-2 hidden md:table-cell">{fmtGs(row.costo_promedio)}</td>
-                  <td className="py-2">{fmtGs(row.subcosto)}</td>
-                  <td className="py-2 text-gray-600 hidden lg:table-cell">{row.stock_actual}</td>
-                  <td className="py-2 hidden lg:table-cell">{row.unidades_aporte ?? "—"}</td>
+                  <td className="py-2 hidden md:table-cell">{fmtGs(row.costo_promedio)}<span className="text-[10px] text-gray-400">/{row.unidad_medida ?? "u"}</span></td>
+                  <td className="py-2 tabular-nums">{fmtGs(row.subcosto)}</td>
+                  <td className="py-2 text-gray-600 hidden lg:table-cell tabular-nums">{Number(row.stock_actual).toLocaleString("es-PY")} <span className="text-xs text-gray-400">{row.unidad_medida ?? ""}</span></td>
+                  <td className="py-2 hidden lg:table-cell tabular-nums">
+                    {row.unidades_aporte == null ? "—" : `${Math.floor(row.unidades_aporte * (receta.rendimiento_cantidad || 1)).toLocaleString("es-PY")} u.`}
+                  </td>
                   <td className="py-2 text-right">
                     <button
                       onClick={() => removeItem(row.item_id)}
@@ -396,47 +430,64 @@ export default function EditarRecetaPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-              <select
-                value={newInsumoId}
-                onChange={(e) => {
-                  setNewInsumoId(e.target.value);
-                  const p = insumosDisponibles.find((x) => x.id === e.target.value);
-                  if (p) setNewUnidad(p.unidad_medida ?? "");
-                }}
-                className="md:col-span-2 rounded-md border border-gray-300 px-3 py-2 text-sm"
-              >
-                {insumosDisponibles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nombre} — {fmtGs(p.costo_promedio)}/{p.unidad_medida ?? ""} (stock {p.stock_actual})
-                  </option>
-                ))}
-              </select>
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={newCantidad}
-                onChange={(e) => setNewCantidad(Number(e.target.value))}
-                placeholder="Cantidad"
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm"
-              />
-              <input
-                type="text"
-                value={newUnidad}
-                onChange={(e) => setNewUnidad(e.target.value)}
-                placeholder="Unidad"
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm"
-              />
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                max="0.99"
-                value={newMerma}
-                onChange={(e) => setNewMerma(Number(e.target.value))}
-                placeholder="Merma (0-0.99)"
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm"
-              />
+              <div className="md:col-span-2">
+                <label className="block text-[11px] text-gray-500 mb-1">Materia prima</label>
+                <select
+                  value={newInsumoId}
+                  onChange={(e) => {
+                    setNewInsumoId(e.target.value);
+                    const p = insumosDisponibles.find((x) => x.id === e.target.value);
+                    if (p) setNewUnidad(p.unidad_medida ?? "");
+                  }}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white"
+                >
+                  {insumosDisponibles.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.nombre} — {fmtGs(p.costo_promedio)}/{p.unidad_medida ?? ""} (stock {p.stock_actual})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] text-gray-500 mb-1">Cantidad usada</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={newCantidad}
+                  onChange={(e) => setNewCantidad(Number(e.target.value))}
+                  placeholder="Ej: 1500"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] text-gray-500 mb-1">Unidad de consumo</label>
+                <select
+                  value={newUnidad}
+                  onChange={(e) => setNewUnidad(e.target.value)}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white"
+                >
+                  <option value="">— Elegí —</option>
+                  {UNIDADES_INSUMO.map((u) => <option key={u} value={u}>{u}</option>)}
+                  {newUnidad && !UNIDADES_INSUMO.includes(newUnidad) && <option value={newUnidad}>{newUnidad}</option>}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] text-gray-500 mb-1">Merma %</label>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  max="99"
+                  value={Math.round(newMerma * 100)}
+                  onChange={(e) => setNewMerma(Math.min(0.99, Math.max(0, (Number(e.target.value) || 0) / 100)))}
+                  placeholder="Ej: 5"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <p className="md:col-span-5 -mt-1 text-[11px] text-gray-400">
+                Ej: 1.500 G de avena para producir 10 paquetes. La merma % (desperdicio) aumenta el consumo real del insumo.
+              </p>
               <button
                 onClick={addItem}
                 disabled={addingItem || !newInsumoId || newCantidad <= 0}
