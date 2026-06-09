@@ -135,7 +135,7 @@ export async function createVentaTransaccionalPg(
   const ids = [...qtyByProduct.keys()];
   const prodQ = await sb
     .from("productos")
-    .select("id, stock_actual, costo_promedio, nombre, sku, controla_stock")
+    .select("id, stock_actual, costo_promedio, nombre, sku, controla_stock, modo_receta")
     .eq("empresa_id", params.empresaId)
     .in("id", ids);
   if (prodQ.error) throw new Error(prodQ.error.message);
@@ -146,6 +146,7 @@ export async function createVentaTransaccionalPg(
     nombre: string;
     sku: string;
     controla_stock: boolean | null;
+    modo_receta: string | null;
   }>;
 
   if (prodRows.length !== ids.length) {
@@ -156,7 +157,7 @@ export async function createVentaTransaccionalPg(
     );
   }
 
-  type ProdMeta = { stock: number; costo: number; nombre: string; sku: string; controlaStock: boolean };
+  type ProdMeta = { stock: number; costo: number; nombre: string; sku: string; controlaStock: boolean; modo: string };
   const stockMap = new Map<string, ProdMeta>();
   for (const r of prodRows) {
     stockMap.set(r.id, {
@@ -165,6 +166,7 @@ export async function createVentaTransaccionalPg(
       nombre: r.nombre,
       sku: r.sku,
       controlaStock: r.controla_stock !== false,
+      modo: r.modo_receta ?? "preparado_al_vender",
     });
   }
 
@@ -183,8 +185,14 @@ export async function createVentaTransaccionalPg(
     producto_id: string;
     rendimiento_cantidad: number | string | null;
   }>;
+  // Solo se explota la receta (descuento de materia prima al vender) para productos en modo
+  // 'preparado_al_vender'. Los productos 'produccion_previa' descuentan su PROPIO stock del
+  // terminado (la materia prima ya se descontó al fabricar) → NO se agregan acá, así caen en
+  // la rama de descuento de stock propio (pasos 3a/7). Evita el doble descuento.
   const recetaByProducto = new Map<string, { id: string; rendimiento: number }>();
   for (const r of recetaRows) {
+    const modo = stockMap.get(r.producto_id)?.modo ?? "preparado_al_vender";
+    if (modo === "produccion_previa") continue;
     const rend = Number(r.rendimiento_cantidad);
     recetaByProducto.set(r.producto_id, { id: r.id, rendimiento: rend > 0 ? rend : 1 });
   }
@@ -296,7 +304,8 @@ export async function createVentaTransaccionalPg(
   for (const [pid, need] of qtyByProduct) {
     const p = stockMap.get(pid)!;
     if (recetaByProducto.has(pid)) continue;
-    if (!p.controlaStock) continue;
+    // produccion_previa: descuenta su propio stock del terminado aunque controla_stock=false.
+    if (!p.controlaStock && p.modo !== "produccion_previa") continue;
     if (p.stock < need) {
       faltantes.push({
         tipo: "producto", producto_id: pid, nombre: p.nombre, sku: p.sku,
@@ -433,7 +442,8 @@ export async function createVentaTransaccionalPg(
     for (const line of items) {
       const p = stockMap.get(line.producto_id)!;
       if (recetaByProducto.has(line.producto_id)) continue;
-      if (!p.controlaStock) continue;
+      // produccion_previa: descuenta su propio stock del terminado aunque controla_stock=false.
+      if (!p.controlaStock && p.modo !== "produccion_previa") continue;
       // El stock nunca baja de 0: si se vendió sin stock, queda en 0 (la cantidad real
       // vendida queda registrada en el movimiento SALIDA, así no se pierde trazabilidad).
       const nuevoStock = Math.max(0, p.stock - line.cantidad);

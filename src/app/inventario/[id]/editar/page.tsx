@@ -78,6 +78,7 @@ export default function EditarProductoPage() {
   const [tipoGastro, setTipoGastro] = useState<TipoGastro>("reventa");
   // Si el producto tiene una receta asociada (para advertir al cambiar el tipo).
   const [tieneReceta, setTieneReceta] = useState(false);
+  const [modoReceta, setModoReceta] = useState<"preparado_al_vender" | "produccion_previa">("preparado_al_vender");
 
   // Configuración gastronómica
   const [controlaStock, setControlaStock] = useState(true);
@@ -214,6 +215,7 @@ export default function EditarProductoPage() {
       setEsVendible(esVend);
       setEsInsumo(esIns);
       setControlaStock(ctrlStock);
+      setModoReceta(p.modo_receta === "produccion_previa" ? "produccion_previa" : "preparado_al_vender");
       setDescripcion(p.descripcion ?? "");
       setValorizado(p.valorizado ?? true);
       setUnidadCompra(p.unidad_compra ?? "");
@@ -352,6 +354,8 @@ export default function EditarProductoPage() {
         factor_compra_receta: Math.max(parseFloat(factorCompraReceta) || 1, 0.0001),
         tiempo_prep_minutos: Math.max(parseInt(tiempoPrepMinutos) || 0, 0),
         descripcion: descripcion.trim() || null,
+        // Modo de receta solo aplica a Menú con receta; en otros tipos se mantiene el default.
+        modo_receta: tipoGastro === "menu" && tieneReceta ? modoReceta : "preparado_al_vender",
       };
       if (cambioCodigo) {
         updatePayload.codigo_barras = codigoIngresado || null;
@@ -440,6 +444,50 @@ export default function EditarProductoPage() {
               <strong> {tipoGastro === "reventa" ? "Reventa" : "Materia prima"}</strong>, la receta deja de aplicarse al vender
               (no se borra). Revisá Recetas si querés ajustarla.
             </span>
+          </div>
+        )}
+
+        {/* Modo de receta: solo para Menú con receta asociada */}
+        {tipoGastro === "menu" && tieneReceta && (
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <p className="text-xs uppercase tracking-wide font-semibold text-gray-500 mb-1">Modo de receta</p>
+            <p className="text-xs text-slate-500 mb-3">
+              Define cuándo se descuenta la materia prima de este producto.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {([
+                {
+                  v: "preparado_al_vender" as const,
+                  titulo: "Se prepara al vender",
+                  desc: "Al vender se descuenta la materia prima (no controla stock propio). Ideal para platos al momento.",
+                },
+                {
+                  v: "produccion_previa" as const,
+                  titulo: "Producción previa (fabricar y stockear)",
+                  desc: "Se fabrica antes; la venta descuenta el stock del producto terminado, no la materia prima.",
+                },
+              ]).map((opt) => {
+                const activo = modoReceta === opt.v;
+                return (
+                  <button
+                    key={opt.v}
+                    type="button"
+                    onClick={() => setModoReceta(opt.v)}
+                    className={`text-left rounded-lg border-2 p-3 transition-all ${
+                      activo ? "border-[#4FAEB2] bg-[#4FAEB2]/[0.06] shadow-sm" : "border-slate-200 hover:border-slate-300"
+                    }`}
+                  >
+                    <span className="text-sm font-semibold text-slate-900">{opt.titulo}</span>
+                    <p className="mt-1.5 text-xs text-slate-500 leading-snug">{opt.desc}</p>
+                  </button>
+                );
+              })}
+            </div>
+            {modoReceta === "produccion_previa" && (
+              <p className="mt-2 text-xs text-[#4FAEB2]">
+                Usá el botón <strong>Fabricar</strong> en el detalle de la receta para producir y cargar stock.
+              </p>
+            )}
           </div>
         )}
       </div>

@@ -180,7 +180,10 @@ export default function InventarioPage() {
   const resumen = useMemo(() => {
     // Tienen stock real: Reventa (controla_stock) y Materia prima (insumos, que se
     // mueven por compras/recetas). Solo el Menú "sin control" queda fuera.
-    const conStock = productos.filter((p) => !(p.controla_stock === false && p.es_insumo !== true));
+    // produccion_previa (Menú fabricado y stockeado) sí maneja stock real del terminado.
+    const conStock = productos.filter(
+      (p) => !(p.controla_stock === false && p.es_insumo !== true && p.modo_receta !== "produccion_previa")
+    );
     const stockValorizado = conStock.reduce((s, p) => s + p.stock_actual * p.costo_promedio, 0);
     const bajo = conStock.filter((p) => p.stock_actual <= p.stock_minimo).length;
     const disponibles = conStock.filter((p) => p.stock_actual > 0).length;
@@ -444,7 +447,8 @@ export default function InventarioPage() {
                 const margen = calcularMargenVenta(p.costo_promedio, p.precio_venta);
                 // "Sin control" SOLO para Menú (vendible sin stock). Los insumos
                 // (Materia prima) sí tienen stock real aunque controla_stock=false.
-                const sinControl = p.controla_stock === false && p.es_insumo !== true;
+                const sinControl =
+                  p.controla_stock === false && p.es_insumo !== true && p.modo_receta !== "produccion_previa";
                 return (
                   <tr key={p.id} className="border-b border-slate-200 last:border-0 hover:bg-[#4FAEB2]/[0.04] transition-colors">
                     <td className="py-4 pr-4 font-medium text-gray-800">

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
-import { ChefHat, ArrowLeft, Plus, Trash2, Save, Loader2 } from "lucide-react";
+import { ChefHat, ArrowLeft, Plus, Trash2, Save, Loader2, Factory, X } from "lucide-react";
 import { NEURA_CLIENT_SCHEMA } from "@/lib/supabase/schema";
 import { formatUnidad } from "@/lib/unidades/format";
 import { unidadesCompatibles, familiaUnidad } from "@/lib/unidades/convert";
@@ -62,9 +62,38 @@ type Producto = {
   unidad_medida: string | null;
 };
 
+type InsumoReq = {
+  producto_id: string;
+  nombre: string;
+  sku: string;
+  unidad: string | null;
+  requerido: number;
+  stock_actual: number;
+  costo_unitario: number;
+  subcosto: number;
+  faltante: number;
+};
+type ProduccionPreview = {
+  receta_id: string;
+  producto_id: string;
+  producto_nombre: string;
+  cantidad_fabricar: number;
+  rendimiento_cantidad: number;
+  unidad_rendimiento: string | null;
+  insumos: InsumoReq[];
+  insumos_incompatibles: string[];
+  costo_total: number;
+  costo_unitario: number;
+  hay_faltantes: boolean;
+};
+
 function fmtGs(n: number | null | undefined) {
   if (n == null) return "—";
   return "Gs. " + Number(n).toLocaleString("es-PY", { maximumFractionDigits: 0 });
+}
+function fmtNum(n: number | null | undefined) {
+  if (n == null) return "—";
+  return Number(n).toLocaleString("es-PY", { maximumFractionDigits: 3 });
 }
 
 export default function EditarRecetaPage() {
@@ -87,6 +116,16 @@ export default function EditarRecetaPage() {
   const [newUnidad, setNewUnidad] = useState("");
   const [newMerma, setNewMerma] = useState<number>(0);
   const [addingItem, setAddingItem] = useState(false);
+
+  // Fabricación (producción)
+  const [fabOpen, setFabOpen] = useState(false);
+  const [fabCantidad, setFabCantidad] = useState<number>(1);
+  const [fabObs, setFabObs] = useState("");
+  const [fabPreview, setFabPreview] = useState<ProduccionPreview | null>(null);
+  const [fabLoadingPreview, setFabLoadingPreview] = useState(false);
+  const [fabSubmitting, setFabSubmitting] = useState(false);
+  const [fabError, setFabError] = useState<string | null>(null);
+  const [fabOk, setFabOk] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const [recRes, prodRes] = await Promise.all([
@@ -222,6 +261,91 @@ export default function EditarRecetaPage() {
     router.push("/dashboard/recetas");
   }
 
+  // Preview de fabricación: recalcula insumos requeridos/faltantes/costo al abrir o cambiar cantidad.
+  useEffect(() => {
+    if (!fabOpen || !(fabCantidad > 0)) {
+      setFabPreview(null);
+      return;
+    }
+    let cancel = false;
+    setFabLoadingPreview(true);
+    setFabError(null);
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetchWithSupabaseSession(`/api/producciones`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ receta_id: id, cantidad: Number(fabCantidad), preview: true }),
+        });
+        const body = await res.json();
+        if (cancel) return;
+        if (!res.ok || body?.success === false) {
+          setFabError(body?.error ?? "No se pudo calcular la fabricación.");
+          setFabPreview(null);
+          return;
+        }
+        setFabPreview(body.data.preview as ProduccionPreview);
+      } catch {
+        if (!cancel) setFabError("Error de red al calcular la fabricación.");
+      } finally {
+        if (!cancel) setFabLoadingPreview(false);
+      }
+    }, 300);
+    return () => {
+      cancel = true;
+      clearTimeout(t);
+    };
+  }, [fabOpen, fabCantidad, id]);
+
+  function openFabricar() {
+    setFabCantidad(receta?.rendimiento_cantidad && receta.rendimiento_cantidad > 0 ? receta.rendimiento_cantidad : 1);
+    setFabObs("");
+    setFabError(null);
+    setFabOk(null);
+    setFabPreview(null);
+    setFabOpen(true);
+  }
+
+  async function submitFabricar(permitirSinStock: boolean) {
+    if (fabSubmitting || !(fabCantidad > 0)) return;
+    setFabSubmitting(true);
+    setFabError(null);
+    try {
+      const res = await fetchWithSupabaseSession(`/api/producciones`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          receta_id: id,
+          cantidad: Number(fabCantidad),
+          observaciones: fabObs.trim() || null,
+          permitir_sin_stock: permitirSinStock,
+        }),
+      });
+      const body = await res.json();
+      if (res.status === 409 && Array.isArray(body?.faltantes)) {
+        // Falta materia prima → reflejar en el preview para mostrar faltantes y habilitar "Fabricar igual".
+        setFabError("Falta materia prima para esta cantidad. Revisá los faltantes abajo.");
+        setFabPreview((prev) =>
+          prev ? { ...prev, hay_faltantes: true } : prev
+        );
+        return;
+      }
+      if (!res.ok || body?.success === false) {
+        setFabError(body?.error ?? "No se pudo registrar la fabricación.");
+        return;
+      }
+      const prod = body.data.produccion as { cantidad_fabricada: number; producto_nombre: string };
+      setFabOpen(false);
+      setFabOk(`Se fabricaron ${fmtNum(prod.cantidad_fabricada)} de ${prod.producto_nombre}. Stock actualizado.`);
+      setTimeout(() => setFabOk(null), 4000);
+      await refresh();
+    } catch {
+      setFabError("Error de red al registrar la fabricación.");
+    } finally {
+      setFabSubmitting(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-6 flex items-center gap-2 text-sm text-gray-500">
@@ -255,13 +379,27 @@ export default function EditarRecetaPage() {
             {receta.nombre?.trim() || (receta.producto_nombre ? `Receta: ${receta.producto_nombre}` : "Receta")}
           </h1>
         </div>
-        <button
-          onClick={deleteReceta}
-          className="inline-flex items-center gap-1 text-sm text-red-600 hover:text-red-700"
-        >
-          <Trash2 className="h-4 w-4" /> Eliminar receta
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={openFabricar}
+            className="inline-flex items-center gap-1.5 rounded-md bg-[#4FAEB2] px-4 py-2 text-sm font-medium text-white hover:bg-[#3F8E91]"
+          >
+            <Factory className="h-4 w-4" /> Fabricar
+          </button>
+          <button
+            onClick={deleteReceta}
+            className="inline-flex items-center gap-1 text-sm text-red-600 hover:text-red-700"
+          >
+            <Trash2 className="h-4 w-4" /> Eliminar receta
+          </button>
+        </div>
       </div>
+
+      {fabOk && (
+        <div className="rounded-md bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-700 mb-4">
+          ✓ {fabOk}
+        </div>
+      )}
 
       {/* Costeo summary */}
       {costeo && (
@@ -559,6 +697,158 @@ export default function EditarRecetaPage() {
           <Save className="h-4 w-4" /> {savingHeader ? "Guardando…" : "Guardar receta"}
         </button>
       </div>
+
+      {/* Modal Fabricar */}
+      {fabOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4">
+          <div className="bg-white w-full sm:max-w-2xl sm:rounded-xl rounded-t-2xl shadow-xl max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 sticky top-0 bg-white">
+              <div className="flex items-center gap-2">
+                <Factory className="h-5 w-5 text-[#4FAEB2]" />
+                <h3 className="text-base font-semibold text-gray-900">
+                  Fabricar {receta.producto_nombre ?? "producto"}
+                </h3>
+              </div>
+              <button
+                onClick={() => setFabOpen(false)}
+                className="text-gray-400 hover:text-gray-600 p-1"
+                aria-label="Cerrar"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Cantidad a fabricar</label>
+                  <input
+                    type="number"
+                    step="1"
+                    min="0.01"
+                    value={fabCantidad}
+                    onChange={(e) => setFabCantidad(Number(e.target.value) || 0)}
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  />
+                  <p className="mt-1 text-[11px] text-gray-400">
+                    Unidades del producto terminado a producir.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Observaciones (opcional)</label>
+                  <input
+                    type="text"
+                    value={fabObs}
+                    onChange={(e) => setFabObs(e.target.value)}
+                    placeholder="Ej: lote mañana"
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+
+              {fabError && (
+                <div className="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                  {fabError}
+                </div>
+              )}
+
+              {fabLoadingPreview && (
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Calculando insumos…
+                </div>
+              )}
+
+              {fabPreview && !fabLoadingPreview && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-md bg-gray-50 border border-gray-200 p-3">
+                      <div className="text-[11px] text-gray-500 uppercase">Costo total</div>
+                      <div className="text-base font-semibold text-gray-900">{fmtGs(fabPreview.costo_total)}</div>
+                    </div>
+                    <div className="rounded-md bg-gray-50 border border-gray-200 p-3">
+                      <div className="text-[11px] text-gray-500 uppercase">Costo unitario</div>
+                      <div className="text-base font-semibold text-gray-900">{fmtGs(fabPreview.costo_unitario)}</div>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="text-left text-xs text-gray-500 uppercase">
+                        <tr>
+                          <th className="py-2">Materia prima</th>
+                          <th className="py-2 text-right">Requerido</th>
+                          <th className="py-2 text-right">Stock</th>
+                          <th className="py-2 text-right">Falta</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {fabPreview.insumos.map((ins) => (
+                          <tr key={ins.producto_id} className={ins.faltante > 0 ? "bg-amber-50" : ""}>
+                            <td className="py-2 font-medium text-gray-800">{ins.nombre}</td>
+                            <td className="py-2 text-right tabular-nums">
+                              {fmtNum(ins.requerido)} <span className="text-xs text-gray-400">{formatUnidad(ins.unidad)}</span>
+                            </td>
+                            <td className="py-2 text-right tabular-nums text-gray-600">
+                              {fmtNum(ins.stock_actual)} <span className="text-xs text-gray-400">{formatUnidad(ins.unidad)}</span>
+                            </td>
+                            <td className="py-2 text-right tabular-nums">
+                              {ins.faltante > 0 ? (
+                                <span className="text-amber-700 font-medium">{fmtNum(ins.faltante)}</span>
+                              ) : (
+                                <span className="text-emerald-600">✓</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {fabPreview.insumos_incompatibles.length > 0 && (
+                    <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+                      ⚠ Insumos con unidad incompatible (no se descuentan):{" "}
+                      {fabPreview.insumos_incompatibles.join(", ")}. Revisá las unidades en la receta.
+                    </div>
+                  )}
+
+                  {fabPreview.hay_faltantes && (
+                    <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+                      No hay suficiente materia prima para fabricar esta cantidad. Podés fabricar igual
+                      (el stock de los insumos faltantes quedará en 0) o reducir la cantidad.
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 border-t border-gray-200 px-5 py-4 sticky bottom-0 bg-white">
+              <button
+                onClick={() => setFabOpen(false)}
+                className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              {fabPreview?.hay_faltantes ? (
+                <button
+                  onClick={() => submitFabricar(true)}
+                  disabled={fabSubmitting || !(fabCantidad > 0)}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-md bg-amber-600 px-5 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                >
+                  <Factory className="h-4 w-4" /> {fabSubmitting ? "Fabricando…" : "Fabricar sin stock"}
+                </button>
+              ) : (
+                <button
+                  onClick={() => submitFabricar(false)}
+                  disabled={fabSubmitting || fabLoadingPreview || !fabPreview || !(fabCantidad > 0)}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-md bg-[#4FAEB2] px-5 py-2 text-sm font-medium text-white hover:bg-[#3F8E91] disabled:opacity-50"
+                >
+                  <Factory className="h-4 w-4" /> {fabSubmitting ? "Fabricando…" : "Confirmar fabricación"}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

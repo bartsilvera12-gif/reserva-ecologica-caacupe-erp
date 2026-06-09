@@ -91,6 +91,7 @@ export interface ProductoRow {
   precio_mayorista: string | number | null;
   cantidad_minima_mayorista: string | number | null;
   precio_distribuidor: string | number | null;
+  modo_receta: string;
 }
 
 export interface InsertProductoInput {
@@ -127,7 +128,7 @@ const RETURNING = `
   categoria_principal_id, ubicacion_principal_id, proveedor_principal_id,
   es_vendible, es_insumo,
   controla_stock, valorizado, unidad_compra, unidad_receta, factor_compra_receta, tiempo_prep_minutos,
-  precio_mayorista, cantidad_minima_mayorista, precio_distribuidor
+  precio_mayorista, cantidad_minima_mayorista, precio_distribuidor, modo_receta
 `;
 
 // ─── Operaciones ──────────────────────────────────────────────────────────
@@ -220,6 +221,7 @@ export interface UpdateProductoInput {
   precio_mayorista?: number | null;
   cantidad_minima_mayorista?: number | null;
   precio_distribuidor?: number | null;
+  modo_receta?: string;
 }
 
 /** Update parcial. Devuelve la fila o null si no existe / no pertenece a la empresa. */
@@ -273,6 +275,7 @@ export async function updateProductoPg(
   if (patch.precio_mayorista !== undefined) add("precio_mayorista", patch.precio_mayorista, "::numeric");
   if (patch.cantidad_minima_mayorista !== undefined) add("cantidad_minima_mayorista", patch.cantidad_minima_mayorista, "::numeric");
   if (patch.precio_distribuidor !== undefined) add("precio_distribuidor", patch.precio_distribuidor, "::numeric");
+  if (patch.modo_receta !== undefined) add("modo_receta", patch.modo_receta);
   if (sets.length === 0) return await getProductoPg(schemaRaw, empresaId, id);
 
   sets.push(`updated_at = now()`);
@@ -480,5 +483,6 @@ export function rowToProductoApi(r: ProductoRow): Record<string, unknown> {
     unidad_receta: r.unidad_receta ?? null,
     factor_compra_receta: Number(r.factor_compra_receta ?? 1),
     tiempo_prep_minutos: Number(r.tiempo_prep_minutos ?? 0),
+    modo_receta: r.modo_receta ?? "preparado_al_vender",
   };
 }
