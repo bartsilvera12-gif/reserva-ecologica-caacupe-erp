@@ -769,10 +769,12 @@ export default function EditarProductoPage() {
           </div>
 
           <div>
-            <p className="text-xs text-gray-400 mb-3 uppercase tracking-wide font-semibold">Precios</p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <p className="text-xs text-gray-400 mb-3 uppercase tracking-wide font-semibold">
+              {showPrecioVenta ? "Precios" : "Costo de adquisición"}
+            </p>
+            <div className={`grid grid-cols-1 gap-6 ${showPrecioVenta ? "sm:grid-cols-3" : ""}`}>
               <div>
-                <label className={labelClass}>Costo promedio (Gs.)</label>
+                <label className={labelClass}>{showPrecioVenta ? "Costo promedio (Gs.)" : "Costo promedio / adquisición (Gs.)"}</label>
                 <MontoInput
                   value={form.costo_promedio}
                   onChange={handleCostoChange}
@@ -781,6 +783,7 @@ export default function EditarProductoPage() {
                   required
                 />
               </div>
+              {showPrecioVenta && (
               <div>
                 <label className={labelClass}>Markup s/costo (%)</label>
                 <input
@@ -792,6 +795,7 @@ export default function EditarProductoPage() {
                   step="0.01"
                 />
               </div>
+              )}
               <div className={showPrecioVenta ? "" : "hidden"}>
                 <label className={labelClass}>Precio de venta (Gs.)</label>
                 <MontoInput
@@ -842,7 +846,7 @@ export default function EditarProductoPage() {
                 </p>
               </div>
             )}
-            {tieneAmbos && markupCalc !== null && margenVentaCalc !== null && (
+            {showPrecioVenta && tieneAmbos && markupCalc !== null && margenVentaCalc !== null && (
               <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className={`border rounded-lg px-4 py-3 ${esPerdida ? "bg-red-50 border-red-200" : "bg-blue-50 border-blue-100"}`}>
                   <p className={`text-xs font-medium mb-1 ${esPerdida ? "text-red-500" : "text-blue-500"}`}>Markup</p>

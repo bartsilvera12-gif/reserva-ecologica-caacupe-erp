@@ -685,15 +685,15 @@ export default function NuevoProductoPage() {
             </div>
           </div>
 
-          {/* Costo + Markup + Precio — bloque reactivo */}
+          {/* Costo (+ Markup + Precio en productos comerciales) — bloque reactivo */}
           <div>
             <p className="text-xs text-gray-400 mb-3 uppercase tracking-wide font-semibold">
-              Precios — los tres campos son reactivos entre sí
+              {showPrecioVenta ? "Precios — los tres campos son reactivos entre sí" : "Costo de adquisición"}
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <div className={`grid grid-cols-1 gap-6 ${showPrecioVenta ? "sm:grid-cols-3" : ""}`}>
 
               <div>
-                <label className={labelClass}>Costo promedio (Gs.)</label>
+                <label className={labelClass}>{showPrecioVenta ? "Costo promedio (Gs.)" : "Costo promedio / adquisición (Gs.)"}</label>
                 <MontoInput
                   value={form.costo_promedio}
                   onChange={handleCostoChange}
@@ -704,6 +704,7 @@ export default function NuevoProductoPage() {
                 />
               </div>
 
+              {showPrecioVenta && (
               <div>
                 <label className={labelClass}>Markup s/costo (%)</label>
                 <div className="relative">
@@ -722,6 +723,7 @@ export default function NuevoProductoPage() {
                 </div>
                 <p className="mt-1.5 text-xs text-gray-400">(precio − costo) / costo</p>
               </div>
+              )}
 
               <div className={showPrecioVenta ? "" : "hidden"}>
                 <label className={labelClass}>Precio de venta (Gs.)</label>
@@ -777,8 +779,8 @@ export default function NuevoProductoPage() {
               </div>
             )}
 
-            {/* Indicadores de rentabilidad en tiempo real */}
-            {tieneAmbos && markupCalc !== null && margenVentaCalc !== null && (
+            {/* Indicadores de rentabilidad en tiempo real (no aplican a materia prima) */}
+            {showPrecioVenta && tieneAmbos && markupCalc !== null && margenVentaCalc !== null && (
               <div className="mt-4 space-y-3">
 
                 {/* Advertencia de pérdida */}

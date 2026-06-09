@@ -424,14 +424,16 @@ export default function InventarioPage() {
                 <th className="py-3 pr-4 font-medium">Nombre</th>
                 <th className="hidden py-3 pr-4 font-medium lg:table-cell">SKU</th>
                 <th className="py-3 pr-4 font-medium">Costo Prom.</th>
-                <th className="py-3 pr-4 font-medium">Precio Venta</th>
+                {tab !== "materia" && <th className="py-3 pr-4 font-medium">Precio Venta</th>}
                 <th className="py-3 pr-4 font-medium text-center">Stock actual</th>
                 <th className="py-3 pr-4 text-center font-medium hidden lg:table-cell">Stock Mín.</th>
                 <th className="py-3 pr-4 font-medium hidden lg:table-cell">Ubicación</th>
                 <th className="py-3 pr-4 font-medium hidden lg:table-cell">Valuación</th>
-                <th className="hidden py-3 pr-6 text-right font-medium lg:table-cell">
-                  <span title="(precio - costo) / precio × 100">Margen s/venta</span>
-                </th>
+                {tab !== "materia" && (
+                  <th className="hidden py-3 pr-6 text-right font-medium lg:table-cell">
+                    <span title="(precio - costo) / precio × 100">Margen s/venta</span>
+                  </th>
+                )}
                 <th className="py-3 pl-4 font-medium text-center w-28">Acción</th>
               </tr>
             </thead>
@@ -460,7 +462,7 @@ export default function InventarioPage() {
                     </td>
                     <td className="hidden py-4 pr-4 font-mono text-gray-500 lg:table-cell">{p.sku}</td>
                     <td className="py-4 pr-4 text-gray-700">{formatGs(p.costo_promedio)}</td>
-                    <td className="py-4 pr-4 text-gray-700">{formatGs(p.precio_venta)}</td>
+                    {tab !== "materia" && <td className="py-4 pr-4 text-gray-700">{formatGs(p.precio_venta)}</td>}
                     <td className="py-4 pr-4 text-center">
                       {sinControl ? (
                         <span className="text-xs text-gray-400">— sin control</span>
@@ -494,9 +496,11 @@ export default function InventarioPage() {
                         {p.metodo_valuacion}
                       </span>
                     </td>
-                    <td className={`hidden py-4 pr-6 text-right font-semibold tabular-nums lg:table-cell ${margenColor(margen)}`}>
-                      {margen.toFixed(2)}%
-                    </td>
+                    {tab !== "materia" && (
+                      <td className={`hidden py-4 pr-6 text-right font-semibold tabular-nums lg:table-cell ${margenColor(margen)}`}>
+                        {margen.toFixed(2)}%
+                      </td>
+                    )}
                     <td className="py-4 pl-4 text-center">
                       <Link
                         href={`/inventario/${p.id}/editar`}
