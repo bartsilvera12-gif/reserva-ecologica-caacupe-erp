@@ -24,6 +24,14 @@ export interface ProductoPickerItem {
   ubicacion_tipo: string | null;
   /** Si false → producto preparado (Menú): no valida stock ni muestra "Sin stock". */
   controla_stock?: boolean;
+  /** Modo de receta: 'produccion_previa' (Menú stockeado) muestra stock real. */
+  modo_receta?: string;
+}
+
+/** Un Menú con produccion_previa maneja stock real del terminado (como reventa para mostrar). */
+function manejaStock(p: { controla_stock?: boolean; modo_receta?: string }): boolean {
+  if (p.controla_stock !== false) return true;
+  return p.modo_receta === "produccion_previa";
 }
 
 /**
@@ -234,10 +242,11 @@ export default function ProductPickerModal({
                 {items.map((p) => {
                   const enCarro = excludeIds.filter((id) => id === p.id).length;
                   const disp = p.stock_actual - enCarro;
-                  // Productos del Menú (controla_stock=false) no aplican validación de stock.
-                  const ctrlStock = p.controla_stock !== false;
-                  const sinStock = ctrlStock && disp <= 0;
-                  const isMenu = !ctrlStock;
+                  // Menú preparado_al_vender: sin stock propio (badge Menú).
+                  // Menú produccion_previa: maneja stock real del terminado → se muestra como reventa.
+                  const manejaStk = manejaStock(p);
+                  const sinStock = manejaStk && disp <= 0;
+                  const isMenu = !manejaStk;
                   const isSel = sel?.id === p.id;
                   return (
                     <li
@@ -337,7 +346,7 @@ export default function ProductPickerModal({
 
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <DetailItem label="Precio venta" value={formatGs(sel.precio_venta)} highlight />
-                  {sel.controla_stock !== false ? (
+                  {manejaStock(sel) ? (
                     <DetailItem label="Stock disp." value={`${dispSel} ${sel.unidad_medida}`} highlight />
                   ) : (
                     <DetailItem label="Tipo" value="Menú (preparado)" highlight />

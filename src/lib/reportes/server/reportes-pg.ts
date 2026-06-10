@@ -394,6 +394,7 @@ export async function getReporteConciliacion(
   const schema = assertAllowedChatDataSchema(schemaRaw);
   const tV = quoteSchemaTable(schema, "ventas");
   const tD = quoteSchemaTable(schema, "ventas_pagos_detalle");
+  const tCob = quoteSchemaTable(schema, "cobros_clientes");
   const tCli = quoteSchemaTable(schema, "clientes");
   const p = pool();
   const perV = `v.empresa_id=$1::uuid AND v.fecha>=$2::timestamptz AND v.fecha<=$3::timestamptz`;
@@ -420,17 +421,30 @@ export async function getReporteConciliacion(
   const ventasTotQ = p.query<{ ventas: number }>(
     `SELECT count(*)::int AS ventas FROM ${tV} v WHERE ${perV}`, args);
 
-  // Agregados sobre los detalles de cobro de ventas del mes.
+  // Movimientos de cobranza del mes = detalle de cobro de ventas (contado) +
+  // cobros de cuentas por cobrar (créditos cobrados en el período). Ambos alimentan
+  // la conciliación por método y por entidad bancaria.
   const detPer = `d.empresa_id=$1::uuid AND EXISTS (SELECT 1 FROM ${tV} v WHERE v.id=d.venta_id AND ${perV})`;
+  const movsCTE = `WITH movs AS (
+      SELECT d.metodo_pago AS metodo,
+             COALESCE(NULLIF(d.entidad_nombre_snapshot,''),'(sin entidad)') AS entidad,
+             d.monto::float8 AS monto
+        FROM ${tD} d WHERE ${detPer}
+      UNION ALL
+      SELECT cc.metodo_pago AS metodo,
+             COALESCE(NULLIF(cc.entidad_nombre_snapshot,''),'(sin entidad)') AS entidad,
+             cc.monto::float8 AS monto
+        FROM ${tCob} cc
+       WHERE cc.empresa_id=$1::uuid AND cc.fecha_pago>=$2::timestamptz AND cc.fecha_pago<=$3::timestamptz
+    )`;
   const totQ = p.query<{ cantidad: number; total: number }>(
-    `SELECT count(*)::int AS cantidad, COALESCE(SUM(monto),0)::float8 AS total FROM ${tD} d WHERE ${detPer}`, args);
+    `${movsCTE} SELECT count(*)::int AS cantidad, COALESCE(SUM(monto),0)::float8 AS total FROM movs`, args);
   const porMetodoQ = p.query<ConciliacionAgrupado>(
-    `SELECT metodo_pago AS clave, count(*)::int AS cantidad, COALESCE(SUM(monto),0)::float8 AS total
-       FROM ${tD} d WHERE ${detPer} GROUP BY metodo_pago ORDER BY total DESC`, args);
+    `${movsCTE} SELECT metodo AS clave, count(*)::int AS cantidad, COALESCE(SUM(monto),0)::float8 AS total
+       FROM movs GROUP BY metodo ORDER BY total DESC`, args);
   const porEntidadQ = p.query<ConciliacionAgrupado>(
-    `SELECT COALESCE(NULLIF(entidad_nombre_snapshot,''),'(sin entidad)') AS clave,
-            count(*)::int AS cantidad, COALESCE(SUM(monto),0)::float8 AS total
-       FROM ${tD} d WHERE ${detPer} GROUP BY 1 ORDER BY total DESC`, args);
+    `${movsCTE} SELECT entidad AS clave, count(*)::int AS cantidad, COALESCE(SUM(monto),0)::float8 AS total
+       FROM movs GROUP BY entidad ORDER BY total DESC`, args);
 
   const [ventas, ventasTot, tot, porMetodo, porEntidad] = await Promise.all([
     ventasQ, ventasTotQ, totQ, porMetodoQ, porEntidadQ]);

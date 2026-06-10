@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
       monto: Number(body.monto),
       metodo_pago: (body.metodo_pago as "efectivo" | "transferencia" | "tarjeta" | "otro") ?? "efectivo",
       entidad_bancaria_id: body.entidad_bancaria_id ? String(body.entidad_bancaria_id) : null,
+      entidad_nombre_snapshot: body.entidad_nombre_snapshot ? String(body.entidad_nombre_snapshot) : null,
       referencia: body.referencia ? String(body.referencia) : null,
       titular: body.titular ? String(body.titular) : null,
       observaciones: body.observaciones ? String(body.observaciones) : null,

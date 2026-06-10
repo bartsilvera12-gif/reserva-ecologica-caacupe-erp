@@ -26,6 +26,7 @@ interface ProductoSearchHit {
   ubicacion_tipo: string | null;
   es_vendible: boolean;
   controla_stock: boolean;
+  modo_receta: string;
 }
 
 const DEFAULT_LIMIT = 30;
@@ -65,7 +66,7 @@ export async function GET(request: NextRequest) {
           "precio_venta, precio_mayorista, precio_distribuidor, costo_promedio, stock_actual, stock_minimo, " +
           "unidad_medida, metodo_valuacion, imagen_path, imagen_url, " +
           "categoria_principal_id, proveedor_principal_id, ubicacion_principal_id, " +
-          "es_vendible, controla_stock, activo"
+          "es_vendible, controla_stock, modo_receta, activo"
       )
       .eq("empresa_id", empresaId)
       .eq("activo", true)
@@ -100,6 +101,7 @@ export async function GET(request: NextRequest) {
       imagen_url: (r.imagen_url as string | null) ?? null,
       es_vendible: r.es_vendible !== false,
       controla_stock: r.controla_stock !== false,
+      modo_receta: typeof r.modo_receta === "string" ? r.modo_receta : "preparado_al_vender",
     }));
 
     // Firmar URLs solo para los primeros 20 visibles (optimización).
@@ -132,6 +134,7 @@ export async function GET(request: NextRequest) {
       ubicacion_tipo: null,
       es_vendible: r.es_vendible,
       controla_stock: r.controla_stock,
+      modo_receta: r.modo_receta,
     }));
 
     return NextResponse.json(successResponse({ items: hits, count: hits.length, q }));

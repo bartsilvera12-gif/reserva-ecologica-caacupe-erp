@@ -13,6 +13,7 @@ export interface RegistrarCobroInput {
   fecha_pago?: string | null;
   usuario_id?: string | null;
   usuario_nombre?: string | null;
+  entidad_nombre_snapshot?: string | null;
 }
 
 export class CobroError extends Error {
@@ -87,6 +88,7 @@ export async function registrarCobro(
       monto,
       metodo_pago: metodoValido(input.metodo_pago),
       entidad_bancaria_id: input.entidad_bancaria_id || null,
+      entidad_nombre_snapshot: input.entidad_nombre_snapshot?.trim() || null,
       referencia: input.referencia?.trim() || null,
       titular: input.titular?.trim() || null,
       observaciones: input.observaciones?.trim() || null,
