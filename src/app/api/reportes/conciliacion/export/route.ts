@@ -25,15 +25,12 @@ export async function GET(request: NextRequest) {
       { concepto: "Reporte", valor: "Conciliación bancaria" },
       { concepto: "Mes", valor: mes },
       { concepto: "Total cobrado (según detalle)", valor: r.totalCobrado },
-      { concepto: "Operaciones de cobro", valor: r.cantidadOperaciones },
-      { concepto: "Ventas del mes", valor: r.cantidadVentas },
-      { concepto: "Ventas con detalle", valor: r.ventasConDetalle },
-      { concepto: "Ventas sin detalle", valor: r.ventasSinDetalle },
+      { concepto: "Operaciones", valor: r.cantidadOperaciones },
     ];
 
     const buf = buildXlsxBufferSheets([
       sheetFromRows("Resumen", resumen, [
-        { header: "Concepto", value: (x) => x.concepto, width: 32 },
+        { header: "Concepto", value: (x) => x.concepto, width: 36 },
         { header: "Valor", value: (x) => x.valor, width: 24 },
       ]),
       sheetFromRows("Por método", r.porMetodo, [
@@ -46,16 +43,16 @@ export async function GET(request: NextRequest) {
         { header: "Operaciones", value: (x) => x.cantidad, width: 12 },
         { header: "Total", value: (x) => x.total, width: 16 },
       ]),
-      sheetFromRows("Ventas", r.ventas, [
-        { header: "Fecha", value: (v) => (v.fecha ? new Date(v.fecha) : ""), width: 20 },
-        { header: "N° Venta", value: (v) => v.numero_control, width: 16 },
-        { header: "Cliente", value: (v) => v.cliente ?? "", width: 26 },
-        { header: "Método", value: (v) => metodoLabel(v.metodo_pago), width: 16 },
-        { header: "Entidad", value: (v) => v.entidad ?? "", width: 24 },
-        { header: "Referencia", value: (v) => v.referencia ?? "", width: 20 },
-        { header: "Titular", value: (v) => v.titular ?? "", width: 22 },
-        { header: "Monto", value: (v) => (v.monto ?? ""), width: 16 },
-        { header: "Estado", value: (v) => (v.con_detalle ? "Con detalle" : "Sin detalle"), width: 14 },
+      sheetFromRows("Movimientos", r.movimientos, [
+        { header: "Fecha", value: (m) => (m.fecha ? new Date(m.fecha) : ""), width: 20 },
+        { header: "Tipo", value: (m) => (m.tipo === "cobro" ? "Cobro CxC" : "Venta"), width: 12 },
+        { header: "N° Venta", value: (m) => m.numero ?? "", width: 16 },
+        { header: "Cliente", value: (m) => m.cliente ?? "", width: 26 },
+        { header: "Método", value: (m) => metodoLabel(m.metodo_pago), width: 16 },
+        { header: "Entidad", value: (m) => m.entidad ?? "", width: 24 },
+        { header: "Referencia", value: (m) => m.referencia ?? "", width: 20 },
+        { header: "Titular", value: (m) => m.titular ?? "", width: 22 },
+        { header: "Monto", value: (m) => m.monto, width: 16 },
       ]),
     ]);
     return new Response(new Uint8Array(buf), { status: 200, headers: xlsxResponseHeaders(`conciliacion-${mes}`) });

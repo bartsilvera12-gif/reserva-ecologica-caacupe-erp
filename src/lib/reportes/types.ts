@@ -160,28 +160,28 @@ export interface ConciliacionAgrupado {
   total: number;
 }
 
-/** Una venta del mes con su detalle de cobro (o sin él). */
-export interface ConciliacionVentaRow {
-  venta_id: string;
-  numero_control: string;
+/**
+ * Un movimiento bancario a conciliar: cobro de venta contado (no efectivo) o
+ * cobro de cuenta por cobrar (no efectivo). El efectivo NO entra en conciliación.
+ */
+export interface ConciliacionMovRow {
+  id: string;
+  tipo: "venta" | "cobro";
   fecha: string;
+  numero: string | null;       // N° de venta asociado
   cliente: string | null;
   metodo_pago: string | null;
   entidad: string | null;
   referencia: string | null;
   titular: string | null;
-  monto: number | null;       // null si sin detalle
-  con_detalle: boolean;
+  monto: number;
 }
 
 export interface ConciliacionReporte {
   mes: string;
-  totalCobrado: number;          // SUM(monto) de los detalles
-  cantidadOperaciones: number;   // detalles de cobro
-  cantidadVentas: number;        // ventas del mes
-  ventasConDetalle: number;
-  ventasSinDetalle: number;
+  totalCobrado: number;          // SUM(monto) de movimientos bancarios (no efectivo)
+  cantidadOperaciones: number;   // cantidad de movimientos
   porMetodo: ConciliacionAgrupado[];
   porEntidad: ConciliacionAgrupado[];
-  ventas: ConciliacionVentaRow[];
+  movimientos: ConciliacionMovRow[];
 }

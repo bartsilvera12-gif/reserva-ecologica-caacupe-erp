@@ -30,7 +30,7 @@ import type {
   TipoPrecioReporte,
   ConciliacionReporte,
   ConciliacionAgrupado,
-  ConciliacionVentaRow,
+  ConciliacionMovRow,
 } from "@/lib/reportes/types";
 
 function pool() {
@@ -396,47 +396,38 @@ export async function getReporteConciliacion(
   const tD = quoteSchemaTable(schema, "ventas_pagos_detalle");
   const tCob = quoteSchemaTable(schema, "cobros_clientes");
   const tCli = quoteSchemaTable(schema, "clientes");
+  const tCxc = quoteSchemaTable(schema, "cuentas_por_cobrar");
   const p = pool();
-  const perV = `v.empresa_id=$1::uuid AND v.fecha>=$2::timestamptz AND v.fecha<=$3::timestamptz`;
   const args = [empresaId, b.start, b.end];
 
-  // Un detalle por venta (defensivo: el más reciente si hubiera más de uno).
-  const detLateral = `LEFT JOIN LATERAL (
-      SELECT d.metodo_pago, d.entidad_nombre_snapshot, d.referencia, d.titular, d.monto
-        FROM ${tD} d WHERE d.venta_id=v.id AND d.empresa_id=v.empresa_id
-       ORDER BY d.fecha_pago DESC LIMIT 1
-    ) d ON true`;
-
-  // Detalle por venta (todas las ventas del mes; con o sin cobro).
-  const ventasQ = p.query<ConciliacionVentaRow & { con_detalle: boolean }>(
-    `SELECT v.id AS venta_id, v.numero_control, v.fecha, c.nombre AS cliente,
-            d.metodo_pago, d.entidad_nombre_snapshot AS entidad, d.referencia, d.titular,
-            d.monto::float8 AS monto, (d.metodo_pago IS NOT NULL) AS con_detalle
-       FROM ${tV} v
-       LEFT JOIN ${tCli} c ON c.id=v.cliente_id AND c.empresa_id=v.empresa_id
-       ${detLateral}
-      WHERE ${perV} ORDER BY v.fecha DESC, v.numero_control DESC`, args);
-
-  // Totales de cabecera de ventas (para sin/con detalle).
-  const ventasTotQ = p.query<{ ventas: number }>(
-    `SELECT count(*)::int AS ventas FROM ${tV} v WHERE ${perV}`, args);
-
-  // Movimientos de cobranza del mes = detalle de cobro de ventas (contado) +
-  // cobros de cuentas por cobrar (créditos cobrados en el período). Ambos alimentan
-  // la conciliación por método y por entidad bancaria.
-  const detPer = `d.empresa_id=$1::uuid AND EXISTS (SELECT 1 FROM ${tV} v WHERE v.id=d.venta_id AND ${perV})`;
+  // Conciliación = SOLO movimientos bancarios (no efectivo): no hay nada que conciliar
+  // en efectivo. Incluye el cobro de ventas contado (ventas_pagos_detalle) y los cobros
+  // de cuentas por cobrar (cobros_clientes). El efectivo se excluye en todos lados.
   const movsCTE = `WITH movs AS (
-      SELECT d.metodo_pago AS metodo,
+      SELECT d.id::text AS id, 'venta'::text AS tipo, v.fecha AS fecha,
+             v.numero_control AS numero, c.nombre AS cliente, d.metodo_pago AS metodo,
              COALESCE(NULLIF(d.entidad_nombre_snapshot,''),'(sin entidad)') AS entidad,
-             d.monto::float8 AS monto
-        FROM ${tD} d WHERE ${detPer}
+             d.referencia AS referencia, d.titular AS titular, d.monto::float8 AS monto
+        FROM ${tD} d
+        JOIN ${tV} v ON v.id=d.venta_id AND v.empresa_id=d.empresa_id
+        LEFT JOIN ${tCli} c ON c.id=v.cliente_id AND c.empresa_id=v.empresa_id
+       WHERE d.empresa_id=$1::uuid AND v.fecha>=$2::timestamptz AND v.fecha<=$3::timestamptz
+         AND d.metodo_pago IS NOT NULL AND d.metodo_pago <> 'efectivo'
       UNION ALL
-      SELECT cc.metodo_pago AS metodo,
+      SELECT cc.id::text AS id, 'cobro'::text AS tipo, cc.fecha_pago AS fecha,
+             COALESCE(vc.numero_control, cta.numero_venta) AS numero, c.nombre AS cliente, cc.metodo_pago AS metodo,
              COALESCE(NULLIF(cc.entidad_nombre_snapshot,''),'(sin entidad)') AS entidad,
-             cc.monto::float8 AS monto
+             cc.referencia AS referencia, cc.titular AS titular, cc.monto::float8 AS monto
         FROM ${tCob} cc
+        LEFT JOIN ${tV} vc ON vc.id=cc.venta_id AND vc.empresa_id=cc.empresa_id
+        LEFT JOIN ${tCxc} cta ON cta.id=cc.cuenta_por_cobrar_id AND cta.empresa_id=cc.empresa_id
+        LEFT JOIN ${tCli} c ON c.id=cc.cliente_id AND c.empresa_id=cc.empresa_id
        WHERE cc.empresa_id=$1::uuid AND cc.fecha_pago>=$2::timestamptz AND cc.fecha_pago<=$3::timestamptz
+         AND cc.metodo_pago IS NOT NULL AND cc.metodo_pago <> 'efectivo'
     )`;
+
+  const movsQ = p.query<ConciliacionMovRow>(
+    `${movsCTE} SELECT id, tipo, fecha, numero, cliente, metodo AS metodo_pago, entidad, referencia, titular, monto FROM movs ORDER BY fecha DESC`, args);
   const totQ = p.query<{ cantidad: number; total: number }>(
     `${movsCTE} SELECT count(*)::int AS cantidad, COALESCE(SUM(monto),0)::float8 AS total FROM movs`, args);
   const porMetodoQ = p.query<ConciliacionAgrupado>(
@@ -446,33 +437,27 @@ export async function getReporteConciliacion(
     `${movsCTE} SELECT entidad AS clave, count(*)::int AS cantidad, COALESCE(SUM(monto),0)::float8 AS total
        FROM movs GROUP BY entidad ORDER BY total DESC`, args);
 
-  const [ventas, ventasTot, tot, porMetodo, porEntidad] = await Promise.all([
-    ventasQ, ventasTotQ, totQ, porMetodoQ, porEntidadQ]);
+  const [movs, tot, porMetodo, porEntidad] = await Promise.all([movsQ, totQ, porMetodoQ, porEntidadQ]);
 
-  const ventasRows: ConciliacionVentaRow[] = ventas.rows.map((r) => ({
-    venta_id: r.venta_id,
-    numero_control: r.numero_control,
+  const movimientos: ConciliacionMovRow[] = movs.rows.map((r) => ({
+    id: r.id,
+    tipo: r.tipo === "cobro" ? "cobro" : "venta",
     fecha: r.fecha,
+    numero: r.numero || null,
     cliente: r.cliente || null,
     metodo_pago: r.metodo_pago || null,
     entidad: r.entidad || null,
     referencia: r.referencia || null,
     titular: r.titular || null,
-    monto: r.con_detalle ? num(r.monto) : null,
-    con_detalle: r.con_detalle === true,
+    monto: num(r.monto),
   }));
-  const cantidadVentas = num(ventasTot.rows[0]?.ventas);
-  const ventasConDetalle = ventasRows.filter((v) => v.con_detalle).length;
 
   return {
     mes: b.mes,
     totalCobrado: num(tot.rows[0]?.total),
     cantidadOperaciones: num(tot.rows[0]?.cantidad),
-    cantidadVentas,
-    ventasConDetalle,
-    ventasSinDetalle: cantidadVentas - ventasConDetalle,
     porMetodo: porMetodo.rows.map((r) => ({ clave: r.clave, cantidad: num(r.cantidad), total: num(r.total) })),
     porEntidad: porEntidad.rows.map((r) => ({ clave: r.clave, cantidad: num(r.cantidad), total: num(r.total) })),
-    ventas: ventasRows,
+    movimientos,
   };
 }
