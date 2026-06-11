@@ -16,10 +16,15 @@ function formatGs(valor: number) {
   return `Gs. ${Math.round(valor).toLocaleString("es-PY")}`;
 }
 
-function calcIva(tipo: TipoIvaVenta, base: number) {
+/**
+ * IVA INCLUIDO: el precio de venta ya contiene el IVA. `total` es precio × cantidad
+ * (= total de la línea). El IVA se desglosa desde adentro, NO se suma encima.
+ *   EXENTA → 0 · 5% → total - total/1.05 · 10% → total - total/1.10
+ */
+function calcIva(tipo: TipoIvaVenta, total: number) {
   if (tipo === "EXENTA") return 0;
-  if (tipo === "5%")     return base * 0.05;
-  return base * 0.10;
+  if (tipo === "5%")     return total - total / 1.05;
+  return total - total / 1.10;
 }
 
 /**
@@ -210,9 +215,11 @@ export default function NuevaVentaPage() {
     // Verificar stock vs lo ya cargado SOLO si el producto controla stock.
     // Venta sin stock (Fase 5): NO se bloquea por falta de stock al agregar; la
     // confirmación se pide al registrar la venta. El Menú (controla_stock=false) tampoco valida.
-    const subtotal = cantidad * precioPyg;
-    const montoIva = calcIva(iva, subtotal);
-    const totalLinea = subtotal + montoIva;
+    // IVA incluido: el total de la línea es precio × cantidad; el IVA se desglosa
+    // desde adentro y el subtotal (base imponible) = total − IVA.
+    const totalLinea = cantidad * precioPyg;
+    const montoIva = calcIva(iva, totalLinea);
+    const subtotal = totalLinea - montoIva;
 
     // Asegurar que el producto este en el array local (para que stock_actual
     // se conozca en validaciones posteriores del form inline).
@@ -279,8 +286,10 @@ export default function NuevaVentaPage() {
             const cantidad = Number(it.cantidad) || 0;
             const precio = Number(it.precio_venta) || 0;
             const iva: TipoIvaVenta = "10%";
-            const subtotal = cantidad * precio;
-            const montoIva = calcIva(iva, subtotal);
+            // IVA incluido: total de línea = precio × cantidad; IVA desglosado desde adentro.
+            const totalLinea = cantidad * precio;
+            const montoIva = calcIva(iva, totalLinea);
+            const subtotal = totalLinea - montoIva;
             return {
               producto_id: String(it.producto_id),
               producto_nombre: typeof it.producto_nombre === "string" ? it.producto_nombre : "",
@@ -292,7 +301,7 @@ export default function NuevaVentaPage() {
               tipo_precio: "minorista" as TipoPrecioVenta,
               subtotal,
               monto_iva: montoIva,
-              total_linea: subtotal + montoIva,
+              total_linea: totalLinea,
             };
           });
         if (!cancelled && lineas.length) setItems(lineas);
@@ -381,9 +390,11 @@ export default function NuevaVentaPage() {
   const prodSelControlaStock = prodSel ? prodSel.controla_stock !== false : true;
   const stockDisp = (prodSel?.stock_actual ?? 0) - enCarrito;
 
-  const lineaSubtotal   = cantNum > 0 && precioGs > 0 ? cantNum * precioGs : 0;
-  const lineaMontoIva   = calcIva(lineaIva, lineaSubtotal);
-  const lineaTotalLinea = lineaSubtotal + lineaMontoIva;
+  // IVA incluido: el total de la línea es precio × cantidad; el IVA se desglosa
+  // desde adentro y el subtotal (base imponible) = total − IVA.
+  const lineaTotalLinea = cantNum > 0 && precioGs > 0 ? cantNum * precioGs : 0;
+  const lineaMontoIva   = calcIva(lineaIva, lineaTotalLinea);
+  const lineaSubtotal   = lineaTotalLinea - lineaMontoIva;
 
   // Aviso de stock (no bloquea): si falta stock se permite agregar igual y se pide
   // confirmación al confirmar la venta (venta sin stock con confirmación, Fase 5).
