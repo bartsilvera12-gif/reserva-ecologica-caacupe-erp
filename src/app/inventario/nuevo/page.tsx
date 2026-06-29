@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import MontoInput from "@/components/ui/MontoInput";
 import SelectFromList from "@/components/inventario/SelectFromList";
+import { MargenPorCanal } from "@/components/inventario/MargenPorCanal";
 import { productoExiste, saveProducto } from "@/lib/inventario/storage";
 import type { MetodoValuacion } from "@/lib/inventario/types";
 import { ShoppingBag, Boxes, ClipboardList, type LucideIcon } from "lucide-react";
@@ -389,14 +390,6 @@ export default function NuevoProductoPage() {
     }
   }
 
-  // ── Cálculos en tiempo real ──────────────────────────────────────────────────
-  const costo = parseFloat(form.costo_promedio);
-  const precio = parseFloat(form.precio_venta);
-  const tieneAmbos = !isNaN(costo) && !isNaN(precio) && costo > 0 && precio > 0;
-  const markupCalc = tieneAmbos ? ((precio - costo) / costo) * 100 : null;
-  const margenVentaCalc = tieneAmbos ? ((precio - costo) / precio) * 100 : null;
-  const esPerdida = markupCalc !== null && markupCalc < 0;
-
   const inputClass =
     "w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[#0EA5E9] focus:outline-none bg-white text-sm";
   const labelClass = "block text-sm font-medium text-slate-700 mb-2";
@@ -779,53 +772,16 @@ export default function NuevoProductoPage() {
               </div>
             )}
 
-            {/* Indicadores de rentabilidad en tiempo real (no aplican a materia prima) */}
-            {showPrecioVenta && tieneAmbos && markupCalc !== null && margenVentaCalc !== null && (
-              <div className="mt-4 space-y-3">
-
-                {/* Advertencia de pérdida */}
-                {esPerdida && (
-                  <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-xs text-red-600">
-                    <span className="mt-0.5 text-base leading-none">⚠</span>
-                    <span>
-                      El precio de venta es <strong>menor al costo</strong>. Cada unidad vendida generará una pérdida neta.
-                    </span>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  {/* Markup */}
-                  <div className={`border rounded-lg px-4 py-3 ${esPerdida ? "bg-red-50 border-red-200" : "bg-blue-50 border-blue-100"}`}>
-                    <p className={`text-xs font-medium mb-1 ${esPerdida ? "text-red-500" : "text-blue-500"}`}>
-                      Markup sobre costo
-                    </p>
-                    <p className={`text-lg font-bold tabular-nums ${esPerdida ? "text-red-700" : "text-blue-700"}`}>
-                      {markupCalc.toFixed(2)}%
-                    </p>
-                    <p className={`text-xs mt-0.5 ${esPerdida ? "text-red-400" : "text-blue-400"}`}>
-                      {esPerdida
-                        ? `Se vende ${Math.abs(markupCalc).toFixed(0)}% por debajo del costo`
-                        : `Se agrega ${markupCalc.toFixed(0)}% encima del costo`}
-                    </p>
-                  </div>
-
-                  {/* Margen sobre venta */}
-                  <div className={`border rounded-lg px-4 py-3 ${esPerdida ? "bg-red-50 border-red-200" : "bg-green-50 border-green-100"}`}>
-                    <p className={`text-xs font-medium mb-1 ${esPerdida ? "text-red-500" : "text-green-500"}`}>
-                      Margen sobre venta
-                    </p>
-                    <p className={`text-lg font-bold tabular-nums ${esPerdida ? "text-red-700" : "text-green-700"}`}>
-                      {margenVentaCalc.toFixed(2)}%
-                    </p>
-                    <p className={`text-xs mt-0.5 ${esPerdida ? "text-red-400" : "text-green-400"}`}>
-                      {esPerdida
-                        ? "Este precio genera pérdida neta en cada venta"
-                        : `De cada Gs. vendido, ${margenVentaCalc.toFixed(0)}% es ganancia`}
-                    </p>
-                  </div>
-                </div>
-
-              </div>
+            {/* Rentabilidad por canal en tiempo real (no aplica a materia prima) */}
+            {showPrecioVenta && (
+              <MargenPorCanal
+                costo={form.costo_promedio}
+                canales={[
+                  { label: "Minorista", precio: form.precio_venta },
+                  { label: "Mayorista", precio: form.precio_mayorista },
+                  { label: "Distribuidor", precio: form.precio_distribuidor },
+                ]}
+              />
             )}
           </div>
 

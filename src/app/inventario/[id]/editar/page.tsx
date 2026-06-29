@@ -9,6 +9,7 @@ import type { MetodoValuacion } from "@/lib/inventario/types";
 import ProductImageUploader from "@/components/inventario/ProductImageUploader";
 import SelectFromList from "@/components/inventario/SelectFromList";
 import ProveedoresCostos from "@/components/inventario/ProveedoresCostos";
+import { MargenPorCanal } from "@/components/inventario/MargenPorCanal";
 import { ShoppingBag, Boxes, ClipboardList, type LucideIcon } from "lucide-react";
 
 // Opciones estándar de unidad de medida (UX simplificada gastro)
@@ -377,13 +378,6 @@ export default function EditarProductoPage() {
       setSubmitting(false);
     }
   }
-
-  const costo = parseFloat(form.costo_promedio);
-  const precio = parseFloat(form.precio_venta);
-  const tieneAmbos = !isNaN(costo) && !isNaN(precio) && costo > 0 && precio > 0;
-  const markupCalc = tieneAmbos ? ((precio - costo) / costo) * 100 : null;
-  const margenVentaCalc = tieneAmbos ? ((precio - costo) / precio) * 100 : null;
-  const esPerdida = markupCalc !== null && markupCalc < 0;
 
   const inputClass =
     "w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:border-gray-500 transition-colors text-sm";
@@ -894,21 +888,15 @@ export default function EditarProductoPage() {
                 </p>
               </div>
             )}
-            {showPrecioVenta && tieneAmbos && markupCalc !== null && margenVentaCalc !== null && (
-              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className={`border rounded-lg px-4 py-3 ${esPerdida ? "bg-red-50 border-red-200" : "bg-blue-50 border-blue-100"}`}>
-                  <p className={`text-xs font-medium mb-1 ${esPerdida ? "text-red-500" : "text-blue-500"}`}>Markup</p>
-                  <p className={`text-lg font-bold tabular-nums ${esPerdida ? "text-red-700" : "text-blue-700"}`}>
-                    {markupCalc.toFixed(2)}%
-                  </p>
-                </div>
-                <div className={`border rounded-lg px-4 py-3 ${esPerdida ? "bg-red-50 border-red-200" : "bg-green-50 border-green-100"}`}>
-                  <p className={`text-xs font-medium mb-1 ${esPerdida ? "text-red-500" : "text-green-500"}`}>Margen s/venta</p>
-                  <p className={`text-lg font-bold tabular-nums ${esPerdida ? "text-red-700" : "text-green-700"}`}>
-                    {margenVentaCalc.toFixed(2)}%
-                  </p>
-                </div>
-              </div>
+            {showPrecioVenta && (
+              <MargenPorCanal
+                costo={form.costo_promedio}
+                canales={[
+                  { label: "Minorista", precio: form.precio_venta },
+                  { label: "Mayorista", precio: form.precio_mayorista },
+                  { label: "Distribuidor", precio: form.precio_distribuidor },
+                ]}
+              />
             )}
           </div>
 
