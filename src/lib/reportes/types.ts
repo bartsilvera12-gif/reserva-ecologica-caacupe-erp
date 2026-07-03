@@ -125,6 +125,9 @@ export interface VentaReporteRow {
   items_count: number;
   total: number;
   estado: "pendiente" | "completada" | "anulada";
+  anulada_at: string | null;
+  anulacion_motivo: string | null;
+  anulada_por_email: string | null;
 }
 
 /** Una línea de venta. tipo_precio nunca null en la salida (null → 'minorista'). */

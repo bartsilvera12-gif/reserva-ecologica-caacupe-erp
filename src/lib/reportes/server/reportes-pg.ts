@@ -330,14 +330,17 @@ export async function getReporteVentas(
     `SELECT vi.producto_nombre, SUM(vi.cantidad)::float8 AS cantidad, SUM(vi.total_linea)::float8 AS total
        FROM ${tVI} vi JOIN ${tV} v ON v.id=vi.venta_id WHERE ${perVActivas}
       GROUP BY vi.producto_id, vi.producto_nombre ORDER BY total DESC`, args);
-  // Detalle de ventas: SÍ incluye anuladas para trazabilidad; el estado va en la respuesta.
+  // Detalle de ventas: SÍ incluye anuladas para trazabilidad; el estado + datos de
+  // anulación (fecha, motivo, email del usuario que anuló) van en la respuesta.
   const ventasQ = p.query<VentaReporteRow>(
     `SELECT v.id, v.numero_control, v.fecha, c.nombre AS cliente, v.metodo_pago,
             (SELECT count(*) FROM ${tVI} vi WHERE vi.venta_id=v.id)::int AS items_count,
             v.total::float8 AS total,
-            COALESCE(v.estado,'completada') AS estado
+            COALESCE(v.estado,'completada') AS estado,
+            v.anulada_at, v.anulacion_motivo, au.email AS anulada_por_email
        FROM ${tV} v
        LEFT JOIN ${tCli} c ON c.id=v.cliente_id AND c.empresa_id=v.empresa_id
+       LEFT JOIN auth.users au ON au.id = v.anulada_por
       WHERE ${perV} ORDER BY v.fecha DESC, v.numero_control DESC`, args);
   // Detalle por línea (excluye anuladas — no vendieron nada realmente).
   const itemsQ = p.query<ItemVendidoRow>(
@@ -379,6 +382,9 @@ export async function getReporteVentas(
       items_count: num(v.items_count),
       total: num(v.total),
       estado: (v.estado === "anulada" || v.estado === "pendiente" ? v.estado : "completada") as "pendiente" | "completada" | "anulada",
+      anulada_at: v.anulada_at ?? null,
+      anulacion_motivo: v.anulacion_motivo ?? null,
+      anulada_por_email: v.anulada_por_email ?? null,
     })),
     items: items.rows.map((i) => ({
       ...i,

@@ -20,6 +20,20 @@ function formatFecha(iso: string) {
     return iso;
   }
 }
+function formatFechaHora(iso: string | null) {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const yyyy = d.getFullYear();
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mi = String(d.getMinutes()).padStart(2, "0");
+    return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
+  } catch {
+    return iso;
+  }
+}
 const TP: { key: TipoPrecioReporte; label: string; badge: string }[] = [
   { key: "minorista", label: "Minorista", badge: "bg-slate-100 text-slate-600" },
   { key: "mayorista", label: "Mayorista", badge: "bg-indigo-100 text-indigo-700" },
@@ -162,6 +176,17 @@ export default function VentasReportePage() {
                                 </span>
                               )}
                             </div>
+                            {anulada && (
+                              <div className="mt-1 text-[11px] text-rose-700/80 leading-snug">
+                                {v.anulacion_motivo && (
+                                  <div><span className="font-semibold">Motivo:</span> {v.anulacion_motivo}</div>
+                                )}
+                                <div className="text-slate-500">
+                                  {v.anulada_at ? formatFechaHora(v.anulada_at) : "—"}
+                                  {v.anulada_por_email ? ` · ${v.anulada_por_email}` : ""}
+                                </div>
+                              </div>
+                            )}
                           </td>
                           <td className="py-3 pr-4 capitalize">{v.metodo_pago ?? "—"}</td>
                           <td className="py-3 pr-4 text-right tabular-nums">{v.items_count}</td>
