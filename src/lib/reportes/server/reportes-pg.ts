@@ -304,41 +304,45 @@ export async function getReporteVentas(
   const tCli = quoteSchemaTable(schema, "clientes");
   const p = pool();
   const perV = `v.empresa_id=$1::uuid AND v.fecha>=$2::timestamptz AND v.fecha<=$3::timestamptz`;
+  // Las ventas ANULADAS no cuentan en los agregados (totales, ítems, unidades, por producto,
+  // por tipo de precio). Sí se listan en el detalle para trazabilidad, con badge en la UI.
+  const perVActivas = `${perV} AND COALESCE(v.estado,'completada') <> 'anulada'`;
   const args = [empresaId, b.start, b.end];
 
-  // Totales de cabecera.
+  // Totales de cabecera (excluye anuladas).
   const totQ = p.query<{ ventas: number; total: number }>(
     `SELECT count(*)::int AS ventas, COALESCE(SUM(total),0)::float8 AS total
-       FROM ${tV} v WHERE ${perV}`, args);
-  // Ítems / unidades.
+       FROM ${tV} v WHERE ${perVActivas}`, args);
+  // Ítems / unidades (excluye anuladas).
   const itemsTotQ = p.query<{ items: number; unidades: number }>(
     `SELECT count(*)::int AS items, COALESCE(SUM(vi.cantidad),0)::float8 AS unidades
-       FROM ${tVI} vi JOIN ${tV} v ON v.id=vi.venta_id WHERE ${perV}`, args);
-  // Desglose por tipo_precio (null → minorista).
+       FROM ${tVI} vi JOIN ${tV} v ON v.id=vi.venta_id WHERE ${perVActivas}`, args);
+  // Desglose por tipo_precio (excluye anuladas).
   const tipoPrecioQ = p.query<{ tipo_precio: string; items: number; total: number }>(
     `SELECT ${TP_SQL} AS tipo_precio, count(*)::int AS items, COALESCE(SUM(vi.total_linea),0)::float8 AS total
-       FROM ${tVI} vi JOIN ${tV} v ON v.id=vi.venta_id WHERE ${perV}
+       FROM ${tVI} vi JOIN ${tV} v ON v.id=vi.venta_id WHERE ${perVActivas}
       GROUP BY ${TP_SQL}`, args);
-  // Total por producto.
+  // Total por producto (excluye anuladas).
   const porProdQ = p.query<VentaProductoTotal>(
     `SELECT vi.producto_nombre, SUM(vi.cantidad)::float8 AS cantidad, SUM(vi.total_linea)::float8 AS total
-       FROM ${tVI} vi JOIN ${tV} v ON v.id=vi.venta_id WHERE ${perV}
+       FROM ${tVI} vi JOIN ${tV} v ON v.id=vi.venta_id WHERE ${perVActivas}
       GROUP BY vi.producto_id, vi.producto_nombre ORDER BY total DESC`, args);
-  // Detalle de ventas (con cliente opcional).
+  // Detalle de ventas: SÍ incluye anuladas para trazabilidad; el estado va en la respuesta.
   const ventasQ = p.query<VentaReporteRow>(
     `SELECT v.id, v.numero_control, v.fecha, c.nombre AS cliente, v.metodo_pago,
             (SELECT count(*) FROM ${tVI} vi WHERE vi.venta_id=v.id)::int AS items_count,
-            v.total::float8 AS total
+            v.total::float8 AS total,
+            COALESCE(v.estado,'completada') AS estado
        FROM ${tV} v
        LEFT JOIN ${tCli} c ON c.id=v.cliente_id AND c.empresa_id=v.empresa_id
       WHERE ${perV} ORDER BY v.fecha DESC, v.numero_control DESC`, args);
-  // Detalle por línea.
+  // Detalle por línea (excluye anuladas — no vendieron nada realmente).
   const itemsQ = p.query<ItemVendidoRow>(
     `SELECT v.numero_control, v.fecha, vi.producto_nombre,
             vi.cantidad::float8 AS cantidad, vi.precio_venta::float8 AS precio_venta,
             vi.subtotal::float8 AS subtotal, vi.monto_iva::float8 AS monto_iva,
             vi.total_linea::float8 AS total_linea, ${TP_SQL} AS tipo_precio
-       FROM ${tVI} vi JOIN ${tV} v ON v.id=vi.venta_id WHERE ${perV}
+       FROM ${tVI} vi JOIN ${tV} v ON v.id=vi.venta_id WHERE ${perVActivas}
       ORDER BY v.fecha DESC, v.numero_control DESC`, args);
 
   const [tot, itemsTot, tipoPrecio, porProd, ventas, items] = await Promise.all([
@@ -371,6 +375,7 @@ export async function getReporteVentas(
       metodo_pago: v.metodo_pago || null,
       items_count: num(v.items_count),
       total: num(v.total),
+      estado: (v.estado === "anulada" || v.estado === "pendiente" ? v.estado : "completada") as "pendiente" | "completada" | "anulada",
     })),
     items: items.rows.map((i) => ({
       ...i,

@@ -104,16 +104,28 @@ export default function VentasReportePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.ventas.map((v) => (
-                      <tr key={v.id} className="border-b border-slate-100 last:border-0">
-                        <td className="py-3 pr-4 text-slate-600 text-xs tabular-nums">{formatFecha(v.fecha)}</td>
-                        <td className="py-3 pr-4 font-mono text-xs text-slate-500">{v.numero_control}</td>
-                        <td className="py-3 pr-4 text-slate-700">{v.cliente ?? "—"}</td>
-                        <td className="py-3 pr-4 text-slate-600 capitalize">{v.metodo_pago ?? "—"}</td>
-                        <td className="py-3 pr-4 text-right tabular-nums text-slate-700">{v.items_count}</td>
-                        <td className="py-3 text-right tabular-nums font-semibold text-slate-800">{formatGs(v.total)}</td>
-                      </tr>
-                    ))}
+                    {data.ventas.map((v) => {
+                      const anulada = v.estado === "anulada";
+                      return (
+                        <tr key={v.id} className={`border-b border-slate-100 last:border-0 ${anulada ? "text-slate-400" : ""}`}>
+                          <td className="py-3 pr-4 text-xs tabular-nums">{formatFecha(v.fecha)}</td>
+                          <td className={`py-3 pr-4 font-mono text-xs ${anulada ? "line-through" : "text-slate-500"}`}>{v.numero_control}</td>
+                          <td className="py-3 pr-4">
+                            <div className="flex items-center gap-2">
+                              <span className={anulada ? "line-through" : "text-slate-700"}>{v.cliente ?? "—"}</span>
+                              {anulada && (
+                                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-rose-50 text-rose-700 ring-1 ring-rose-200">
+                                  Anulada
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 pr-4 capitalize">{v.metodo_pago ?? "—"}</td>
+                          <td className="py-3 pr-4 text-right tabular-nums">{v.items_count}</td>
+                          <td className={`py-3 text-right tabular-nums font-semibold ${anulada ? "line-through" : "text-slate-800"}`}>{formatGs(v.total)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
