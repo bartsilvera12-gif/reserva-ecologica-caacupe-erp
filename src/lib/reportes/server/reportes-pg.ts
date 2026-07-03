@@ -245,7 +245,8 @@ export async function getReporteCompras(
             MIN(COALESCE(c.estado,'registrada')) AS estado,
             MAX(c.anulada_at) AS anulada_at,
             MAX(c.anulacion_motivo) AS anulacion_motivo,
-            MAX(au.email) AS anulada_por_email
+            MAX(au.email) AS anulada_por_email,
+            string_agg(c.producto_nombre || ' x' || c.cantidad, ', ' ORDER BY c.producto_nombre) AS productos_resumen
        FROM ${tC} c
        LEFT JOIN auth.users au ON au.id = c.anulada_por
       WHERE ${per}
@@ -287,6 +288,7 @@ export async function getReporteCompras(
       anulada_at: c.anulada_at ?? null,
       anulacion_motivo: c.anulacion_motivo ?? null,
       anulada_por_email: c.anulada_por_email ?? null,
+      productos_resumen: c.productos_resumen ?? null,
     })),
     items: items.rows.map((i) => ({
       ...i,
@@ -340,13 +342,15 @@ export async function getReporteVentas(
        FROM ${tVI} vi JOIN ${tV} v ON v.id=vi.venta_id WHERE ${perVActivas}
       GROUP BY vi.producto_id, vi.producto_nombre ORDER BY total DESC`, args);
   // Detalle de ventas: SÍ incluye anuladas para trazabilidad; el estado + datos de
-  // anulación (fecha, motivo, email del usuario que anuló) van en la respuesta.
+  // anulación (fecha, motivo, email del usuario que anuló) + resumen de productos van en la respuesta.
   const ventasQ = p.query<VentaReporteRow>(
     `SELECT v.id, v.numero_control, v.fecha, c.nombre AS cliente, v.metodo_pago,
             (SELECT count(*) FROM ${tVI} vi WHERE vi.venta_id=v.id)::int AS items_count,
             v.total::float8 AS total,
             COALESCE(v.estado,'completada') AS estado,
-            v.anulada_at, v.anulacion_motivo, au.email AS anulada_por_email
+            v.anulada_at, v.anulacion_motivo, au.email AS anulada_por_email,
+            (SELECT string_agg(vi.producto_nombre || ' x' || vi.cantidad, ', ' ORDER BY vi.producto_nombre)
+               FROM ${tVI} vi WHERE vi.venta_id = v.id) AS productos_resumen
        FROM ${tV} v
        LEFT JOIN ${tCli} c ON c.id=v.cliente_id AND c.empresa_id=v.empresa_id
        LEFT JOIN auth.users au ON au.id = v.anulada_por
@@ -394,6 +398,7 @@ export async function getReporteVentas(
       anulada_at: v.anulada_at ?? null,
       anulacion_motivo: v.anulacion_motivo ?? null,
       anulada_por_email: v.anulada_por_email ?? null,
+      productos_resumen: v.productos_resumen ?? null,
     })),
     items: items.rows.map((i) => ({
       ...i,

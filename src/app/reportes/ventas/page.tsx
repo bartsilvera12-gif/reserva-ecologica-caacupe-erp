@@ -178,6 +178,9 @@ export default function VentasReportePage() {
                             </div>
                             {anulada && (
                               <div className="mt-1 text-[11px] text-rose-700/80 leading-snug">
+                                {v.productos_resumen && (
+                                  <div><span className="font-semibold">Productos:</span> {v.productos_resumen}</div>
+                                )}
                                 {v.anulacion_motivo && (
                                   <div><span className="font-semibold">Motivo:</span> {v.anulacion_motivo}</div>
                                 )}

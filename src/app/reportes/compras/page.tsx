@@ -126,6 +126,9 @@ export default function ComprasReportePage() {
                             </div>
                             {anulada && (
                               <div className="mt-1 text-[11px] text-rose-700/80 leading-snug">
+                                {c.productos_resumen && (
+                                  <div><span className="font-semibold">Productos:</span> {c.productos_resumen}</div>
+                                )}
                                 {c.anulacion_motivo && (
                                   <div><span className="font-semibold">Motivo:</span> {c.anulacion_motivo}</div>
                                 )}

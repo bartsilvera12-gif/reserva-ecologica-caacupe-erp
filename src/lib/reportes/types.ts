@@ -62,6 +62,8 @@ export interface CompraReporteRow {
   anulada_at: string | null;
   anulacion_motivo: string | null;
   anulada_por_email: string | null;
+  /** Lista compacta de productos comprados: "PROD A x2, PROD B x5". null si no hay líneas. */
+  productos_resumen: string | null;
 }
 
 /** Una línea de compra (una fila de `compras`). */
@@ -131,6 +133,8 @@ export interface VentaReporteRow {
   anulada_at: string | null;
   anulacion_motivo: string | null;
   anulada_por_email: string | null;
+  /** Lista compacta de productos vendidos: "PROD A x2, PROD B x1". null si no hay líneas. */
+  productos_resumen: string | null;
 }
 
 /** Una línea de venta. tipo_precio nunca null en la salida (null → 'minorista'). */
