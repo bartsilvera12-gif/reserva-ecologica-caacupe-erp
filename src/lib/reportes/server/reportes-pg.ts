@@ -234,16 +234,22 @@ export async function getReporteCompras(
   const porProdQ = p.query<CompraProductoTotal>(
     `SELECT producto_nombre, SUM(cantidad)::float8 AS cantidad, SUM(total)::float8 AS gasto
        FROM ${tC} c WHERE ${perActivas} GROUP BY producto_id, producto_nombre ORDER BY gasto DESC`, args);
-  // Detalle por compra: SÍ incluye anuladas para trazabilidad; el estado va en la respuesta.
+  // Detalle por compra: SÍ incluye anuladas para trazabilidad; estado + datos de
+  // anulación (fecha, motivo, email del usuario que anuló) van en la respuesta.
   const comprasQ = p.query<CompraReporteRow>(
-    `SELECT numero_control, MIN(fecha) AS fecha, MIN(proveedor_nombre) AS proveedor_nombre,
-            count(*)::int AS items_count, SUM(subtotal)::float8 AS subtotal,
-            SUM(monto_iva)::float8 AS monto_iva, SUM(total)::float8 AS total,
-            MIN(tipo_pago) AS tipo_pago, MIN(nro_timbrado) AS nro_timbrado,
-            bool_or(comprobante_storage_path IS NOT NULL) AS tiene_comprobante,
-            MIN(COALESCE(estado,'registrada')) AS estado
-       FROM ${tC} c WHERE ${per}
-      GROUP BY numero_control ORDER BY MIN(fecha) DESC, numero_control DESC`, args);
+    `SELECT c.numero_control, MIN(c.fecha) AS fecha, MIN(c.proveedor_nombre) AS proveedor_nombre,
+            count(*)::int AS items_count, SUM(c.subtotal)::float8 AS subtotal,
+            SUM(c.monto_iva)::float8 AS monto_iva, SUM(c.total)::float8 AS total,
+            MIN(c.tipo_pago) AS tipo_pago, MIN(c.nro_timbrado) AS nro_timbrado,
+            bool_or(c.comprobante_storage_path IS NOT NULL) AS tiene_comprobante,
+            MIN(COALESCE(c.estado,'registrada')) AS estado,
+            MAX(c.anulada_at) AS anulada_at,
+            MAX(c.anulacion_motivo) AS anulacion_motivo,
+            MAX(au.email) AS anulada_por_email
+       FROM ${tC} c
+       LEFT JOIN auth.users au ON au.id = c.anulada_por
+      WHERE ${per}
+      GROUP BY c.numero_control ORDER BY MIN(c.fecha) DESC, c.numero_control DESC`, args);
   // Detalle por línea: excluye anuladas (no compraron nada realmente).
   const itemsQ = p.query<ItemCompradoRow>(
     `SELECT numero_control, fecha, proveedor_nombre, producto_nombre,
@@ -278,6 +284,9 @@ export async function getReporteCompras(
       estado: (c.estado === "anulada" || c.estado === "pendiente" || c.estado === "pagada"
         ? c.estado
         : "registrada") as "registrada" | "pendiente" | "pagada" | "anulada",
+      anulada_at: c.anulada_at ?? null,
+      anulacion_motivo: c.anulacion_motivo ?? null,
+      anulada_por_email: c.anulada_por_email ?? null,
     })),
     items: items.rows.map((i) => ({
       ...i,

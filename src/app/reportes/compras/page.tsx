@@ -20,6 +20,20 @@ function formatFecha(iso: string) {
     return iso;
   }
 }
+function formatFechaHora(iso: string | null) {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const yyyy = d.getFullYear();
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mi = String(d.getMinutes()).padStart(2, "0");
+    return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
+  } catch {
+    return iso;
+  }
+}
 function tipoPagoLabel(t: string) {
   const v = (t || "").toLowerCase();
   if (v === "credito") return "Crédito";
@@ -110,6 +124,17 @@ export default function ComprasReportePage() {
                                 </span>
                               )}
                             </div>
+                            {anulada && (
+                              <div className="mt-1 text-[11px] text-rose-700/80 leading-snug">
+                                {c.anulacion_motivo && (
+                                  <div><span className="font-semibold">Motivo:</span> {c.anulacion_motivo}</div>
+                                )}
+                                <div className="text-slate-500">
+                                  {c.anulada_at ? formatFechaHora(c.anulada_at) : "—"}
+                                  {c.anulada_por_email ? ` · ${c.anulada_por_email}` : ""}
+                                </div>
+                              </div>
+                            )}
                           </td>
                           <td className="py-3 pr-4 text-right tabular-nums">{c.items_count}</td>
                           <td className="py-3 pr-4 text-right tabular-nums">{formatGs(c.subtotal)}</td>
