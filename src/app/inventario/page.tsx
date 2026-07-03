@@ -95,10 +95,16 @@ export default function InventarioPage() {
   // Con catalogos de 500-5000 productos esto era visible (lag al tipear).
   // useMemo solo recalcula cuando cambian las dependencias relevantes.
   const productos = useMemo(() => todos.filter((p) => {
-    // Nombre — fold accents/diacritics ("atun" matchea "ATÚN")
-    if (filtroPorNombre.trim() !== "" &&
-        !foldText(p.nombre).includes(foldText(filtroPorNombre.trim())))
-      return false;
+    // Nombre — fold accents/diacritics ("atun" matchea "ATÚN"). También matchea
+    // por codigo_barras para poder buscar escaneando o pegando el número.
+    if (filtroPorNombre.trim() !== "") {
+      const q = foldText(filtroPorNombre.trim());
+      const nombreMatch = foldText(p.nombre).includes(q);
+      const barrasMatch =
+        typeof p.codigo_barras === "string" && p.codigo_barras.length > 0 &&
+        foldText(p.codigo_barras).includes(q);
+      if (!nombreMatch && !barrasMatch) return false;
+    }
 
     // SKU
     if (filtroPorSku.trim() !== "" &&
@@ -289,7 +295,7 @@ export default function InventarioPage() {
             </Link>
             <input
               type="text"
-              placeholder="Buscar por nombre..."
+              placeholder="Buscar por nombre o código de barras…"
               value={filtroPorNombre}
               onChange={(e) => setFiltroPorNombre(e.target.value)}
               className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#0EA5E9] focus:outline-none sm:w-64 sm:flex-none"
@@ -430,8 +436,7 @@ export default function InventarioPage() {
                 {tab !== "materia" && <th className="py-3 pr-4 font-medium">Precio Venta</th>}
                 <th className="py-3 pr-4 font-medium text-center">Stock actual</th>
                 <th className="py-3 pr-4 text-center font-medium hidden lg:table-cell">Stock Mín.</th>
-                <th className="py-3 pr-4 font-medium hidden lg:table-cell">Ubicación</th>
-                <th className="py-3 pr-4 font-medium hidden lg:table-cell">Valuación</th>
+                <th className="py-3 pr-4 font-medium hidden lg:table-cell">Cód. barras</th>
                 {tab !== "materia" && (
                   <th className="hidden py-3 pr-6 text-right font-medium lg:table-cell">
                     <span title="(precio - costo) / precio × 100">Margen s/venta</span>
@@ -480,25 +485,12 @@ export default function InventarioPage() {
                     <td className="py-4 pr-4 text-center text-gray-500 hidden lg:table-cell">
                       {sinControl ? "—" : <span className="tabular-nums">{formatStock(p.stock_minimo)}</span>}
                     </td>
-                    <td className="py-4 pr-4 text-gray-600 text-xs hidden lg:table-cell">
-                      {p.ubicacion_principal_id
-                        ? (() => {
-                            const u = ubicacionById.get(p.ubicacion_principal_id);
-                            return u ? (
-                              <span>
-                                <span className="font-medium text-gray-700">{u.nombre}</span>
-                                <span className="text-gray-400"> — {u.tipo}</span>
-                              </span>
-                            ) : (
-                              <span className="text-gray-300">—</span>
-                            );
-                          })()
-                        : <span className="text-gray-300">—</span>}
-                    </td>
                     <td className="py-4 pr-4 hidden lg:table-cell">
-                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${metodoBadge[p.metodo_valuacion]}`}>
-                        {p.metodo_valuacion}
-                      </span>
+                      {p.codigo_barras ? (
+                        <span className="font-mono text-xs text-gray-700">{p.codigo_barras}</span>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
                     </td>
                     {tab !== "materia" && (
                       <td className={`hidden py-4 pr-6 text-right font-semibold tabular-nums lg:table-cell ${margenColor(margen)}`}>
