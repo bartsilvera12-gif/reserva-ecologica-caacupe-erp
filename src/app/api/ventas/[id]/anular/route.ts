@@ -45,6 +45,8 @@ export async function POST(
     const { auth, supabase: sb } = ctx;
     const empresaId = auth.empresa_id;
     const userId = auth.user.id;
+    const movCreatedBy = auth.usuarioCatalogId ?? null;
+    const movUsuarioNombre = auth.user?.email ?? null;
 
     const { id } = await params;
     const ventaId = id?.trim();
@@ -176,6 +178,8 @@ export async function POST(
             referencia,
             fecha: nowIso,
             venta_id: ventaId,
+            created_by: movCreatedBy,
+            usuario_nombre: movUsuarioNombre,
           })
           .select("id")
           .single();

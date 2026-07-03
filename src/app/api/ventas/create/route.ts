@@ -234,6 +234,8 @@ export async function POST(request: NextRequest) {
       pedidoCocina,
       permitirSinStock,
       generaNotaRemision: o.genera_nota_remision === true,
+      createdBy: auth.usuarioCatalogId ?? null,
+      usuarioNombre: auth.user?.email ?? null,
     });
 
     // Vincular el pedido facturado con la venta creada (Caja). Trazabilidad:
