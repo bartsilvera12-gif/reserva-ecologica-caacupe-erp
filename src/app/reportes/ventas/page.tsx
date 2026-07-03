@@ -27,10 +27,13 @@ const TP: { key: TipoPrecioReporte; label: string; badge: string }[] = [
   { key: "costo", label: "Al costo", badge: "bg-amber-100 text-amber-700" },
 ];
 
+type FiltroAnuladas = "todas" | "solo_activas" | "solo_anuladas";
+
 export default function VentasReportePage() {
   const [mes, setMes] = useState(mesActualAsuncion());
   const [data, setData] = useState<VentasReporte | null>(null);
   const [cargando, setCargando] = useState(true);
+  const [filtroAnuladas, setFiltroAnuladas] = useState<FiltroAnuladas>("todas");
 
   useEffect(() => {
     let cancel = false;
@@ -87,10 +90,50 @@ export default function VentasReportePage() {
 
           {/* Detalle de ventas */}
           <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
-            <h2 className="text-base font-semibold text-slate-800 mb-4">Ventas del mes</h2>
-            {data.ventas.length === 0 ? (
-              <p className="text-sm text-slate-400">No hay ventas en el período.</p>
-            ) : (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-base font-semibold text-slate-800">Ventas del mes</h2>
+              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs font-medium">
+                {(
+                  [
+                    { key: "todas", label: "Todas" },
+                    { key: "solo_activas", label: "Solo activas" },
+                    { key: "solo_anuladas", label: "Solo anuladas" },
+                  ] as { key: FiltroAnuladas; label: string }[]
+                ).map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setFiltroAnuladas(opt.key)}
+                    className={`rounded-md px-3 py-1.5 transition-colors ${
+                      filtroAnuladas === opt.key
+                        ? "bg-white text-slate-800 shadow-sm ring-1 ring-slate-200"
+                        : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {(() => {
+              const ventasFiltradas = data.ventas.filter((v) => {
+                if (filtroAnuladas === "solo_activas") return v.estado !== "anulada";
+                if (filtroAnuladas === "solo_anuladas") return v.estado === "anulada";
+                return true;
+              });
+              if (data.ventas.length === 0) {
+                return <p className="text-sm text-slate-400">No hay ventas en el período.</p>;
+              }
+              if (ventasFiltradas.length === 0) {
+                return (
+                  <p className="text-sm text-slate-400">
+                    {filtroAnuladas === "solo_anuladas"
+                      ? "No hay ventas anuladas en el período."
+                      : "No hay ventas activas en el período."}
+                  </p>
+                );
+              }
+              return (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[760px] text-left text-sm">
                   <thead>
@@ -104,7 +147,7 @@ export default function VentasReportePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.ventas.map((v) => {
+                    {ventasFiltradas.map((v) => {
                       const anulada = v.estado === "anulada";
                       return (
                         <tr key={v.id} className={`border-b border-slate-100 last:border-0 ${anulada ? "text-slate-400" : ""}`}>
@@ -129,7 +172,8 @@ export default function VentasReportePage() {
                   </tbody>
                 </table>
               </div>
-            )}
+              );
+            })()}
           </div>
 
           {/* Total por producto */}
