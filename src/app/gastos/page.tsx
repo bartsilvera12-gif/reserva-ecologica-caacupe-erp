@@ -11,12 +11,17 @@ function formatGs(valor: number) {
 }
 
 function formatFecha(fecha: string) {
+  // `gastos.fecha` es un `date` (YYYY-MM-DD). Parsear con `new Date(fecha)` lo
+  // interpreta como UTC 00:00, que en Paraguay (UTC-3/-4) cae al día anterior.
+  // Parseamos manualmente para evitar el shift.
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(fecha);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
   try {
-    const d = new Date(fecha);
-    return d.toLocaleDateString("es-PY", {
+    return new Date(fecha).toLocaleDateString("es-PY", {
       day: "2-digit",
       month: "2-digit",
       year: "numeric",
+      timeZone: "America/Asuncion",
     });
   } catch {
     return fecha;

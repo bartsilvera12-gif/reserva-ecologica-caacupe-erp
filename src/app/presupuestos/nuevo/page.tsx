@@ -7,11 +7,14 @@ import { FileText, ArrowLeft, Plus, Trash2, Loader2 } from "lucide-react";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { calcMontoIvaIncluido, type IvaTipoPresupuesto } from "@/lib/presupuestos/types";
 
+type NivelPrecio = "minorista" | "mayorista" | "distribuidor";
 type ProductoLite = {
   id: string;
   nombre: string;
   sku: string;
   precio_venta: number;
+  precio_mayorista: number | null;
+  precio_distribuidor: number | null;
   unidad_medida: string;
 };
 type ClienteLite = {
@@ -20,7 +23,14 @@ type ClienteLite = {
   ruc: string | null;
   telefono: string | null;
   direccion: string | null;
+  nivel_precio: NivelPrecio;
 };
+
+function precioParaNivel(p: ProductoLite, nivel: NivelPrecio): number {
+  if (nivel === "mayorista" && p.precio_mayorista != null && p.precio_mayorista > 0) return p.precio_mayorista;
+  if (nivel === "distribuidor" && p.precio_distribuidor != null && p.precio_distribuidor > 0) return p.precio_distribuidor;
+  return p.precio_venta;
+}
 type Item = {
   producto_id: string | null;
   producto_nombre: string;
@@ -88,6 +98,8 @@ export default function NuevoPresupuestoPage() {
                 nombre: String(p.nombre),
                 sku: String(p.sku ?? ""),
                 precio_venta: Number(p.precio_venta) || 0,
+                precio_mayorista: p.precio_mayorista != null ? Number(p.precio_mayorista) || null : null,
+                precio_distribuidor: p.precio_distribuidor != null ? Number(p.precio_distribuidor) || null : null,
                 unidad_medida: String(p.unidad_medida ?? "UNIDAD"),
               }))
           );
@@ -106,6 +118,9 @@ export default function NuevoPresupuestoPage() {
               ruc: s(r.ruc) || null,
               telefono: s(r.telefono) || null,
               direccion: s(r.direccion) || null,
+              nivel_precio: (r.nivel_precio === "mayorista" || r.nivel_precio === "distribuidor"
+                ? r.nivel_precio
+                : "minorista") as NivelPrecio,
             }))
           );
         }
@@ -128,6 +143,7 @@ export default function NuevoPresupuestoPage() {
     const p = productos.find((x) => x.id === selProd);
     if (!p) return;
     if (items.some((it) => it.producto_id === p.id)) return;
+    const nivel = clientes.find((c) => c.id === clienteId)?.nivel_precio ?? "minorista";
     setItems((prev) => [
       ...prev,
       {
@@ -136,7 +152,7 @@ export default function NuevoPresupuestoPage() {
         sku: p.sku || null,
         cantidad: 1,
         unidad_medida: p.unidad_medida,
-        precio_unitario: p.precio_venta,
+        precio_unitario: precioParaNivel(p, nivel),
         iva_tipo: "10%",
         descuento: 0,
       },

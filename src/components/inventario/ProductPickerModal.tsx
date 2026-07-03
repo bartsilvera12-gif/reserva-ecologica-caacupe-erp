@@ -80,6 +80,8 @@ interface Props {
   tipoCambio?: number;
   /** IVA default que viene de la venta. */
   ivaDefault?: "EXENTA" | "5%" | "10%";
+  /** Nivel de precio por defecto (viene del cliente seleccionado). */
+  tipoPrecioDefault?: "minorista" | "mayorista" | "distribuidor";
 }
 
 function formatGs(v: number): string {
@@ -88,6 +90,7 @@ function formatGs(v: number): string {
 
 export default function ProductPickerModal({
   open, onClose, onAgregar, excludeIds = [], moneda = "GS", tipoCambio = 1, ivaDefault = "10%",
+  tipoPrecioDefault = "minorista",
 }: Props) {
   const [q, setQ] = useState("");
   const [items, setItems] = useState<ProductoPickerItem[]>([]);
@@ -101,7 +104,7 @@ export default function ProductPickerModal({
   const [cantidad, setCantidad] = useState("1");
   const [precio, setPrecio] = useState("");
   const [iva, setIva] = useState<"EXENTA" | "5%" | "10%">(ivaDefault);
-  const [tipoPrecio, setTipoPrecio] = useState<"minorista" | "mayorista" | "distribuidor">("minorista");
+  const [tipoPrecio, setTipoPrecio] = useState<"minorista" | "mayorista" | "distribuidor">(tipoPrecioDefault);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   /** Precio en la moneda activa de la venta (string para el input). */
@@ -154,9 +157,9 @@ export default function ProductPickerModal({
   function selectProducto(p: ProductoPickerItem) {
     setSel(p);
     setCantidad("1");
-    // Precio inicial: minorista (precio_venta) en la moneda de la venta.
-    setTipoPrecio("minorista");
-    setPrecio(precioEnMonedaStr(precioPorTipoPicker(p, "minorista")));
+    // Precio inicial: usa el nivel del cliente (default 'minorista' si no vino).
+    setTipoPrecio(tipoPrecioDefault);
+    setPrecio(precioEnMonedaStr(precioPorTipoPicker(p, tipoPrecioDefault)));
     setIva(p.tipo_iva === "EXENTA" || p.tipo_iva === "5%" || p.tipo_iva === "10%" ? p.tipo_iva : ivaDefault);
     setFeedback(null);
   }

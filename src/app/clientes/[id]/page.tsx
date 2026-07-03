@@ -190,6 +190,7 @@ export default function ClienteDetailPage() {
     empresa:             "",
     nombre_contacto:     "",
     nombre_facturacion:  "",
+    nivel_precio:        "minorista" as "minorista" | "mayorista" | "distribuidor",
     ruc:                 "",
     documento:           "",
     telefono:            "",
@@ -348,6 +349,7 @@ export default function ClienteDetailPage() {
         empresa:             c.empresa             ?? "",
         nombre_contacto:     c.nombre_contacto,
         nombre_facturacion:  c.nombre_facturacion   ?? "",
+        nivel_precio:        c.nivel_precio         ?? "minorista",
         ruc:                 c.ruc                 ?? "",
         documento:           c.documento           ?? "",
         telefono:            c.telefono            ?? "",
@@ -631,6 +633,7 @@ export default function ClienteDetailPage() {
         empresa:             form.tipo_cliente === "empresa" ? form.empresa.trim().toUpperCase() : undefined,
         nombre_contacto:     form.nombre_contacto.trim().toUpperCase(),
         nombre_facturacion:  form.nombre_facturacion.trim().toUpperCase() || null,
+        nivel_precio:        form.nivel_precio,
         ruc:                 form.ruc.trim()                 || undefined,
         documento:           form.documento.trim()           || undefined,
         telefono:            form.telefono.trim()            || undefined,
@@ -1525,6 +1528,28 @@ export default function ClienteDetailPage() {
                   <p className="mt-1.5 text-xs text-gray-400">
                     Si el cliente pide factura a otro nombre, cargalo acá. Si queda vacío se usa Razón Social o
                     nombre de contacto.
+                  </p>
+                </div>
+
+                <div>
+                  <label className={labelClass}>Nivel de precio</label>
+                  <select
+                    name="nivel_precio"
+                    value={form.nivel_precio}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        nivel_precio: e.target.value as "minorista" | "mayorista" | "distribuidor",
+                      }))
+                    }
+                    className={inputClass}
+                  >
+                    <option value="minorista">Minorista</option>
+                    <option value="mayorista">Mayorista</option>
+                    <option value="distribuidor">Distribuidor</option>
+                  </select>
+                  <p className="mt-1.5 text-xs text-gray-400">
+                    Se usa como precio por defecto al agregar productos en presupuestos, pedidos y ventas.
                   </p>
                 </div>
 

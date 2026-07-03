@@ -24,6 +24,7 @@ interface SupabaseRow {
   nombre:             string | null;
   nombre_contacto:    string | null;
   nombre_facturacion: string | null;
+  nivel_precio: string | null;
   ruc:                string | null;
   documento:          string | null;
   telefono:           string | null;
@@ -88,6 +89,7 @@ function rowToCliente(row: SupabaseRow): Cliente {
     empresa:             row.empresa ?? undefined,
     nombre_contacto:     nombreContacto,
     nombre_facturacion:  row.nombre_facturacion ?? null,
+    nivel_precio:        (row.nivel_precio === "mayorista" || row.nivel_precio === "distribuidor" ? row.nivel_precio : "minorista") as "minorista" | "mayorista" | "distribuidor",
     ruc:                 row.ruc ?? undefined,
     documento:           row.documento ?? undefined,
     telefono:            row.telefono ?? undefined,
@@ -275,6 +277,7 @@ export async function saveCliente(datos: NuevoClienteData): Promise<Cliente | nu
     nombre:             datos.nombre_contacto ?? null,
     nombre_contacto:    datos.nombre_contacto ?? null,
     nombre_facturacion: datos.nombre_facturacion ?? null,
+    nivel_precio:       datos.nivel_precio ?? "minorista",
     ruc:                datos.ruc ?? null,
     documento:          datos.documento ?? null,
     telefono:           datos.telefono ?? null,
@@ -360,6 +363,12 @@ export function construirPatchActualizacionCliente(datos: ActualizarClienteInput
   if (datos.nombre_facturacion !== undefined) {
     const v = typeof datos.nombre_facturacion === "string" ? datos.nombre_facturacion.trim() : null;
     patch.nombre_facturacion = v && v.length > 0 ? v : null;
+  }
+  if (datos.nivel_precio !== undefined) {
+    patch.nivel_precio =
+      datos.nivel_precio === "mayorista" || datos.nivel_precio === "distribuidor"
+        ? datos.nivel_precio
+        : "minorista";
   }
   if (datos.ruc !== undefined) patch.ruc = datos.ruc ?? null;
   if (datos.documento !== undefined) patch.documento = datos.documento ?? null;

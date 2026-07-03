@@ -194,6 +194,7 @@ export async function POST(request: NextRequest) {
       empresa,
       nombre_contacto,
       nombre_facturacion,
+      nivel_precio,
       ruc,
       documento,
       telefono,
@@ -263,6 +264,9 @@ export async function POST(request: NextRequest) {
       nombre_facturacion:   typeof nombre_facturacion === "string" && nombre_facturacion.trim().length > 0
         ? nombre_facturacion.trim()
         : null,
+      nivel_precio:         nivel_precio === "mayorista" || nivel_precio === "distribuidor"
+        ? nivel_precio
+        : "minorista",
       ruc:                  ruc?.trim() || null,
       documento:            documento?.trim() || null,
       telefono:             telefono?.trim() || null,

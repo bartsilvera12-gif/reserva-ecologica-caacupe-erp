@@ -1,6 +1,7 @@
 export type TipoCliente = "empresa" | "persona";
 export type OrigenCliente = "CRM" | "VENTA" | "MANUAL";
 export type EstadoCliente = "activo" | "inactivo";
+export type NivelPrecio = "minorista" | "mayorista" | "distribuidor";
 
 import {
   SLUGS_TIPOS_CLIENTE_SISTEMA,
@@ -32,6 +33,9 @@ export interface Cliente {
    *  factura a nombre de pareja / hijo/a). Si está seteado, sobrescribe el nombre
    *  del receptor en tickets y notas de remisión. */
   nombre_facturacion?: string | null;
+  /** Nivel de precio comercial. Default 'minorista'. Se usa como pre-carga al agregar
+   *  productos en Presupuestos, Pedidos y Ventas. */
+  nivel_precio?: NivelPrecio;
 
   ruc?:                string;
   documento?:          string;          // CI / pasaporte (persona)

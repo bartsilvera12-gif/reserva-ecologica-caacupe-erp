@@ -64,6 +64,7 @@ function NuevoClienteForm() {
     empresa:             "",
     nombre_contacto:     "",
     nombre_facturacion:  "",
+    nivel_precio:        "minorista" as "minorista" | "mayorista" | "distribuidor",
     ruc:                 "",
     documento:           "",
     telefono:            "",
@@ -316,6 +317,7 @@ function NuevoClienteForm() {
       empresa: form.tipo_cliente === "empresa" ? form.empresa.trim().toUpperCase() : undefined,
       nombre_contacto: form.nombre_contacto.trim().toUpperCase(),
       nombre_facturacion: form.nombre_facturacion.trim().toUpperCase() || null,
+      nivel_precio: form.nivel_precio,
       ruc: form.ruc.trim() || undefined,
       documento: form.documento.trim() || undefined,
       telefono: form.telefono.trim() || undefined,
@@ -474,6 +476,29 @@ function NuevoClienteForm() {
               <p className="mt-1.5 text-xs text-gray-400">
                 Solo si la factura se emite a un nombre distinto de la Razón Social. Si queda vacío, se usa
                 la Razón Social o el nombre de contacto.
+              </p>
+            </div>
+
+            <div>
+              <label className={labelClass}>Nivel de precio</label>
+              <select
+                name="nivel_precio"
+                value={form.nivel_precio}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    nivel_precio: e.target.value as "minorista" | "mayorista" | "distribuidor",
+                  }))
+                }
+                className={inputClass}
+              >
+                <option value="minorista">Minorista</option>
+                <option value="mayorista">Mayorista</option>
+                <option value="distribuidor">Distribuidor</option>
+              </select>
+              <p className="mt-1.5 text-xs text-gray-400">
+                Se usa como precio por defecto al agregar productos en presupuestos, pedidos y ventas.
+                Igual se puede cambiar en cada línea.
               </p>
             </div>
 

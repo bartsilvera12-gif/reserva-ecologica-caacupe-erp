@@ -137,7 +137,7 @@ export default function NuevaVentaPage() {
   const [plazoDias, setPlazoDias] = useState("");
 
   // Cliente (opcional). Si se selecciona, se envía cliente_id al crear la venta.
-  type ClienteLite = { id: string; label: string; ruc: string | null; usa_nota_remision: boolean };
+  type ClienteLite = { id: string; label: string; ruc: string | null; usa_nota_remision: boolean; nivel_precio: "minorista" | "mayorista" | "distribuidor" };
   const [clientes, setClientes] = useState<ClienteLite[]>([]);
   const [clienteId, setClienteId] = useState("");
   const [clienteQuery, setClienteQuery] = useState("");
@@ -298,7 +298,10 @@ export default function NuevaVentaPage() {
               precio_venta_original: precio,
               precio_venta: precio,
               tipo_iva: iva,
-              tipo_precio: "minorista" as TipoPrecioVenta,
+              tipo_precio: ((): TipoPrecioVenta => {
+                const t = typeof it.tipo_precio === "string" ? it.tipo_precio : "";
+                return t === "mayorista" || t === "distribuidor" || t === "costo" ? t as TipoPrecioVenta : "minorista";
+              })(),
               subtotal,
               monto_iva: montoIva,
               total_linea: totalLinea,
@@ -334,6 +337,7 @@ export default function NuevaVentaPage() {
           label: s(r.empresa) || s(r.nombre_contacto) || s(r.nombre) || "Cliente",
           ruc: s(r.ruc) || null,
           usa_nota_remision: r.usa_nota_remision === true,
+          nivel_precio: (r.nivel_precio === "mayorista" || r.nivel_precio === "distribuidor" ? r.nivel_precio : "minorista") as "minorista" | "mayorista" | "distribuidor",
         }));
         setClientes(lite);
       })
@@ -991,6 +995,7 @@ export default function NuevaVentaPage() {
         moneda={moneda}
         tipoCambio={tipoCambioNum}
         ivaDefault={lineaIva}
+        tipoPrecioDefault={clienteSel?.nivel_precio ?? "minorista"}
       />
 
       {/* Modal de cobro (transferencia / tarjeta-débito) */}
