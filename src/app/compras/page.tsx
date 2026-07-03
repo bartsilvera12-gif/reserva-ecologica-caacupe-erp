@@ -7,6 +7,7 @@ import ExportExcelButton from "@/components/ui/ExportExcelButton";
 import EdgeScrollArea from "@/components/ui/EdgeScrollArea";
 import { FancySelect } from "@/components/ui/FancySelect";
 import MobileFab from "@/components/ui/MobileFab";
+import AnularCompraModal from "./AnularCompraModal";
 import type { Compra, TipoPago } from "@/lib/compras/types";
 
 const inputFilterClass =
@@ -45,6 +46,7 @@ type GrupoCompra = {
   items: Compra[];
   total: number;
   comprobante: boolean;
+  anulada: boolean;
 };
 
 function agrupar(rows: Compra[]): GrupoCompra[] {
@@ -62,12 +64,14 @@ function agrupar(rows: Compra[]): GrupoCompra[] {
         items: [],
         total: 0,
         comprobante: false,
+        anulada: c.estado === "anulada",
       };
       map.set(key, g);
     }
     g.items.push(c);
     g.total += Number(c.total) || 0;
     if (c.comprobante_storage_path) g.comprobante = true;
+    if (c.estado === "anulada") g.anulada = true;
   }
   return [...map.values()].sort(
     (a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
@@ -85,6 +89,12 @@ export default function ComprasPage() {
   const [busqueda, setBusqueda] = useState("");
   const [filtroTipoPago, setFiltroTipoPago] = useState<TipoPago | "">("");
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
+  const [anularTarget, setAnularTarget] = useState<{ numero: string; proveedor: string } | null>(null);
+
+  async function recargar() {
+    const data = await getCompras();
+    setTodas(data);
+  }
 
   useEffect(() => {
     let cancel = false;
@@ -181,13 +191,14 @@ export default function ComprasPage() {
                 <th className="py-3 pr-4 font-medium text-right">Ítems</th>
                 <th className="py-3 pr-4 font-medium text-right">Total</th>
                 <th className="hidden py-3 pr-4 font-medium lg:table-cell">Pago</th>
-                <th className="py-3 font-medium">Fecha</th>
+                <th className="py-3 pr-4 font-medium">Fecha</th>
+                <th className="py-3 font-medium text-right"></th>
               </tr>
             </thead>
             <tbody>
               {filtrados.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-gray-400">
+                  <td colSpan={8} className="py-12 text-center text-gray-400">
                     {grupos.length === 0 ? "No hay compras registradas" : "Ninguna compra coincide con los filtros"}
                   </td>
                 </tr>
@@ -198,14 +209,23 @@ export default function ComprasPage() {
                   return (
                     <FragmentRow key={g.numero_control}>
                       <tr
-                        className={`border-b border-slate-200 transition-colors hover:bg-[#4FAEB2]/[0.04] ${multi ? "cursor-pointer" : ""}`}
+                        className={`border-b border-slate-200 transition-colors hover:bg-[#4FAEB2]/[0.04] ${multi ? "cursor-pointer" : ""} ${g.anulada ? "opacity-60" : ""}`}
                         onClick={() => multi && toggle(g.numero_control)}
                       >
-                        <td className="py-4 pr-4 font-mono text-xs text-gray-500">
+                        <td className={`py-4 pr-4 font-mono text-xs ${g.anulada ? "line-through text-gray-400" : "text-gray-500"}`}>
                           {multi && <span className="mr-1 inline-block text-gray-400">{abierto ? "▾" : "▸"}</span>}
                           {g.numero_control}
                         </td>
-                        <td className="py-4 pr-4 font-medium text-gray-800">{g.proveedor_nombre}</td>
+                        <td className="py-4 pr-4 font-medium text-gray-800">
+                          <div className="flex items-center gap-2">
+                            <span className={g.anulada ? "line-through" : ""}>{g.proveedor_nombre}</span>
+                            {g.anulada && (
+                              <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-rose-50 text-rose-700 ring-1 ring-rose-200">
+                                Anulada
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="py-4 pr-4 text-gray-600">
                           <div>{resumenProductos(g.items)}</div>
                           {g.comprobante && (
@@ -221,13 +241,28 @@ export default function ComprasPage() {
                           )}
                         </td>
                         <td className="py-4 pr-4 text-right tabular-nums text-gray-700">{g.items.length}</td>
-                        <td className="py-4 pr-4 text-right tabular-nums font-semibold text-gray-800">{formatGs(g.total)}</td>
+                        <td className={`py-4 pr-4 text-right tabular-nums font-semibold ${g.anulada ? "line-through text-gray-500" : "text-gray-800"}`}>{formatGs(g.total)}</td>
                         <td className="hidden py-4 pr-4 lg:table-cell">
                           <span className={`px-2 py-1 rounded-full text-xs font-semibold ${g.tipo_pago ? tipoPagoBadge[g.tipo_pago] : "bg-gray-100 text-gray-500"}`}>
                             {g.tipo_pago === "contado" ? "Contado" : g.tipo_pago === "credito" ? `Crédito ${g.plazo_dias ?? ""}d` : "—"}
                           </span>
                         </td>
-                        <td className="py-4 text-gray-500 text-xs tabular-nums">{formatFecha(g.fecha)}</td>
+                        <td className="py-4 pr-4 text-gray-500 text-xs tabular-nums">{formatFecha(g.fecha)}</td>
+                        <td className="py-4 text-right">
+                          {!g.anulada && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setAnularTarget({ numero: g.numero_control, proveedor: g.proveedor_nombre });
+                              }}
+                              className="inline-flex items-center justify-center rounded-md border border-rose-200 bg-white px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50 transition-colors"
+                              title="Anular esta compra (reintegra stock en reverso)"
+                            >
+                              Anular
+                            </button>
+                          )}
+                        </td>
                       </tr>
 
                       {abierto && multi && g.items.map((it) => (
@@ -242,6 +277,7 @@ export default function ComprasPage() {
                           <td className="py-2 pr-4 text-right tabular-nums text-gray-700">{formatGs(it.total)}</td>
                           <td className="hidden lg:table-cell" />
                           <td />
+                          <td />
                         </tr>
                       ))}
                     </FragmentRow>
@@ -255,6 +291,18 @@ export default function ComprasPage() {
       </div>
 
       <MobileFab href="/compras/nueva" label="Nueva compra" />
+
+      {anularTarget && (
+        <AnularCompraModal
+          numeroControl={anularTarget.numero}
+          proveedorNombre={anularTarget.proveedor}
+          onClose={() => setAnularTarget(null)}
+          onAnulada={() => {
+            setAnularTarget(null);
+            void recargar();
+          }}
+        />
+      )}
     </div>
   );
 }

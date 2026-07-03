@@ -38,4 +38,8 @@ export interface Compra {
   comprobante_mime_type?: string | null;
 
   fecha: string;                 // ISO string, generado automáticamente
+
+  estado?: "registrada" | "pendiente" | "pagada" | "anulada";
+  anulada_at?: string | null;
+  anulacion_motivo?: string | null;
 }

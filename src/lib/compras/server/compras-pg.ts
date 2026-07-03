@@ -87,6 +87,8 @@ export interface CompraRow {
   updated_at: string;
   created_by: string | null;
   usuario_nombre: string | null;
+  anulada_at?: string | null;
+  anulacion_motivo?: string | null;
 }
 
 const COLS = `
@@ -95,7 +97,8 @@ const COLS = `
   iva_tipo, subtotal, monto_iva, total, precio_venta, margen_venta,
   tipo_pago, plazo_dias, nro_timbrado, numero_control, estado, fecha,
   comprobante_url, comprobante_storage_path, comprobante_nombre, comprobante_mime_type,
-  created_at, updated_at, created_by, usuario_nombre
+  created_at, updated_at, created_by, usuario_nombre,
+  anulada_at, anulacion_motivo
 `;
 
 export interface InsertCompraInput {

@@ -12,6 +12,8 @@ interface CompraApiRow {
   comprobante_storage_path?: string | null;
   comprobante_nombre?: string | null;
   comprobante_mime_type?: string | null;
+  anulada_at?: string | null;
+  anulacion_motivo?: string | null;
 }
 
 function mapRow(r: CompraApiRow): Compra {
@@ -40,7 +42,32 @@ function mapRow(r: CompraApiRow): Compra {
     comprobante_nombre: r.comprobante_nombre ?? null,
     comprobante_mime_type: r.comprobante_mime_type ?? null,
     fecha: r.fecha,
+    estado: (r.estado === "anulada" || r.estado === "pendiente" || r.estado === "pagada" ? r.estado : "registrada") as Compra["estado"],
+    anulada_at: r.anulada_at ?? null,
+    anulacion_motivo: r.anulacion_motivo ?? null,
   };
+}
+
+/** Anula una compra completa (todas las filas del numero_control). */
+export async function anularCompra(
+  numeroControl: string,
+  motivo: string
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const res = await fetch(`/api/compras/${encodeURIComponent(numeroControl)}/anular`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ motivo }),
+    });
+    const json = (await res.json().catch(() => ({}))) as { success?: boolean; error?: string };
+    if (!res.ok || !json.success) {
+      return { success: false, error: json.error ?? `No se pudo anular (${res.status}).` };
+    }
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : "Error de red." };
+  }
 }
 
 export async function getCompras(): Promise<Compra[]> {

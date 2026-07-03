@@ -95,33 +95,45 @@ export default function ComprasReportePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.compras.map((c) => (
-                      <tr key={c.numero_control} className="border-b border-slate-100 last:border-0">
-                        <td className="py-3 pr-4 text-slate-600 text-xs tabular-nums">{formatFecha(c.fecha)}</td>
-                        <td className="py-3 pr-4 font-mono text-xs text-slate-500">{c.numero_control}</td>
-                        <td className="py-3 pr-4 text-slate-700">{c.proveedor_nombre}</td>
-                        <td className="py-3 pr-4 text-right tabular-nums text-slate-700">{c.items_count}</td>
-                        <td className="py-3 pr-4 text-right tabular-nums text-slate-600">{formatGs(c.subtotal)}</td>
-                        <td className="py-3 pr-4 text-right tabular-nums text-slate-500">{c.monto_iva > 0 ? formatGs(c.monto_iva) : "—"}</td>
-                        <td className="py-3 pr-4 text-right tabular-nums font-semibold text-slate-800">{formatGs(c.total)}</td>
-                        <td className="py-3 pr-4 text-slate-600">{tipoPagoLabel(c.tipo_pago)}</td>
-                        <td className="py-3 pr-4 font-mono text-xs text-slate-500">{c.nro_timbrado || "—"}</td>
-                        <td className="py-3">
-                          {c.tiene_comprobante ? (
-                            <a
-                              href={`/api/compras/comprobante?numero_control=${encodeURIComponent(c.numero_control)}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs font-medium text-[#4FAEB2] hover:text-[#3F8E91] hover:underline"
-                            >
-                              📎 Ver
-                            </a>
-                          ) : (
-                            <span className="text-xs text-slate-300">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                    {data.compras.map((c) => {
+                      const anulada = c.estado === "anulada";
+                      return (
+                        <tr key={c.numero_control} className={`border-b border-slate-100 last:border-0 ${anulada ? "text-slate-400" : ""}`}>
+                          <td className="py-3 pr-4 text-xs tabular-nums">{formatFecha(c.fecha)}</td>
+                          <td className={`py-3 pr-4 font-mono text-xs ${anulada ? "line-through" : "text-slate-500"}`}>{c.numero_control}</td>
+                          <td className="py-3 pr-4">
+                            <div className="flex items-center gap-2">
+                              <span className={anulada ? "line-through" : "text-slate-700"}>{c.proveedor_nombre}</span>
+                              {anulada && (
+                                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-rose-50 text-rose-700 ring-1 ring-rose-200">
+                                  Anulada
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 pr-4 text-right tabular-nums">{c.items_count}</td>
+                          <td className="py-3 pr-4 text-right tabular-nums">{formatGs(c.subtotal)}</td>
+                          <td className="py-3 pr-4 text-right tabular-nums">{c.monto_iva > 0 ? formatGs(c.monto_iva) : "—"}</td>
+                          <td className={`py-3 pr-4 text-right tabular-nums font-semibold ${anulada ? "line-through" : "text-slate-800"}`}>{formatGs(c.total)}</td>
+                          <td className="py-3 pr-4">{tipoPagoLabel(c.tipo_pago)}</td>
+                          <td className="py-3 pr-4 font-mono text-xs">{c.nro_timbrado || "—"}</td>
+                          <td className="py-3">
+                            {c.tiene_comprobante ? (
+                              <a
+                                href={`/api/compras/comprobante?numero_control=${encodeURIComponent(c.numero_control)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs font-medium text-[#4FAEB2] hover:text-[#3F8E91] hover:underline"
+                              >
+                                📎 Ver
+                              </a>
+                            ) : (
+                              <span className="text-xs text-slate-300">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

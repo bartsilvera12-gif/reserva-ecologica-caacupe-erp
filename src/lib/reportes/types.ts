@@ -58,6 +58,7 @@ export interface CompraReporteRow {
   tipo_pago: string;
   nro_timbrado: string | null;
   tiene_comprobante: boolean; // true si CUALQUIER línea del grupo tiene comprobante
+  estado: "registrada" | "pendiente" | "pagada" | "anulada";
 }
 
 /** Una línea de compra (una fila de `compras`). */
