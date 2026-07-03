@@ -32,6 +32,11 @@ function fmtMoneda(n: unknown, moneda: string): string {
   const simbolo = moneda === "USD" ? "USD " : "Gs. ";
   return simbolo + v.toLocaleString("es-PY", { maximumFractionDigits: moneda === "USD" ? 2 : 0 });
 }
+/** Igual que fmtMoneda pero sin símbolo de moneda (para columnas de la tabla). */
+function fmtMonto(n: unknown, moneda: string): string {
+  const v = Number(n) || 0;
+  return v.toLocaleString("es-PY", { maximumFractionDigits: moneda === "USD" ? 2 : 0 });
+}
 
 function fmtFecha(iso: unknown): string {
   if (!iso) return "—";
@@ -87,26 +92,30 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   const negocio = resolveNegocio(nombreEmpresa);
   const moneda = String(p.moneda ?? "PYG");
 
+  // Solo mostramos la columna "Desc." si al menos un ítem la usa. Evita ruido en el PDF.
+  const hayDescuentos = items.some((it) => Number(it.descuento) > 0);
+
   const filas = items
     .map((it) => {
       const cant = Number(it.cantidad) || 0;
-      const unidad = it.unidad_medida ? ` ${esc(it.unidad_medida)}` : "";
       return `
       <tr>
-        <td class="c">${cant.toLocaleString("es-PY", { maximumFractionDigits: 3 })}${unidad}</td>
+        <td class="c">${cant.toLocaleString("es-PY", { maximumFractionDigits: 3 })}</td>
         <td>${esc(it.producto_nombre)}${it.sku ? `<span class="sku"> · ${esc(it.sku)}</span>` : ""}</td>
-        <td class="r">${fmtMoneda(it.precio_unitario, moneda)}</td>
+        <td class="r">${fmtMonto(it.precio_unitario, moneda)}</td>
         <td class="c">${esc(IVA_LABEL[String(it.iva_tipo)] ?? it.iva_tipo)}</td>
-        <td class="r">${Number(it.descuento) > 0 ? fmtMoneda(it.descuento, moneda) : "—"}</td>
-        <td class="r">${fmtMoneda(it.total, moneda)}</td>
+        ${hayDescuentos ? `<td class="r">${Number(it.descuento) > 0 ? fmtMonto(it.descuento, moneda) : "—"}</td>` : ""}
+        <td class="r">${fmtMonto(it.total, moneda)}</td>
       </tr>`;
     })
     .join("");
+  const columnasCount = hayDescuentos ? 6 : 5;
 
   const condiciones: string[] = [];
   if (p.validez_dias) condiciones.push(`Validez: ${esc(p.validez_dias)} día(s)${p.fecha_vencimiento ? ` (vence ${fmtFecha(p.fecha_vencimiento)})` : ""}`);
   if (p.forma_pago) condiciones.push(`Forma de pago: ${esc(p.forma_pago)}`);
   if (p.plazo_entrega) condiciones.push(`Plazo de entrega: ${esc(p.plazo_entrega)}`);
+  if (p.fecha_entrega) condiciones.push(`Día de entrega: ${fmtFecha(p.fecha_entrega)}`);
 
   const html = `<!doctype html>
 <html lang="es">
@@ -185,6 +194,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
         ${p.validez_dias ? `<p>Validez: ${esc(p.validez_dias)} día(s)</p>` : ""}
         ${p.forma_pago ? `<p>Forma de pago: ${esc(p.forma_pago)}</p>` : ""}
         ${p.plazo_entrega ? `<p>Plazo de entrega: ${esc(p.plazo_entrega)}</p>` : ""}
+        ${p.fecha_entrega ? `<p><strong>Día de entrega:</strong> ${fmtFecha(p.fecha_entrega)}</p>` : ""}
       </div>
     </div>
 
@@ -195,12 +205,12 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
           <th>Descripción</th>
           <th class="r">Precio unit.</th>
           <th class="c">IVA</th>
-          <th class="r">Desc.</th>
+          ${hayDescuentos ? `<th class="r">Desc.</th>` : ""}
           <th class="r">Total</th>
         </tr>
       </thead>
       <tbody>
-        ${filas || `<tr><td colspan="6" class="c">Sin ítems</td></tr>`}
+        ${filas || `<tr><td colspan="${columnasCount}" class="c">Sin ítems</td></tr>`}
       </tbody>
     </table>
 

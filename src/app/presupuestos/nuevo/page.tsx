@@ -79,6 +79,7 @@ export default function NuevoPresupuestoPage() {
   const [validezDias, setValidezDias] = useState("15");
   const [formaPago, setFormaPago] = useState("");
   const [plazoEntrega, setPlazoEntrega] = useState("");
+  const [fechaEntrega, setFechaEntrega] = useState("");
   const [observaciones, setObservaciones] = useState("");
 
   const [guardando, setGuardando] = useState(false);
@@ -221,6 +222,7 @@ export default function NuevoPresupuestoPage() {
           validez_dias: validezDias.trim() === "" ? null : parseInt(validezDias, 10),
           forma_pago: formaPago.trim() || null,
           plazo_entrega: plazoEntrega.trim() || null,
+          fecha_entrega: fechaEntrega.trim() || null,
           observaciones: observaciones.trim() || null,
           items: items.map((it) => ({
             producto_id: it.producto_id,
@@ -295,22 +297,29 @@ export default function NuevoPresupuestoPage() {
       {/* Productos */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
         <h2 className="text-sm font-semibold text-gray-700 mb-3">Productos</h2>
-        <div className="flex flex-wrap items-end gap-2 mb-4">
-          <div className="flex-1 min-w-[220px]">
-            <label className={labelClass}>Agregar desde inventario</label>
-            <select value={selProd} onChange={(e) => setSelProd(e.target.value)} className={`${inputClass} bg-white`}>
-              <option value="">— Elegí un producto —</option>
-              {productos.map((p) => (
-                <option key={p.id} value={p.id}>{p.nombre}{p.sku ? ` · ${p.sku}` : ""}</option>
-              ))}
-            </select>
+        {/* Selector STICKY: al scrollear la página con muchos ítems, la barra para agregar
+            nuevos productos queda siempre visible arriba, sin necesidad de subir manualmente. */}
+        <div className="sticky top-0 z-10 -mx-5 mb-4 border-b border-slate-200 bg-white/95 px-5 py-3 backdrop-blur">
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="flex-1 min-w-[220px]">
+              <label className={labelClass}>Agregar desde inventario</label>
+              <select value={selProd} onChange={(e) => setSelProd(e.target.value)} className={`${inputClass} bg-white`}>
+                <option value="">— Elegí un producto —</option>
+                {productos.map((p) => (
+                  <option key={p.id} value={p.id}>{p.nombre}{p.sku ? ` · ${p.sku}` : ""}</option>
+                ))}
+              </select>
+            </div>
+            <button type="button" onClick={agregarProducto} disabled={!selProd} className="inline-flex items-center gap-1 rounded-md bg-[#4FAEB2] px-3 py-2 text-sm font-medium text-white hover:bg-[#3F8E91] disabled:opacity-50">
+              <Plus className="h-4 w-4" /> Agregar
+            </button>
+            <button type="button" onClick={agregarManual} className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">
+              <Plus className="h-4 w-4" /> Ítem manual
+            </button>
+            {items.length > 0 && (
+              <span className="ml-auto text-xs text-slate-500 tabular-nums">{items.length} ítem{items.length === 1 ? "" : "s"}</span>
+            )}
           </div>
-          <button type="button" onClick={agregarProducto} disabled={!selProd} className="inline-flex items-center gap-1 rounded-md bg-[#4FAEB2] px-3 py-2 text-sm font-medium text-white hover:bg-[#3F8E91] disabled:opacity-50">
-            <Plus className="h-4 w-4" /> Agregar
-          </button>
-          <button type="button" onClick={agregarManual} className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">
-            <Plus className="h-4 w-4" /> Ítem manual
-          </button>
         </div>
 
         {items.length === 0 ? (
@@ -388,6 +397,16 @@ export default function NuevoPresupuestoPage() {
           <div>
             <label className={labelClass}>Plazo de entrega</label>
             <input value={plazoEntrega} onChange={(e) => setPlazoEntrega(e.target.value)} className={inputClass} placeholder="Ej: 5 días hábiles" />
+          </div>
+          <div>
+            <label className={labelClass}>Día de entrega</label>
+            <input
+              type="date"
+              value={fechaEntrega}
+              onChange={(e) => setFechaEntrega(e.target.value)}
+              className={inputClass}
+            />
+            <p className="mt-1 text-xs text-gray-400">Se muestra en el PDF/impresión del presupuesto.</p>
           </div>
           <div className="sm:col-span-3">
             <label className={labelClass}>Observaciones</label>

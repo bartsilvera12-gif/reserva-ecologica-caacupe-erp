@@ -23,6 +23,8 @@ export interface CrearPresupuestoInput {
   validez_dias: number | null;
   forma_pago: string | null;
   plazo_entrega: string | null;
+  /** Día de entrega concreto (YYYY-MM-DD). Se muestra en el PDF. */
+  fecha_entrega: string | null;
   observaciones: string | null;
   items: PresupuestoItemInput[];
 }
@@ -131,6 +133,7 @@ export async function crearPresupuesto(
       fecha_vencimiento: vencimiento,
       forma_pago: input.forma_pago?.trim() || null,
       plazo_entrega: input.plazo_entrega?.trim() || null,
+      fecha_entrega: input.fecha_entrega?.trim() || null,
       observaciones: input.observaciones?.trim() || null,
     })
     .select("id, numero_control")
