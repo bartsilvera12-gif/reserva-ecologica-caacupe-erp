@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import MontoInput from "@/components/ui/MontoInput";
 import { getProducto, productoExiste, updateProducto } from "@/lib/inventario/storage";
-import type { MetodoValuacion } from "@/lib/inventario/types";
+import type { MetodoValuacion, TipoIvaProducto } from "@/lib/inventario/types";
 import ProductImageUploader from "@/components/inventario/ProductImageUploader";
 import SelectFromList from "@/components/inventario/SelectFromList";
 import ProveedoresCostos from "@/components/inventario/ProveedoresCostos";
@@ -53,6 +53,7 @@ export default function EditarProductoPage() {
     stock_minimo: "",
     unidad_medida: "",
     metodo_valuacion: "CPP" as MetodoValuacion,
+    tipo_iva: "10%" as TipoIvaProducto,
   });
   const [imagenPath, setImagenPath] = useState<string | null>(null);
   const [imagenUrl, setImagenUrl] = useState<string | null>(null);
@@ -203,6 +204,7 @@ export default function EditarProductoPage() {
         stock_minimo: String(p.stock_minimo),
         unidad_medida: p.unidad_medida,
         metodo_valuacion: p.metodo_valuacion,
+        tipo_iva: (p.tipo_iva ?? "10%") as TipoIvaProducto,
       });
       setCodigoOriginal(p.codigo_barras ?? null);
       setImagenPath(p.imagen_path ?? null);
@@ -357,6 +359,7 @@ export default function EditarProductoPage() {
         descripcion: descripcion.trim() || null,
         // Modo de receta solo aplica a Menú con receta; en otros tipos se mantiene el default.
         modo_receta: tipoGastro === "menu" && tieneReceta ? modoReceta : "preparado_al_vender",
+        tipo_iva: form.tipo_iva,
       };
       if (cambioCodigo) {
         updatePayload.codigo_barras = codigoIngresado || null;
@@ -886,6 +889,21 @@ export default function EditarProductoPage() {
                 <p className="sm:col-span-2 text-xs text-gray-400">
                   Precios por canal: en Ventas el cajero elige Minorista, Mayorista o Distribuidor. El precio distribuidor es comercial (no es el costo).
                 </p>
+                <div className="sm:col-span-2">
+                  <label className={labelClass}>IVA aplicado al vender</label>
+                  <select
+                    value={form.tipo_iva}
+                    onChange={(e) => setForm((prev) => ({ ...prev, tipo_iva: e.target.value as TipoIvaProducto }))}
+                    className={inputClass}
+                  >
+                    <option value="10%">IVA 10%</option>
+                    <option value="5%">IVA 5%</option>
+                    <option value="EXENTA">Exenta</option>
+                  </select>
+                  <p className="mt-1.5 text-xs text-gray-400">
+                    Se copia automáticamente a la línea de venta y a la factura. Cambiarlo acá afecta ventas futuras.
+                  </p>
+                </div>
               </div>
             )}
             {showPrecioVenta && (

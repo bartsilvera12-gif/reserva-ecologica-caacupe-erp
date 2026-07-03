@@ -8,6 +8,7 @@ import { ChefHat, ArrowLeft, Plus, Trash2, Save, Loader2, Factory, X } from "luc
 import { NEURA_CLIENT_SCHEMA } from "@/lib/supabase/schema";
 import { formatUnidad } from "@/lib/unidades/format";
 import { unidadesCompatibles, familiaUnidad } from "@/lib/unidades/convert";
+import SearchableSelect from "@/components/ui/SearchableSelect";
 
 /** Reserva monocliente: receta pertenece al producto; nombre interno oculto (autogenera). */
 const RECETA_SIMPLE = NEURA_CLIENT_SCHEMA === "reservacaacupe";
@@ -605,21 +606,21 @@ export default function EditarRecetaPage() {
             <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
               <div className="md:col-span-2">
                 <label className="block text-[11px] text-gray-500 mb-1">Materia prima</label>
-                <select
-                  value={newInsumoId}
-                  onChange={(e) => {
-                    setNewInsumoId(e.target.value);
-                    const p = insumosDisponibles.find((x) => x.id === e.target.value);
+                <SearchableSelect
+                  value={newInsumoId || null}
+                  onChange={(id) => {
+                    setNewInsumoId(id);
+                    const p = insumosDisponibles.find((x) => x.id === id);
                     if (p) setNewUnidad(p.unidad_medida ?? "");
                   }}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white"
-                >
-                  {insumosDisponibles.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.nombre}
-                    </option>
-                  ))}
-                </select>
+                  options={insumosDisponibles.map((p) => ({
+                    id: p.id,
+                    label: p.nombre,
+                    hint: (p as { sku?: string | null }).sku ?? null,
+                  }))}
+                  placeholder="Buscar y elegir insumo…"
+                  emptyText="Sin insumos que coincidan"
+                />
               </div>
               <div>
                 <label className="block text-[11px] text-gray-500 mb-1">Cantidad usada</label>

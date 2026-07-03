@@ -27,6 +27,7 @@ interface ProductoSearchHit {
   es_vendible: boolean;
   controla_stock: boolean;
   modo_receta: string;
+  tipo_iva: "EXENTA" | "5%" | "10%";
 }
 
 const DEFAULT_LIMIT = 30;
@@ -66,7 +67,7 @@ export async function GET(request: NextRequest) {
           "precio_venta, precio_mayorista, precio_distribuidor, costo_promedio, stock_actual, stock_minimo, " +
           "unidad_medida, metodo_valuacion, imagen_path, imagen_url, " +
           "categoria_principal_id, proveedor_principal_id, ubicacion_principal_id, " +
-          "es_vendible, controla_stock, modo_receta, activo"
+          "es_vendible, controla_stock, modo_receta, tipo_iva, activo"
       )
       .eq("empresa_id", empresaId)
       .eq("activo", true)
@@ -102,6 +103,7 @@ export async function GET(request: NextRequest) {
       es_vendible: r.es_vendible !== false,
       controla_stock: r.controla_stock !== false,
       modo_receta: typeof r.modo_receta === "string" ? r.modo_receta : "preparado_al_vender",
+      tipo_iva: (r.tipo_iva === "EXENTA" || r.tipo_iva === "5%" ? r.tipo_iva : "10%") as "EXENTA" | "5%" | "10%",
     }));
 
     // Firmar URLs solo para los primeros 20 visibles (optimización).
@@ -135,6 +137,7 @@ export async function GET(request: NextRequest) {
       es_vendible: r.es_vendible,
       controla_stock: r.controla_stock,
       modo_receta: r.modo_receta,
+      tipo_iva: r.tipo_iva,
     }));
 
     return NextResponse.json(successResponse({ items: hits, count: hits.length, q }));

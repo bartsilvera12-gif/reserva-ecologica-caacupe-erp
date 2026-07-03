@@ -135,6 +135,9 @@ interface VentaRow {
   cliente_id: string | null;
   genera_nota_remision: boolean | null;
   nota_remision_numero: string | null;
+  estado: string | null;
+  anulada_at: string | null;
+  anulacion_motivo: string | null;
 }
 
 interface ItemRow {
@@ -352,7 +355,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   // Venta
   const vQ = await ctx.supabase
     .from("ventas")
-    .select("id, numero_control, fecha, subtotal, monto_iva, total, observaciones, metodo_pago, cliente_id, genera_nota_remision, nota_remision_numero")
+    .select("id, numero_control, fecha, subtotal, monto_iva, total, observaciones, metodo_pago, cliente_id, genera_nota_remision, nota_remision_numero, estado, anulada_at, anulacion_motivo")
     .eq("id", id)
     .eq("empresa_id", empresaId)
     .maybeSingle();
@@ -403,15 +406,16 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
     if (venta.cliente_id) {
       const cQ = await ctx.supabase
         .from("clientes")
-        .select("empresa, nombre, nombre_contacto, ruc, documento, direccion, ciudad")
+        .select("empresa, nombre, nombre_contacto, nombre_facturacion, ruc, documento, direccion, ciudad")
         .eq("id", venta.cliente_id)
         .eq("empresa_id", empresaId)
         .maybeSingle();
       const c = cQ.data as Record<string, string | null> | null;
       if (c) {
         const s = (v: string | null | undefined) => (typeof v === "string" && v.trim() ? v.trim() : null);
+        // Prioridad: nombre_facturacion (override explícito) → Razón Social → contacto → nombre.
         clienteRem = {
-          nombre: s(c.empresa) || s(c.nombre_contacto) || s(c.nombre),
+          nombre: s(c.nombre_facturacion) || s(c.empresa) || s(c.nombre_contacto) || s(c.nombre),
           ruc: s(c.ruc),
           documento: s(c.documento),
           direccion: s(c.direccion),
@@ -502,10 +506,17 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
     if (hayPlancha) copias.push("plancha");
   }
 
+  const anulada = String(venta.estado ?? "").toLowerCase() === "anulada";
+  const anuladaBanner = anulada
+    ? `<div class="anulado-banner">ANULADO${venta.anulacion_motivo ? `<div class="anulado-motivo">Motivo: ${escapeHtml(venta.anulacion_motivo)}</div>` : ""}</div>`
+    : "";
+
   const seccionesHtml = copias
-    .map((tipo, idx) =>
-      renderCopia({ tipo, venta, items, brief, fontPx, isLast: idx === copias.length - 1, negocio })
-    )
+    .map((tipo, idx) => {
+      const copia = renderCopia({ tipo, venta, items, brief, fontPx, isLast: idx === copias.length - 1, negocio });
+      // Inyectamos el banner al inicio de cada <section class="paper">.
+      return anulada ? copia.replace(/(<section class="paper[^"]*">)/, `$1${anuladaBanner}`) : copia;
+    })
     .join("");
 
   const html = `<!doctype html>
@@ -542,6 +553,10 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   .actions button { padding: 8px 16px; font-size: 13px; cursor: pointer; border: 1px solid #333; background: #fff; border-radius: 6px; }
   .actions button:hover { background: #f5f5f5; }
   .actions a { margin-left: 12px; font-size: 13px; color: #444; }
+  .anulado-banner { border: 3px solid #b91c1c; color: #b91c1c; text-align: center; font-weight: 900; letter-spacing: 3px; font-size: ${fontPx + 8}px; padding: 3mm 2mm; margin: 0 0 3mm; background: #fef2f2; }
+  .anulado-motivo { display: block; margin-top: 1mm; font-size: ${fontPx - 1}px; font-weight: 600; letter-spacing: 0; color: #7f1d1d; }
+  body.anulada .paper { position: relative; }
+  body.anulada .paper::before { content: "ANULADO"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 60px; font-weight: 900; color: rgba(185,28,28,0.12); letter-spacing: 8px; transform: rotate(-20deg); pointer-events: none; }
   @media print {
     body { background: #fff; padding: 0; }
     .paper { width: ${widthMm}mm; box-shadow: none; padding: 2mm; margin: 0; }
@@ -550,7 +565,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   }
 </style>
 </head>
-<body>
+<body class="${anulada ? "anulada" : ""}">
   ${seccionesHtml}
   <div class="actions">
     <button type="button" onclick="window.print()">Imprimir</button>

@@ -11,7 +11,7 @@ const PRODUCTO_COLS =
   "codigo_barras, codigo_barras_interno, imagen_path, imagen_url, " +
   "categoria_principal_id, ubicacion_principal_id, proveedor_principal_id, " +
   "es_vendible, es_insumo, controla_stock, valorizado, unidad_compra, unidad_receta, " +
-  "factor_compra_receta, tiempo_prep_minutos, descripcion, precio_mayorista, cantidad_minima_mayorista, precio_distribuidor, modo_receta";
+  "factor_compra_receta, tiempo_prep_minutos, descripcion, precio_mayorista, cantidad_minima_mayorista, precio_distribuidor, modo_receta, tipo_iva";
 
 function toNumber(v: unknown): unknown {
   return typeof v === "string" ? Number(v) : v;
@@ -160,6 +160,9 @@ export async function PATCH(
     if (body.modo_receta !== undefined) {
       const mr = body.modo_receta;
       patch.modo_receta = mr === "produccion_previa" ? "produccion_previa" : "preparado_al_vender";
+    }
+    if (body.tipo_iva === "EXENTA" || body.tipo_iva === "5%" || body.tipo_iva === "10%") {
+      patch.tipo_iva = body.tipo_iva;
     }
 
     if (Object.keys(patch).length === 0) {

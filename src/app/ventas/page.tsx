@@ -7,6 +7,7 @@ import { FancySelect } from "@/components/ui/FancySelect";
 import MobileFab from "@/components/ui/MobileFab";
 import { getVentas } from "@/lib/ventas/storage";
 import PedidosPendientesCaja from "./PedidosPendientesCaja";
+import AnularVentaModal from "./AnularVentaModal";
 import { esMismoDiaAsuncion } from "@/lib/fecha/asuncion";
 import type { Venta, TipoVenta, TipoIvaVenta } from "@/lib/ventas/types";
 
@@ -148,21 +149,20 @@ export default function VentasPage() {
   const [busqueda,   setBusqueda]   = useState("");
   const [filtroTipo, setFiltroTipo] = useState<TipoVenta | "">("");
   const [filtroIva,  setFiltroIva]  = useState<TipoIvaVenta | "">("");
+  const [ventaAnular, setVentaAnular] = useState<{ id: string; numero: string } | null>(null);
+
+  async function recargar() {
+    const data = await getVentas();
+    const ordenadas = [...data].sort((a, b) => {
+      const ta = new Date(a.fecha).getTime();
+      const tb = new Date(b.fecha).getTime();
+      return tb - ta || b.numero_control.localeCompare(a.numero_control);
+    });
+    setTodas(ordenadas);
+  }
 
   useEffect(() => {
-    let cancelled = false;
-    getVentas().then((data) => {
-      if (cancelled) return;
-      const ordenadas = [...data].sort((a, b) => {
-        const ta = new Date(a.fecha).getTime();
-        const tb = new Date(b.fecha).getTime();
-        return tb - ta || b.numero_control.localeCompare(a.numero_control);
-      });
-      setTodas(ordenadas);
-    });
-    return () => {
-      cancelled = true;
-    };
+    void recargar();
   }, []);
 
   const metricas = calcularMetricas(todas);
@@ -323,13 +323,14 @@ export default function VentasPage() {
                 <th className="hidden py-3 pr-4 font-medium lg:table-cell">Tipo</th>
                 <th className="hidden py-3 pr-4 font-medium lg:table-cell">Pago</th>
                 <th className="py-3 pr-4 font-medium">Fecha</th>
+                <th className="hidden py-3 pr-4 font-medium lg:table-cell">Estado</th>
                 <th className="py-3 font-medium text-center">Ticket</th>
               </tr>
             </thead>
             <tbody>
               {filtradas.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-gray-400">
+                  <td colSpan={11} className="py-12 text-center text-gray-400">
                     {todas.length === 0
                       ? "No hay ventas registradas"
                       : "Ninguna venta coincide con los filtros"}
@@ -338,8 +339,9 @@ export default function VentasPage() {
               ) : (
                 filtradas.map((v) => {
                   const cantTotal = v.items.reduce((s, i) => s + i.cantidad, 0);
+                  const anulada = v.estado === "anulada";
                   return (
-                    <tr key={v.id} className="border-b border-slate-200 last:border-0 hover:bg-[#4FAEB2]/[0.04] transition-colors">
+                    <tr key={v.id} className={`border-b border-slate-200 last:border-0 hover:bg-[#4FAEB2]/[0.04] transition-colors ${anulada ? "opacity-60" : ""}`}>
                       <td className="py-4 pr-4 font-mono text-xs text-gray-500 align-middle">
                         {v.numero_control}
                       </td>
@@ -378,6 +380,20 @@ export default function VentasPage() {
                       <td className="py-4 pr-4 text-gray-500 text-xs tabular-nums align-middle">
                         {formatFecha(v.fecha)}
                       </td>
+                      <td className="hidden py-4 pr-4 align-middle lg:table-cell">
+                        {anulada ? (
+                          <span
+                            className="inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold bg-rose-50 text-rose-800 ring-1 ring-rose-200"
+                            title={v.anulacion_motivo ?? undefined}
+                          >
+                            Anulada
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200">
+                            Completada
+                          </span>
+                        )}
+                      </td>
                       <td className="py-4 text-center align-middle">
                         <div className="inline-flex items-center gap-1.5">
                           <a
@@ -400,6 +416,16 @@ export default function VentasPage() {
                               Nota de remisión
                             </a>
                           )}
+                          {!anulada && (
+                            <button
+                              type="button"
+                              onClick={() => setVentaAnular({ id: v.id, numero: v.numero_control })}
+                              className="inline-flex items-center justify-center rounded-md border border-rose-200 bg-white px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50 transition-colors"
+                              title="Anular esta venta (reintegra stock)"
+                            >
+                              Anular
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -414,6 +440,18 @@ export default function VentasPage() {
 
       {/* FAB mobile: acceso 1-tap a "+ Nueva venta" desde cualquier scroll position */}
       <MobileFab href="/ventas/nueva" label="Nueva venta" />
+
+      {ventaAnular && (
+        <AnularVentaModal
+          ventaId={ventaAnular.id}
+          numeroControl={ventaAnular.numero}
+          onClose={() => setVentaAnular(null)}
+          onAnulada={() => {
+            setVentaAnular(null);
+            void recargar();
+          }}
+        />
+      )}
     </div>
   );
 }

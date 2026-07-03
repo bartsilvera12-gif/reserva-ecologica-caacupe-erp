@@ -26,6 +26,8 @@ export interface ProductoPickerItem {
   controla_stock?: boolean;
   /** Modo de receta: 'produccion_previa' (Menú stockeado) muestra stock real. */
   modo_receta?: string;
+  /** IVA por defecto del producto. Si viene, sobrescribe el ivaDefault de la venta. */
+  tipo_iva?: "EXENTA" | "5%" | "10%";
 }
 
 /** Un Menú con produccion_previa maneja stock real del terminado (como reventa para mostrar). */
@@ -155,7 +157,7 @@ export default function ProductPickerModal({
     // Precio inicial: minorista (precio_venta) en la moneda de la venta.
     setTipoPrecio("minorista");
     setPrecio(precioEnMonedaStr(precioPorTipoPicker(p, "minorista")));
-    setIva(ivaDefault);
+    setIva(p.tipo_iva === "EXENTA" || p.tipo_iva === "5%" || p.tipo_iva === "10%" ? p.tipo_iva : ivaDefault);
     setFeedback(null);
   }
 

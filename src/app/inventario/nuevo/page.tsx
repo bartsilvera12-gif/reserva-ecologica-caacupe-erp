@@ -7,7 +7,7 @@ import MontoInput from "@/components/ui/MontoInput";
 import SelectFromList from "@/components/inventario/SelectFromList";
 import { MargenPorCanal } from "@/components/inventario/MargenPorCanal";
 import { productoExiste, saveProducto } from "@/lib/inventario/storage";
-import type { MetodoValuacion } from "@/lib/inventario/types";
+import type { MetodoValuacion, TipoIvaProducto } from "@/lib/inventario/types";
 import { ShoppingBag, Boxes, ClipboardList, type LucideIcon } from "lucide-react";
 
 // Opciones estándar de unidad de medida para gastro
@@ -45,6 +45,7 @@ export default function NuevoProductoPage() {
     stock_minimo: "",
     unidad_medida: "",
     metodo_valuacion: "CPP" as MetodoValuacion,
+    tipo_iva: "10%" as TipoIvaProducto,
   });
   const [submitting, setSubmitting] = useState(false);
   const [generandoCodigo, setGenerandoCodigo] = useState(false);
@@ -343,6 +344,7 @@ export default function NuevoProductoPage() {
           unidad_receta: unidadReceta.trim() || null,
           factor_compra_receta: Math.max(parseFloat(factorCompraReceta) || 1, 0.0001),
           tiempo_prep_minutos: Math.max(parseInt(tiempoPrepMinutos) || 0, 0),
+          tipo_iva: form.tipo_iva,
         });
       } catch (err) {
         console.error("[inventario/nuevo] saveProducto error:", err);
@@ -769,6 +771,21 @@ export default function NuevoProductoPage() {
                 <p className="sm:col-span-2 text-xs text-gray-400">
                   Precios por canal: en Ventas el cajero elige Minorista, Mayorista o Distribuidor. El precio distribuidor es comercial (no es el costo).
                 </p>
+                <div className="sm:col-span-2">
+                  <label className={labelClass}>IVA aplicado al vender</label>
+                  <select
+                    value={form.tipo_iva}
+                    onChange={(e) => setForm((prev) => ({ ...prev, tipo_iva: e.target.value as TipoIvaProducto }))}
+                    className={inputClass}
+                  >
+                    <option value="10%">IVA 10%</option>
+                    <option value="5%">IVA 5%</option>
+                    <option value="EXENTA">Exenta</option>
+                  </select>
+                  <p className="mt-1.5 text-xs text-gray-400">
+                    Se copia automáticamente a la línea de venta y a la factura. Cambiarlo acá afecta ventas futuras.
+                  </p>
+                </div>
               </div>
             )}
 

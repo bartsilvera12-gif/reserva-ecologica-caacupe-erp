@@ -23,6 +23,7 @@ interface SupabaseRow {
   empresa:            string | null;
   nombre:             string | null;
   nombre_contacto:    string | null;
+  nombre_facturacion: string | null;
   ruc:                string | null;
   documento:          string | null;
   telefono:           string | null;
@@ -86,6 +87,7 @@ function rowToCliente(row: SupabaseRow): Cliente {
     tipo_cliente:        (row.tipo_cliente === "persona" ? "persona" : "empresa") as Cliente["tipo_cliente"],
     empresa:             row.empresa ?? undefined,
     nombre_contacto:     nombreContacto,
+    nombre_facturacion:  row.nombre_facturacion ?? null,
     ruc:                 row.ruc ?? undefined,
     documento:           row.documento ?? undefined,
     telefono:            row.telefono ?? undefined,
@@ -272,6 +274,7 @@ export async function saveCliente(datos: NuevoClienteData): Promise<Cliente | nu
     empresa:            datos.empresa ?? null,
     nombre:             datos.nombre_contacto ?? null,
     nombre_contacto:    datos.nombre_contacto ?? null,
+    nombre_facturacion: datos.nombre_facturacion ?? null,
     ruc:                datos.ruc ?? null,
     documento:          datos.documento ?? null,
     telefono:           datos.telefono ?? null,
@@ -353,6 +356,10 @@ export function construirPatchActualizacionCliente(datos: ActualizarClienteInput
   if (datos.nombre_contacto !== undefined) {
     patch.nombre = datos.nombre_contacto ?? null;
     patch.nombre_contacto = datos.nombre_contacto ?? null;
+  }
+  if (datos.nombre_facturacion !== undefined) {
+    const v = typeof datos.nombre_facturacion === "string" ? datos.nombre_facturacion.trim() : null;
+    patch.nombre_facturacion = v && v.length > 0 ? v : null;
   }
   if (datos.ruc !== undefined) patch.ruc = datos.ruc ?? null;
   if (datos.documento !== undefined) patch.documento = datos.documento ?? null;

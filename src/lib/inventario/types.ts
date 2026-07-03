@@ -1,6 +1,7 @@
 export type MetodoValuacion = "CPP" | "FIFO" | "LIFO";
 export type TipoMovimiento = "ENTRADA" | "SALIDA" | "AJUSTE";
-export type OrigenMovimiento = "compra" | "venta" | "ajuste_manual" | "inventario_inicial";
+export type OrigenMovimiento = "compra" | "venta" | "ajuste_manual" | "inventario_inicial" | "anulacion_venta";
+export type TipoIvaProducto = "EXENTA" | "5%" | "10%";
 
 export interface Producto {
   id: string;
@@ -45,6 +46,8 @@ export interface Producto {
   descripcion?: string | null;
   /** Modo de receta (productos de Menú): 'preparado_al_vender' | 'produccion_previa'. */
   modo_receta?: string;
+  /** IVA que se aplica al vender este producto (default '10%'). Se copia a la línea de venta. */
+  tipo_iva?: TipoIvaProducto;
 }
 
 export interface MovimientoInventario {

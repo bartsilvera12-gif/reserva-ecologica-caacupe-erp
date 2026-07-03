@@ -76,6 +76,7 @@ export async function apiCreateCliente(data: {
   tipo_servicio_cliente?: string;
   empresa?: string;
   nombre_contacto: string;
+  nombre_facturacion?: string | null;
   ruc?: string;
   documento?: string;
   telefono?: string;

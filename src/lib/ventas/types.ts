@@ -2,6 +2,7 @@ export type TipoIvaVenta = "EXENTA" | "5%" | "10%";
 export type TipoVenta   = "CONTADO" | "CREDITO";
 export type MonedaVenta = "GS" | "USD";
 export type MetodoPago  = "efectivo" | "tarjeta" | "transferencia";
+export type EstadoVenta = "pendiente" | "completada" | "anulada";
 /** Nivel de precio elegido para la línea de venta.
  *  'costo' se conserva SOLO como histórico (ventas viejas); ya no se ofrece en la UI. */
 export type TipoPrecioVenta = "minorista" | "mayorista" | "distribuidor" | "costo";
@@ -48,4 +49,8 @@ export interface Venta {
   nota_remision_numero?: string | null;
 
   fecha: string;             // ISO string, generado automáticamente
+
+  estado?: EstadoVenta;
+  anulada_at?: string | null;
+  anulacion_motivo?: string | null;
 }

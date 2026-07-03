@@ -28,6 +28,10 @@ export interface Cliente {
   tipo_cliente:        TipoCliente;
   empresa?:            string;          // razón social (si es empresa)
   nombre_contacto:     string;          // persona de contacto principal
+  /** Nombre para facturar cuando difiere de la Razón Social (p. ej. el cliente pide
+   *  factura a nombre de pareja / hijo/a). Si está seteado, sobrescribe el nombre
+   *  del receptor en tickets y notas de remisión. */
+  nombre_facturacion?: string | null;
 
   ruc?:                string;
   documento?:          string;          // CI / pasaporte (persona)

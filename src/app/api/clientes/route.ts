@@ -193,6 +193,7 @@ export async function POST(request: NextRequest) {
       tipo_cliente,
       empresa,
       nombre_contacto,
+      nombre_facturacion,
       ruc,
       documento,
       telefono,
@@ -259,6 +260,9 @@ export async function POST(request: NextRequest) {
       empresa:              empresa?.trim() || null,
       nombre:               nombre_contacto.trim(),
       nombre_contacto:      nombre_contacto.trim(),
+      nombre_facturacion:   typeof nombre_facturacion === "string" && nombre_facturacion.trim().length > 0
+        ? nombre_facturacion.trim()
+        : null,
       ruc:                  ruc?.trim() || null,
       documento:            documento?.trim() || null,
       telefono:             telefono?.trim() || null,

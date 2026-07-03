@@ -52,14 +52,15 @@ export type RecetaCosteo = {
 export async function listRecetas(sb: AppSupabaseClient, empresaId: string) {
   const { data, error } = await sb
     .from("recetas")
-    .select("id, producto_id, nombre, rendimiento_cantidad, rendimiento_unidad, activa, updated_at, productos(nombre)")
+    .select("id, producto_id, nombre, rendimiento_cantidad, rendimiento_unidad, activa, updated_at, productos(nombre, sku)")
     .eq("empresa_id", empresaId)
     .order("updated_at", { ascending: false });
   if (error) throw new Error(error.message);
-  // Aplanar el nombre del producto para el fallback de nombre de receta.
+  // Aplanar nombre y SKU del producto para búsqueda y fallback de nombre.
   return (data ?? []).map((r: Record<string, unknown>) => ({
     ...r,
     producto_nombre: (r.productos as { nombre?: string } | null)?.nombre ?? null,
+    producto_sku: (r.productos as { sku?: string } | null)?.sku ?? null,
   }));
 }
 

@@ -11,6 +11,7 @@ type RecetaRow = {
   producto_id: string;
   nombre: string | null;
   producto_nombre: string | null;
+  producto_sku: string | null;
   rendimiento_cantidad: number;
   rendimiento_unidad: string | null;
   activa: boolean;
@@ -77,7 +78,7 @@ export default function RecetasListPage() {
     const terminos = q.split(/\s+/).filter(Boolean);
     return recetas.filter((r) => {
       const heno = normalizar(
-        `${nombreReceta(r)} ${r.producto_nombre ?? ""} ${formatUnidad(r.rendimiento_unidad)}`
+        `${nombreReceta(r)} ${r.producto_nombre ?? ""} ${r.producto_sku ?? ""} ${formatUnidad(r.rendimiento_unidad)}`
       );
       return terminos.every((t) => heno.includes(t));
     });
@@ -139,7 +140,7 @@ export default function RecetasListPage() {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar receta por nombre o producto…"
+              placeholder="Buscar por nombre, producto o SKU…"
               className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-9 text-sm text-slate-900 placeholder:text-slate-400 shadow-sm focus:border-[#4FAEB2] focus:outline-none focus:ring-2 focus:ring-[#4FAEB2]/20"
             />
             {query && (

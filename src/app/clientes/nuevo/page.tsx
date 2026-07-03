@@ -63,6 +63,7 @@ function NuevoClienteForm() {
     tipo_cliente:        "empresa" as TipoCliente,
     empresa:             "",
     nombre_contacto:     "",
+    nombre_facturacion:  "",
     ruc:                 "",
     documento:           "",
     telefono:            "",
@@ -199,7 +200,7 @@ function NuevoClienteForm() {
     return () => { cancelled = true; };
   }, [fromCrmId]);
 
-  const upper = ["empresa", "nombre_contacto", "ciudad", "pais", "vendedor_asignado", "condicion_pago", "direccion", "sifen_codigo_pais"];
+  const upper = ["empresa", "nombre_contacto", "nombre_facturacion", "ciudad", "pais", "vendedor_asignado", "condicion_pago", "direccion", "sifen_codigo_pais"];
   const lower = ["email", "email_secundario"];
 
   function handleChange(
@@ -314,6 +315,7 @@ function NuevoClienteForm() {
       tipo_servicio_cliente: form.tipo_servicio_cliente || undefined,
       empresa: form.tipo_cliente === "empresa" ? form.empresa.trim().toUpperCase() : undefined,
       nombre_contacto: form.nombre_contacto.trim().toUpperCase(),
+      nombre_facturacion: form.nombre_facturacion.trim().toUpperCase() || null,
       ruc: form.ruc.trim() || undefined,
       documento: form.documento.trim() || undefined,
       telefono: form.telefono.trim() || undefined,
@@ -456,6 +458,24 @@ function NuevoClienteForm() {
                 />
               </div>
             )}
+
+            <div>
+              <label className={labelClass}>
+                Nombre para facturación <span className="text-gray-400 font-normal">(opcional)</span>
+              </label>
+              <input
+                type="text"
+                name="nombre_facturacion"
+                value={form.nombre_facturacion}
+                onChange={handleChange}
+                placeholder="Ej: Nombre del cónyuge / hijo/a"
+                className={`${inputClass} uppercase`}
+              />
+              <p className="mt-1.5 text-xs text-gray-400">
+                Solo si la factura se emite a un nombre distinto de la Razón Social. Si queda vacío, se usa
+                la Razón Social o el nombre de contacto.
+              </p>
+            </div>
 
             {!SIMPLE_CLIENTE && (
             <div>

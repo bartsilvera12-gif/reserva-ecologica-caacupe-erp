@@ -189,6 +189,7 @@ export default function ClienteDetailPage() {
     tipo_cliente:        "empresa" as Cliente["tipo_cliente"],
     empresa:             "",
     nombre_contacto:     "",
+    nombre_facturacion:  "",
     ruc:                 "",
     documento:           "",
     telefono:            "",
@@ -346,6 +347,7 @@ export default function ClienteDetailPage() {
         tipo_cliente:        c.tipo_cliente,
         empresa:             c.empresa             ?? "",
         nombre_contacto:     c.nombre_contacto,
+        nombre_facturacion:  c.nombre_facturacion   ?? "",
         ruc:                 c.ruc                 ?? "",
         documento:           c.documento           ?? "",
         telefono:            c.telefono            ?? "",
@@ -509,7 +511,7 @@ export default function ClienteDetailPage() {
     }
   }, [form.condicion_pago, id]);
 
-  const upper = ["empresa", "nombre_contacto", "ciudad", "pais", "vendedor_asignado", "condicion_pago", "direccion", "sifen_codigo_pais"];
+  const upper = ["empresa", "nombre_contacto", "nombre_facturacion", "ciudad", "pais", "vendedor_asignado", "condicion_pago", "direccion", "sifen_codigo_pais"];
   const lower = ["email", "email_secundario"];
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) {
@@ -628,6 +630,7 @@ export default function ClienteDetailPage() {
         tipo_cliente:        form.tipo_cliente,
         empresa:             form.tipo_cliente === "empresa" ? form.empresa.trim().toUpperCase() : undefined,
         nombre_contacto:     form.nombre_contacto.trim().toUpperCase(),
+        nombre_facturacion:  form.nombre_facturacion.trim().toUpperCase() || null,
         ruc:                 form.ruc.trim()                 || undefined,
         documento:           form.documento.trim()           || undefined,
         telefono:            form.telefono.trim()            || undefined,
@@ -1506,6 +1509,24 @@ export default function ClienteDetailPage() {
                     <input type="text" name="empresa" value={form.empresa} onChange={handleChange} className={`${inputClass} uppercase`} />
                   </div>
                 )}
+
+                <div>
+                  <label className={labelClass}>
+                    Nombre para facturación <span className="text-gray-400 font-normal">(opcional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="nombre_facturacion"
+                    value={form.nombre_facturacion}
+                    onChange={handleChange}
+                    placeholder="Ej: nombre del cónyuge / hijo/a"
+                    className={`${inputClass} uppercase`}
+                  />
+                  <p className="mt-1.5 text-xs text-gray-400">
+                    Si el cliente pide factura a otro nombre, cargalo acá. Si queda vacío se usa Razón Social o
+                    nombre de contacto.
+                  </p>
+                </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>

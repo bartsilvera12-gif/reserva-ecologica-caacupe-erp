@@ -6,6 +6,7 @@ import Link from "next/link";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { ChefHat, ArrowLeft, Loader2 } from "lucide-react";
 import { NEURA_CLIENT_SCHEMA } from "@/lib/supabase/schema";
+import SearchableSelect from "@/components/ui/SearchableSelect";
 
 /** Reserva monocliente: la receta pertenece al producto; el nombre se autogenera. */
 const RECETA_SIMPLE = NEURA_CLIENT_SCHEMA === "reservacaacupe";
@@ -142,22 +143,17 @@ export default function NuevaRecetaPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Producto del menú <span className="text-red-500">*</span>
             </label>
-            <select
-              value={productoId}
-              onChange={(e) => {
-                setProductoId(e.target.value);
-                const p = productos.find((x) => x.id === e.target.value);
+            <SearchableSelect
+              value={productoId || null}
+              onChange={(id) => {
+                setProductoId(id);
+                const p = productos.find((x) => x.id === id);
                 if (p) setRendUnidad(p.unidad_medida ?? "");
               }}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-              required
-            >
-              {productos.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nombre} ({p.sku})
-                </option>
-              ))}
-            </select>
+              options={productos.map((p) => ({ id: p.id, label: p.nombre, hint: p.sku }))}
+              placeholder="Buscar y elegir producto…"
+              emptyText="Sin productos que coincidan"
+            />
             <p className="mt-1 text-[11px] text-gray-400">
               Solo productos elaborados / de menú. Los de reventa y la materia prima no llevan receta.
             </p>

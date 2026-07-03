@@ -15,7 +15,7 @@ const PRODUCTO_COLS =
   "codigo_barras, codigo_barras_interno, imagen_path, imagen_url, " +
   "categoria_principal_id, ubicacion_principal_id, proveedor_principal_id, " +
   "es_vendible, es_insumo, controla_stock, valorizado, unidad_compra, unidad_receta, " +
-  "factor_compra_receta, tiempo_prep_minutos, descripcion, precio_mayorista, cantidad_minima_mayorista, precio_distribuidor, modo_receta";
+  "factor_compra_receta, tiempo_prep_minutos, descripcion, precio_mayorista, cantidad_minima_mayorista, precio_distribuidor, modo_receta, tipo_iva";
 
 function toNumber(v: unknown): unknown {
   return typeof v === "string" ? Number(v) : v;
@@ -177,6 +177,9 @@ export async function POST(request: NextRequest) {
     insertPayload.precio_distribuidor = toNumberOrNull(body.precio_distribuidor);
     if (body.modo_receta === "produccion_previa" || body.modo_receta === "preparado_al_vender") {
       insertPayload.modo_receta = body.modo_receta;
+    }
+    if (body.tipo_iva === "EXENTA" || body.tipo_iva === "5%" || body.tipo_iva === "10%") {
+      insertPayload.tipo_iva = body.tipo_iva;
     }
 
     const ins = await sb.from("productos").insert(insertPayload).select(PRODUCTO_COLS).single();

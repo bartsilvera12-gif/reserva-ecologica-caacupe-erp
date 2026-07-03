@@ -116,3 +116,25 @@ export async function saveVenta(
     return { success: false, error: msg };
   }
 }
+
+/** Anula una venta (ticket no fiscal). Reintegra stock y bloquea si tiene cobros aplicados. */
+export async function anularVenta(
+  ventaId: string,
+  motivo: string
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const res = await fetchWithSupabaseSession(`/api/ventas/${ventaId}/anular`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ motivo }),
+    });
+    const json = (await res.json()) as { success?: boolean; error?: string };
+    if (!res.ok || !json.success) {
+      return { success: false, error: json.error ?? `No se pudo anular (${res.status}).` };
+    }
+    return { success: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Error de red.";
+    return { success: false, error: msg };
+  }
+}
