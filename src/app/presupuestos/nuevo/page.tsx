@@ -6,6 +6,7 @@ import Link from "next/link";
 import { FileText, ArrowLeft, Plus, Trash2, Loader2 } from "lucide-react";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { calcMontoIvaIncluido, type IvaTipoPresupuesto } from "@/lib/presupuestos/types";
+import SearchableSelect from "@/components/ui/SearchableSelect";
 
 type NivelPrecio = "minorista" | "mayorista" | "distribuidor";
 type ProductoLite = {
@@ -305,12 +306,13 @@ export default function NuevoPresupuestoPage() {
           <div className="flex flex-wrap items-end gap-2">
             <div className="flex-1 min-w-[220px]">
               <label className={labelClass}>Agregar desde inventario</label>
-              <select value={selProd} onChange={(e) => setSelProd(e.target.value)} className={`${inputClass} bg-white`}>
-                <option value="">— Elegí un producto —</option>
-                {productos.map((p) => (
-                  <option key={p.id} value={p.id}>{p.nombre}{p.sku ? ` · ${p.sku}` : ""}</option>
-                ))}
-              </select>
+              <SearchableSelect
+                value={selProd || null}
+                onChange={(id) => setSelProd(id)}
+                options={productos.map((p) => ({ id: p.id, label: p.nombre, hint: p.sku || null }))}
+                placeholder="Buscar producto por nombre o SKU…"
+                emptyText="Sin productos que coincidan"
+              />
             </div>
             <button type="button" onClick={agregarProducto} disabled={!selProd} className="inline-flex items-center gap-1 rounded-md bg-[#4FAEB2] px-3 py-2 text-sm font-medium text-white hover:bg-[#3F8E91] disabled:opacity-50">
               <Plus className="h-4 w-4" /> Agregar
