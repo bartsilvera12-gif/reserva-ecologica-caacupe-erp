@@ -16,6 +16,7 @@ type ProductoLite = {
   precio_mayorista: number | null;
   precio_distribuidor: number | null;
   unidad_medida: string;
+  tipo_iva: IvaTipoPresupuesto;
 };
 type ClienteLite = {
   id: string;
@@ -102,6 +103,7 @@ export default function NuevoPresupuestoPage() {
                 precio_mayorista: p.precio_mayorista != null ? Number(p.precio_mayorista) || null : null,
                 precio_distribuidor: p.precio_distribuidor != null ? Number(p.precio_distribuidor) || null : null,
                 unidad_medida: String(p.unidad_medida ?? "UNIDAD"),
+                tipo_iva: (p.tipo_iva === "EXENTA" || p.tipo_iva === "5%" ? p.tipo_iva : "10%") as IvaTipoPresupuesto,
               }))
           );
         }
@@ -154,7 +156,7 @@ export default function NuevoPresupuestoPage() {
         cantidad: 1,
         unidad_medida: p.unidad_medida,
         precio_unitario: precioParaNivel(p, nivel),
-        iva_tipo: "10%",
+        iva_tipo: p.tipo_iva,
         descuento: 0,
       },
     ]);
