@@ -18,6 +18,7 @@ const origenLabel: Record<OrigenMovimiento, string> = {
   inventario_inicial: "Inventario inicial",
   anulacion_venta: "Anulación de venta",
   anulacion_compra: "Anulación de compra",
+  produccion: "Producción",
 };
 
 const origenBadge: Record<OrigenMovimiento, string> = {
@@ -27,6 +28,7 @@ const origenBadge: Record<OrigenMovimiento, string> = {
   inventario_inicial: "bg-orange-50 text-orange-600",
   anulacion_venta: "bg-pink-50 text-pink-600",
   anulacion_compra: "bg-rose-50 text-rose-700",
+  produccion: "bg-emerald-50 text-emerald-700",
 };
 
 function formatGs(valor: number) {
@@ -142,6 +144,7 @@ export default function MovimientosPage() {
             <option value="">Todos los orígenes</option>
             <option value="compra">Compra</option>
             <option value="venta">Venta</option>
+            <option value="produccion">Producción</option>
             <option value="anulacion_venta">Anulación de venta</option>
             <option value="anulacion_compra">Anulación de compra</option>
             <option value="ajuste_manual">Ajuste manual</option>
