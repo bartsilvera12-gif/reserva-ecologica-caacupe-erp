@@ -271,12 +271,16 @@ export default function NuevoPresupuestoPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className={labelClass}>Cliente existente (opcional)</label>
-            <select value={clienteId} onChange={(e) => seleccionarCliente(e.target.value)} className={`${inputClass} bg-white`}>
-              <option value="">— Cargar manualmente —</option>
-              {clientes.map((c) => (
-                <option key={c.id} value={c.id}>{c.nombre}{c.ruc ? ` (${c.ruc})` : ""}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={clienteId || "__manual__"}
+              onChange={(id) => seleccionarCliente(id === "__manual__" ? "" : id)}
+              options={[
+                { id: "__manual__", label: "— Cargar manualmente —" },
+                ...clientes.map((c) => ({ id: c.id, label: c.nombre, hint: c.ruc ?? null })),
+              ]}
+              placeholder="Buscar cliente por nombre o RUC…"
+              emptyText="Sin clientes que coincidan"
+            />
           </div>
           <div>
             <label className={labelClass}>Nombre / Razón social *</label>
