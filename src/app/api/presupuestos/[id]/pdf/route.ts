@@ -120,7 +120,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
       const prodId = typeof it.producto_id === "string" ? it.producto_id : null;
       const codigoBarras = prodId ? codigoBarrasByProd.get(prodId) ?? null : null;
       const barcodeSvg = codigoBarras
-        ? `<div class="barcode"><svg class="js-barcode" data-value="${esc(codigoBarras)}" data-id="bc-${idx}"></svg><span class="barcode-num">${esc(codigoBarras)}</span></div>`
+        ? `<div class="prod-barcode"><svg class="prod-barcode-svg" data-value="${esc(codigoBarras)}" width="200" height="32"></svg><span class="prod-barcode-num">${esc(codigoBarras)}</span></div>`
         : "";
       return `
       <tr>
@@ -176,9 +176,9 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   tbody td.r { text-align: right; }
   .sku { color: #9ca3af; font-size: 11px; }
   .prod-nombre { line-height: 1.3; }
-  .barcode { margin-top: 4px; display: inline-flex; flex-direction: column; align-items: flex-start; }
-  .barcode svg { height: 28px; width: auto; max-width: 60mm; display: block; }
-  .barcode-num { font-family: ui-monospace, "Courier New", monospace; font-size: 10px; color: #6b7280; letter-spacing: 0.5px; margin-top: 1px; }
+  .prod-barcode { margin-top: 4px; display: inline-flex; flex-direction: column; align-items: flex-start; }
+  .prod-barcode-svg { height: 28px; width: auto; max-width: 60mm; display: block; }
+  .prod-barcode-num { font-family: ui-monospace, "Courier New", monospace; font-size: 10px; color: #6b7280; letter-spacing: 0.5px; margin-top: 1px; }
   .totales { margin-top: 14px; margin-left: auto; width: 56%; font-size: 14px; }
   .totales tr td { padding: 5px 10px; border: none; }
   .totales tr td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
@@ -269,7 +269,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   <script>
     (function () {
       function renderBarcodes() {
-        var svgs = document.querySelectorAll('svg.js-barcode');
+        var svgs = document.querySelectorAll('svg.prod-barcode-svg');
         if (!window.JsBarcode || svgs.length === 0) return false;
         svgs.forEach(function (svg) {
           var v = svg.getAttribute('data-value') || '';
