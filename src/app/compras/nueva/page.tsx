@@ -21,10 +21,19 @@ function margenColor(m: number) {
   if (m >= 20) return "text-yellow-600";
   return "text-red-600";
 }
-function ivaMonto(subtotal: number, iva: TipoIva): number {
+/**
+ * IVA INCLUIDO (mismo patrón que Ventas y que las facturas físicas de proveedores):
+ * el precio unitario que se carga YA contiene el IVA. El monto de IVA se desglosa
+ * "desde adentro" a partir del total, no se suma encima.
+ *
+ * Total = precio × cantidad
+ * IVA   = total − total / (1 + tasa)
+ * Base  = total − IVA
+ */
+function ivaMonto(total: number, iva: TipoIva): number {
   if (iva === "exenta") return 0;
-  if (iva === "5") return subtotal * 0.05;
-  return subtotal * 0.1;
+  if (iva === "5") return total - total / 1.05;
+  return total - total / 1.10;
 }
 
 const inputClass =
@@ -158,9 +167,11 @@ export default function NuevaCompraPage() {
   const nlCostoInput = parseFloat(nl.costo_unitario_input) || 0;
   const nlCostoPYG = nlCostoInput * tipoCambioNum;
   const nlPrecio = parseFloat(nl.precio_venta) || 0;
-  const nlSubtotal = nlCant > 0 && nlCostoPYG > 0 ? nlCant * nlCostoPYG : 0;
-  const nlIva = ivaMonto(nlSubtotal, nl.iva_tipo);
-  const nlTotal = nlSubtotal + nlIva;
+  // IVA incluido: el costo unitario cargado ya contiene el IVA.
+  // Total línea = precio × cantidad; IVA se desglosa desde adentro; subtotal = base imponible.
+  const nlTotal = nlCant > 0 && nlCostoPYG > 0 ? nlCant * nlCostoPYG : 0;
+  const nlIva = ivaMonto(nlTotal, nl.iva_tipo);
+  const nlSubtotal = nlTotal - nlIva;
   const nlMargen = nlPrecio > 0 && nlCostoPYG > 0 ? ((nlPrecio - nlCostoPYG) / nlPrecio) * 100 : null;
   const productoSel = productos.find((p) => p.id === nl.producto_id);
   // Materia prima / insumo NO vendible: no exigimos precio de venta (se compra para recetas).
