@@ -115,20 +115,18 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   const hayDescuentos = items.some((it) => Number(it.descuento) > 0);
 
   const filas = items
-    .map((it, idx) => {
+    .map((it) => {
       const cant = Number(it.cantidad) || 0;
       const prodId = typeof it.producto_id === "string" ? it.producto_id : null;
       const codigoBarras = prodId ? codigoBarrasByProd.get(prodId) ?? null : null;
-      const barcodeSvg = codigoBarras
-        ? `<div class="prod-barcode"><span class="prod-barcode-num">${esc(codigoBarras)}</span></div>`
-        : "";
+      // El "Artículo" (código de barras) va en su propia columna antes de la descripción.
+      // Fallback al SKU si el producto no tiene código de barras cargado.
+      const articulo = codigoBarras || (typeof it.sku === "string" ? it.sku : "") || "";
       return `
       <tr>
         <td class="c">${cant.toLocaleString("es-PY", { maximumFractionDigits: 3 })}</td>
-        <td>
-          <div class="prod-nombre">${esc(it.producto_nombre)}${it.sku ? `<span class="sku"> · ${esc(it.sku)}</span>` : ""}</div>
-          ${barcodeSvg}
-        </td>
+        <td class="articulo">${esc(articulo)}</td>
+        <td>${esc(it.producto_nombre)}</td>
         <td class="r">${fmtMonto(it.precio_unitario, moneda)}</td>
         <td class="c">${esc(IVA_LABEL[String(it.iva_tipo)] ?? it.iva_tipo)}</td>
         ${hayDescuentos ? `<td class="r">${Number(it.descuento) > 0 ? fmtMonto(it.descuento, moneda) : "—"}</td>` : ""}
@@ -136,7 +134,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
       </tr>`;
     })
     .join("");
-  const columnasCount = hayDescuentos ? 6 : 5;
+  const columnasCount = hayDescuentos ? 7 : 6;
 
   const condiciones: string[] = [];
   if (p.validez_dias) condiciones.push(`Validez: ${esc(p.validez_dias)} día(s)${p.fecha_vencimiento ? ` (vence ${fmtFecha(p.fecha_vencimiento)})` : ""}`);
@@ -153,11 +151,12 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
 <style>
   /* Forzar A4 portrait a nivel top para que impresoras / "Guardar como PDF" respeten el tamaño
      sin que el usuario tenga que elegirlo. Se repite adentro de @media print por compatibilidad. */
-  @page { size: A4 portrait; margin: 10mm; }
+  /* Márgenes reducidos para maximizar el número de líneas por hoja. */
+  @page { size: A4 portrait; margin: 8mm 8mm; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #1f2937; background: #f3f4f6; }
-  .page { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 18mm 16mm; }
+  .page { width: 210mm; min-height: 297mm; margin: 0 auto; background: #fff; padding: 10mm 10mm; }
   .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #4FAEB2; padding-bottom: 12px; }
   .negocio { font-size: 22px; font-weight: 800; color: #1f2937; }
   .doc-tag { color: #6b7280; font-size: 12px; margin-top: 2px; letter-spacing: .08em; text-transform: uppercase; }
@@ -167,17 +166,16 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   .box { flex: 1; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px; }
   .box h3 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #6b7280; }
   .box p { margin: 2px 0; font-size: 13px; }
-  table { width: 100%; border-collapse: collapse; margin-top: 18px; font-size: 13px; }
-  thead th { background: #4FAEB2; color: #fff; text-align: left; padding: 8px 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; }
+  thead th { background: #4FAEB2; color: #fff; text-align: left; padding: 5px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
   thead th.c, thead th.r { text-align: center; }
   thead th.r { text-align: right; }
-  tbody td { padding: 8px 10px; border-bottom: 1px solid #eef2f4; vertical-align: top; }
+  thead th.articulo { text-align: left; }
+  tbody td { padding: 4px 8px; border-bottom: 1px solid #eef2f4; vertical-align: middle; }
   tbody td.c { text-align: center; }
   tbody td.r { text-align: right; }
+  tbody td.articulo { font-family: ui-monospace, "Courier New", monospace; font-size: 11px; color: #4b5563; letter-spacing: 0.3px; white-space: nowrap; }
   .sku { color: #9ca3af; font-size: 11px; }
-  .prod-nombre { line-height: 1.3; }
-  .prod-barcode { margin-top: 2px; }
-  .prod-barcode-num { font-family: ui-monospace, "Courier New", monospace; font-size: 11px; color: #6b7280; letter-spacing: 0.5px; }
   .totales { margin-top: 14px; margin-left: auto; width: 56%; font-size: 14px; }
   .totales tr td { padding: 5px 10px; border: none; }
   .totales tr td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
@@ -192,8 +190,8 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   @media print {
     body { background: #fff; }
     .toolbar { display: none; }
-    .page { width: auto; min-height: auto; margin: 0; padding: 12mm; }
-    @page { size: A4; margin: 10mm; }
+    .page { width: auto; min-height: auto; margin: 0; padding: 6mm; }
+    @page { size: A4 portrait; margin: 8mm 8mm; }
   }
 </style>
 </head>
@@ -235,6 +233,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
       <thead>
         <tr>
           <th class="c">Cant.</th>
+          <th class="articulo">Artículo</th>
           <th>Descripción</th>
           <th class="r">Precio unit.</th>
           <th class="c">IVA</th>
