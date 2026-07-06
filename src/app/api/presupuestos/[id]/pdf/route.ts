@@ -71,11 +71,30 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
 
   const itq = await ctx.supabase
     .from("presupuesto_items")
-    .select("producto_nombre, sku, cantidad, unidad_medida, precio_unitario, iva_tipo, descuento, total")
+    .select("producto_id, producto_nombre, sku, cantidad, unidad_medida, precio_unitario, iva_tipo, descuento, total")
     .eq("empresa_id", ctx.auth.empresa_id)
     .eq("presupuesto_id", id)
     .order("created_at", { ascending: true });
   const items = (itq.data ?? []) as Record<string, unknown>[];
+
+  // Traemos el código de barras actual del producto (no lo snapshoteamos en
+  // presupuesto_items). Si el producto fue borrado o no tiene código, queda vacío.
+  const productoIds = [...new Set(
+    items.map((it) => (typeof it.producto_id === "string" ? it.producto_id : null)).filter((v): v is string => !!v)
+  )];
+  const codigoBarrasByProd = new Map<string, string>();
+  if (productoIds.length > 0) {
+    const pq2 = await ctx.supabase
+      .from("productos")
+      .select("id, codigo_barras")
+      .eq("empresa_id", ctx.auth.empresa_id)
+      .in("id", productoIds);
+    for (const row of (pq2.data ?? []) as Array<{ id: string; codigo_barras: string | null }>) {
+      if (row.codigo_barras && row.codigo_barras.trim()) {
+        codigoBarrasByProd.set(row.id, row.codigo_barras.trim());
+      }
+    }
+  }
 
   // Nombre del negocio.
   let nombreEmpresa: string | null = null;
@@ -96,12 +115,20 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   const hayDescuentos = items.some((it) => Number(it.descuento) > 0);
 
   const filas = items
-    .map((it) => {
+    .map((it, idx) => {
       const cant = Number(it.cantidad) || 0;
+      const prodId = typeof it.producto_id === "string" ? it.producto_id : null;
+      const codigoBarras = prodId ? codigoBarrasByProd.get(prodId) ?? null : null;
+      const barcodeSvg = codigoBarras
+        ? `<div class="barcode"><svg class="js-barcode" data-value="${esc(codigoBarras)}" data-id="bc-${idx}"></svg><span class="barcode-num">${esc(codigoBarras)}</span></div>`
+        : "";
       return `
       <tr>
         <td class="c">${cant.toLocaleString("es-PY", { maximumFractionDigits: 3 })}</td>
-        <td>${esc(it.producto_nombre)}${it.sku ? `<span class="sku"> · ${esc(it.sku)}</span>` : ""}</td>
+        <td>
+          <div class="prod-nombre">${esc(it.producto_nombre)}${it.sku ? `<span class="sku"> · ${esc(it.sku)}</span>` : ""}</div>
+          ${barcodeSvg}
+        </td>
         <td class="r">${fmtMonto(it.precio_unitario, moneda)}</td>
         <td class="c">${esc(IVA_LABEL[String(it.iva_tipo)] ?? it.iva_tipo)}</td>
         ${hayDescuentos ? `<td class="r">${Number(it.descuento) > 0 ? fmtMonto(it.descuento, moneda) : "—"}</td>` : ""}
@@ -124,6 +151,9 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(p.numero_control)} — Presupuesto</title>
 <style>
+  /* Forzar A4 portrait a nivel top para que impresoras / "Guardar como PDF" respeten el tamaño
+     sin que el usuario tenga que elegirlo. Se repite adentro de @media print por compatibilidad. */
+  @page { size: A4 portrait; margin: 10mm; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body { font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #1f2937; background: #f3f4f6; }
@@ -145,6 +175,10 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   tbody td.c { text-align: center; }
   tbody td.r { text-align: right; }
   .sku { color: #9ca3af; font-size: 11px; }
+  .prod-nombre { line-height: 1.3; }
+  .barcode { margin-top: 4px; display: inline-flex; flex-direction: column; align-items: flex-start; }
+  .barcode svg { height: 28px; width: auto; max-width: 60mm; display: block; }
+  .barcode-num { font-family: ui-monospace, "Courier New", monospace; font-size: 10px; color: #6b7280; letter-spacing: 0.5px; margin-top: 1px; }
   .totales { margin-top: 14px; margin-left: auto; width: 56%; font-size: 14px; }
   .totales tr td { padding: 5px 10px; border: none; }
   .totales tr td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
@@ -229,7 +263,46 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
       Documento no fiscal — no válido como factura.
     </div>
   </div>
-  <script>try{ if (${auto ? "true" : "false"}) window.print(); }catch(e){}</script>
+  <!-- JsBarcode: dibuja códigos de barras Code128 escaneables en los <svg.js-barcode>.
+       Se carga por CDN; si falla (offline), el número de código igual queda impreso como texto. -->
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js" defer></script>
+  <script>
+    (function () {
+      function renderBarcodes() {
+        var svgs = document.querySelectorAll('svg.js-barcode');
+        if (!window.JsBarcode || svgs.length === 0) return false;
+        svgs.forEach(function (svg) {
+          var v = svg.getAttribute('data-value') || '';
+          if (!v) return;
+          try {
+            window.JsBarcode(svg, v, {
+              format: 'CODE128',
+              displayValue: false,
+              margin: 0,
+              height: 32,
+              width: 1.4,
+            });
+          } catch (e) { /* si el valor no encaja en Code128, deja el número como texto */ }
+        });
+        return true;
+      }
+      function boot() {
+        var attempts = 0;
+        var timer = setInterval(function () {
+          attempts++;
+          if (renderBarcodes() || attempts > 40) clearInterval(timer);
+        }, 100);
+        setTimeout(function () {
+          if (${auto ? "true" : "false"}) { try { window.print(); } catch (e) {} }
+        }, 800);
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', boot);
+      } else {
+        boot();
+      }
+    })();
+  </script>
 </body>
 </html>`;
 
