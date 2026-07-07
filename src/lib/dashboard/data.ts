@@ -454,7 +454,12 @@ export async function getDashboardData(): Promise<DashboardData> {
       itemsByVenta.set(ventaId, lineas);
     }
 
-    ventas = (d.ventas ?? []).map((r: Record<string, unknown>) => {
+    ventas = (d.ventas ?? [])
+      // Excluir ventas anuladas de las métricas del dashboard (ticket promedio,
+      // ventas del día/mes, margen, top productos, etc.). El reporte de ventas
+      // las muestra con badge aparte usando su propio endpoint.
+      .filter((r: Record<string, unknown>) => String(r.estado ?? "") !== "anulada")
+      .map((r: Record<string, unknown>) => {
       const id = r.id as string;
       return {
         id,

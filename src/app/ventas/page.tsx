@@ -68,7 +68,8 @@ interface MetricasHoy {
 }
 
 function calcularMetricas(ventas: Venta[]): MetricasHoy {
-  const deHoy            = ventas.filter((v) => esDeHoy(v.fecha));
+  // Excluir anuladas del resumen "Facturación de hoy" / órdenes / productos vendidos.
+  const deHoy            = ventas.filter((v) => esDeHoy(v.fecha) && v.estado !== "anulada");
   const facturacion      = deHoy.reduce((s, v) => s + v.total, 0);
   const cantidadVentas   = deHoy.length;
   const ticketPromedio   = cantidadVentas > 0 ? facturacion / cantidadVentas : 0;
