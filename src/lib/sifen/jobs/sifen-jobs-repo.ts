@@ -1,6 +1,12 @@
 import type { AppSupabaseClient } from "@/lib/supabase/schema";
 import { NEURA_CLIENT_SCHEMA } from "@/lib/supabase/schema";
-import type { SifenJobDTO, SifenJobEstado, SifenJobEtapa } from "@/lib/sifen/types";
+import type {
+  SifenJobDTO,
+  SifenJobEstado,
+  SifenJobEtapa,
+  SifenJobIntento,
+  SifenJobTipoError,
+} from "@/lib/sifen/types";
 
 /**
  * Repositorio de la cola SIFEN — sólo lecturas y creación.
@@ -189,3 +195,306 @@ export async function getLastSifenJobForFe(
   if (error || !data) return null;
   return toDto(data as RawJobRow);
 }
+
+// =============================================================================
+// Worker (Fase 3) — claim / complete / fail / reclaim
+// =============================================================================
+
+/**
+ * Toma el próximo Job pendiente cuyo `proximo_reintento_at` haya vencido
+ * (o sea NULL). Race-safe entre múltiples workers: el UPDATE condicional
+ * `.eq("estado","pendiente")` solo lo gana un worker por row (PostgreSQL
+ * bloquea la fila durante el UPDATE), el otro lee 0 filas y sigue al próximo.
+ *
+ * Devuelve `null` si no hay Jobs para tomar.
+ *
+ * No usamos `FOR UPDATE SKIP LOCKED` (PostgREST no lo expone). En un futuro
+ * multi-instancia, migrar a PG directo (chat-pg-pool) para SKIP LOCKED explícito.
+ */
+export async function claimNextSifenJob(
+  supabase: AppSupabaseClient,
+  lockOwner: string
+): Promise<SifenJobDTO | null> {
+  const nowIso = new Date().toISOString();
+
+  // 1) Buscar candidatos: pendientes cuyo backoff haya expirado.
+  const candidateRes = await supabase
+    .from("sifen_jobs")
+    .select("id")
+    .eq("estado", "pendiente")
+    .or(`proximo_reintento_at.is.null,proximo_reintento_at.lte.${nowIso}`)
+    .order("proximo_reintento_at", { ascending: true, nullsFirst: true })
+    .order("created_at", { ascending: true })
+    .limit(5);
+
+  if (candidateRes.error) {
+    console.error("[sifen-worker] claimNextSifenJob candidates error:", candidateRes.error.message);
+    return null;
+  }
+  const candidates = (candidateRes.data ?? []) as { id: string }[];
+  if (candidates.length === 0) return null;
+
+  // 2) Intentar claim sobre cada candidato hasta ganar uno.
+  for (const c of candidates) {
+    const upd = await supabase
+      .from("sifen_jobs")
+      .update({
+        estado: "procesando",
+        procesando_desde: nowIso,
+        started_at: nowIso,
+        lock_owner: lockOwner,
+        etapa: null,
+      })
+      .eq("id", c.id)
+      .eq("estado", "pendiente")
+      .select("*")
+      .maybeSingle();
+    if (upd.error) {
+      console.error("[sifen-worker] claim update error:", upd.error.message);
+      continue;
+    }
+    if (upd.data) {
+      return toDto(upd.data as RawJobRow);
+    }
+    // 0 filas → otro worker se la llevó. Probamos el siguiente candidato.
+  }
+  return null;
+}
+
+/** Marca la etapa activa que el worker está corriendo (para UI y logs). */
+export async function setSifenJobEtapa(
+  supabase: AppSupabaseClient,
+  jobId: string,
+  etapa: SifenJobEtapa
+): Promise<void> {
+  const { error } = await supabase
+    .from("sifen_jobs")
+    .update({ etapa })
+    .eq("id", jobId);
+  if (error) {
+    console.warn("[sifen-worker] setSifenJobEtapa error:", error.message);
+  }
+}
+
+/** Guarda tiempo (ms) por etapa. Se llama después de cada etapa exitosa. */
+export async function setSifenJobEtapaTiempo(
+  supabase: AppSupabaseClient,
+  jobId: string,
+  etapa: SifenJobEtapa,
+  ms: number
+): Promise<void> {
+  const col =
+    etapa === "xml"
+      ? "tiempo_xml_ms"
+      : etapa === "firmar"
+        ? "tiempo_firmar_ms"
+        : etapa === "enviar"
+          ? "tiempo_enviar_ms"
+          : "tiempo_consulta_ms";
+  const { error } = await supabase
+    .from("sifen_jobs")
+    .update({ [col]: Math.max(0, Math.floor(ms)) })
+    .eq("id", jobId);
+  if (error) {
+    console.warn("[sifen-worker] setSifenJobEtapaTiempo error:", error.message);
+  }
+}
+
+export interface CompletarAprobadoArgs {
+  cdc: string | null;
+  protocoloLote: string | null;
+  respuestaConsultaLote: Record<string, unknown> | null;
+  respuestaRecibeLote: Record<string, unknown> | null;
+  tiempoTotalMs: number;
+}
+
+/** Cierra el Job como aprobado. La factura_electronica ya quedó en 'aprobado' vía el handler. */
+export async function completeSifenJobAprobado(
+  supabase: AppSupabaseClient,
+  jobId: string,
+  args: CompletarAprobadoArgs
+): Promise<void> {
+  const nowIso = new Date().toISOString();
+  const { error } = await supabase
+    .from("sifen_jobs")
+    .update({
+      estado: "aprobado",
+      etapa: null,
+      finished_at: nowIso,
+      procesando_desde: null,
+      lock_owner: null,
+      cdc: args.cdc,
+      protocolo_lote: args.protocoloLote,
+      respuesta_consulta_lote: args.respuestaConsultaLote,
+      respuesta_recibe_lote: args.respuestaRecibeLote,
+      tiempo_total_ms: Math.max(0, Math.floor(args.tiempoTotalMs)),
+      codigo_error_set: null,
+      codigo_sub_error_set: null,
+      mensaje_set: null,
+      ultimo_error: null,
+      tipo_error: null,
+    })
+    .eq("id", jobId);
+  if (error) {
+    console.error("[sifen-worker] completeAprobado error:", error.message);
+  }
+}
+
+export interface CompletarRechazadoArgs {
+  etapa: SifenJobEtapa;
+  codigoErrorSet: string | null;
+  codigoSubErrorSet: string | null;
+  mensajeSet: string | null;
+  respuestaRecibeLote: Record<string, unknown> | null;
+  respuestaConsultaLote: Record<string, unknown> | null;
+  tiempoTotalMs: number;
+}
+
+/** Cierra el Job como rechazado por SET (0301 u otro rechazo con código y mensaje). */
+export async function completeSifenJobRechazado(
+  supabase: AppSupabaseClient,
+  jobId: string,
+  args: CompletarRechazadoArgs
+): Promise<void> {
+  const nowIso = new Date().toISOString();
+  const { error } = await supabase
+    .from("sifen_jobs")
+    .update({
+      estado: "rechazado",
+      etapa: args.etapa,
+      finished_at: nowIso,
+      procesando_desde: null,
+      lock_owner: null,
+      codigo_error_set: args.codigoErrorSet,
+      codigo_sub_error_set: args.codigoSubErrorSet,
+      mensaje_set: args.mensajeSet,
+      tipo_error: "set_rechazo",
+      respuesta_recibe_lote: args.respuestaRecibeLote,
+      respuesta_consulta_lote: args.respuestaConsultaLote,
+      tiempo_total_ms: Math.max(0, Math.floor(args.tiempoTotalMs)),
+    })
+    .eq("id", jobId);
+  if (error) {
+    console.error("[sifen-worker] completeRechazado error:", error.message);
+  }
+}
+
+export interface RegistrarIntentoArgs {
+  jobActual: SifenJobDTO;
+  etapa: SifenJobEtapa;
+  tipoError: SifenJobTipoError;
+  mensaje: string;
+  tiempoMs: number;
+}
+
+/**
+ * Registra un intento fallido en `intentos_log`, incrementa `intentos`, y decide:
+ *  - Si es reintentable (`red|http_5xx|storage|inesperado`) y quedan intentos:
+ *    vuelve a 'pendiente' con `proximo_reintento_at = now + backoff`
+ *    (5s en intento 1, 20s en intento 2).
+ *  - Si NO es reintentable o se agotaron intentos: cierra como 'error' con
+ *    `ultimo_error` y `tipo_error`.
+ * Devuelve el nuevo estado terminal ('pendiente' si reprogramado, 'error' si cerrado).
+ */
+export async function registrarIntentoYPlanificar(
+  supabase: AppSupabaseClient,
+  args: RegistrarIntentoArgs
+): Promise<"pendiente" | "error"> {
+  const job = args.jobActual;
+  const intentoNum = job.intentos + 1;
+  const nowIso = new Date().toISOString();
+  const nuevoLog: SifenJobIntento = {
+    intento: intentoNum,
+    at: nowIso,
+    etapa: args.etapa,
+    tipo_error: args.tipoError,
+    mensaje: args.mensaje.slice(0, 2000),
+    tiempo_ms: Math.max(0, Math.floor(args.tiempoMs)),
+  };
+  const log = Array.isArray(job.intentos_log) ? [...job.intentos_log, nuevoLog] : [nuevoLog];
+
+  const reintentable =
+    args.tipoError === "red" ||
+    args.tipoError === "http_5xx" ||
+    args.tipoError === "storage" ||
+    args.tipoError === "inesperado";
+  const puedeReintentar = reintentable && intentoNum < job.max_intentos_auto;
+
+  if (puedeReintentar) {
+    // Backoff: intento 1 → 5s, intento 2 → 20s (política del usuario).
+    const backoffMs = intentoNum === 1 ? 5_000 : 20_000;
+    const proximo = new Date(Date.now() + backoffMs).toISOString();
+    const { error } = await supabase
+      .from("sifen_jobs")
+      .update({
+        estado: "pendiente",
+        etapa: null,
+        intentos: intentoNum,
+        intentos_log: log,
+        procesando_desde: null,
+        lock_owner: null,
+        proximo_reintento_at: proximo,
+        ultimo_error: args.mensaje.slice(0, 2000),
+        tipo_error: args.tipoError,
+      })
+      .eq("id", job.id);
+    if (error) {
+      console.error("[sifen-worker] registrarIntento reintento error:", error.message);
+    }
+    return "pendiente";
+  }
+
+  // Terminal: 'error'.
+  const { error } = await supabase
+    .from("sifen_jobs")
+    .update({
+      estado: "error",
+      etapa: args.etapa,
+      intentos: intentoNum,
+      intentos_log: log,
+      finished_at: nowIso,
+      procesando_desde: null,
+      lock_owner: null,
+      ultimo_error: args.mensaje.slice(0, 2000),
+      tipo_error: args.tipoError,
+    })
+    .eq("id", job.id);
+  if (error) {
+    console.error("[sifen-worker] registrarIntento terminal error:", error.message);
+  }
+  return "error";
+}
+
+/**
+ * Devuelve a 'pendiente' cualquier Job en 'procesando' con `procesando_desde`
+ * anterior a `stuckThresholdMs` (default 10 minutos). Cubre crash del proceso
+ * a mitad de un pipeline. Se llama periódicamente desde el worker.
+ */
+export async function reclaimStuckSifenJobs(
+  supabase: AppSupabaseClient,
+  stuckThresholdMs: number = 10 * 60 * 1000
+): Promise<number> {
+  const cutoff = new Date(Date.now() - stuckThresholdMs).toISOString();
+  const { data, error } = await supabase
+    .from("sifen_jobs")
+    .update({
+      estado: "pendiente",
+      procesando_desde: null,
+      lock_owner: null,
+      etapa: null,
+    })
+    .eq("estado", "procesando")
+    .lt("procesando_desde", cutoff)
+    .select("id");
+  if (error) {
+    console.warn("[sifen-worker] reclaimStuck error:", error.message);
+    return 0;
+  }
+  const n = (data ?? []).length;
+  if (n > 0) {
+    console.warn(`[sifen-worker] reclaimStuck: ${n} Jobs zombie devueltos a 'pendiente'`);
+  }
+  return n;
+}
+
+export type { SifenJobEstado };
