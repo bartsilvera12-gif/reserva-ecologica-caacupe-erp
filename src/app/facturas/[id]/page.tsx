@@ -5,7 +5,11 @@ import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { FacturaElectronicaPanel } from "@/components/sifen/FacturaElectronicaPanel";
-import type { FacturaElectronicaDTO, SifenCancelacionPreviewDTO } from "@/lib/sifen/types";
+import type {
+  FacturaElectronicaDTO,
+  SifenCancelacionPreviewDTO,
+  SifenJobDTO,
+} from "@/lib/sifen/types";
 
 type FacturaApiRow = {
   id: string;
@@ -30,6 +34,7 @@ type SifenResumen = {
   sifen_plazo_cancelacion_horas: number;
   factura_electronica: FacturaElectronicaDTO | null;
   cancelacion: SifenCancelacionPreviewDTO | null;
+  sifen_job: SifenJobDTO | null;
 };
 
 function formatFecha(str: string) {

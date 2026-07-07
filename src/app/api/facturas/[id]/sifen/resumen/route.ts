@@ -3,11 +3,16 @@ import { getFacturasSupabaseFromAuth } from "@/lib/facturacion/facturas-service-
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { toFacturaElectronicaDto } from "@/lib/sifen/to-factura-electronica-dto";
-import type { FacturaElectronicaDTO, SifenCancelacionPreviewDTO } from "@/lib/sifen/types";
+import type {
+  FacturaElectronicaDTO,
+  SifenCancelacionPreviewDTO,
+  SifenJobDTO,
+} from "@/lib/sifen/types";
 import {
   buildSifenCancelacionPreview,
   normalizePlazoCancelacionHoras,
 } from "@/lib/sifen/sifen-cancelacion-rules";
+import { getLastSifenJobForFe } from "@/lib/sifen/jobs/sifen-jobs-repo";
 
 
 export type FacturaSifenResumenData = {
@@ -19,6 +24,13 @@ export type FacturaSifenResumenData = {
   sifen_plazo_cancelacion_horas: number;
   factura_electronica: FacturaElectronicaDTO | null;
   cancelacion: SifenCancelacionPreviewDTO | null;
+  /**
+   * Último Job de la cola SIFEN para este DE (Fase 2). La UI lo usa para
+   * mostrar badges progresivos (Encolado → Generando XML → Firmando → ...)
+   * y códigos de error SET cuando SET rechaza. Null si nunca se encoló
+   * (facturas emitidas por el flujo sincrónico manual anterior).
+   */
+  sifen_job: SifenJobDTO | null;
 };
 
 /**
@@ -134,6 +146,18 @@ export async function GET(
           })
         : null;
 
+    // Último Job de la cola para este DE. Best-effort: si la tabla sifen_jobs
+    // aún no está migrada en este tenant, o el DE fue emitido antes de Fase 2,
+    // devolvemos null y la UI cae al comportamiento anterior.
+    let sifen_job: SifenJobDTO | null = null;
+    if (feDto?.id) {
+      try {
+        sifen_job = await getLastSifenJobForFe(supabase, auth.empresa_id, feDto.id);
+      } catch {
+        sifen_job = null;
+      }
+    }
+
     const payload: FacturaSifenResumenData = {
       sifen_config_exists,
       sifen_config_activa,
@@ -141,6 +165,7 @@ export async function GET(
       sifen_plazo_cancelacion_horas,
       factura_electronica: feDto,
       cancelacion,
+      sifen_job,
     };
 
     return NextResponse.json(successResponse(payload), {
