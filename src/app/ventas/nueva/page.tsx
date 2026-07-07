@@ -626,25 +626,30 @@ export default function NuevaVentaPage() {
         setErrorVenta(resultado.error);
         return;
       }
-      // Documentos de la venta. La nota de remisión se abre además del ticket
-      // SOLO si la venta la genera (cliente con usa_nota_remision o toggle activo).
       const v = resultado.venta;
       const generaNota = v.genera_nota_remision === true || !!v.nota_remision_numero;
+
+      // Redirección directa al panel SIFEN: si el puente creó la factura ERP,
+      // saltamos el modal post-venta y llevamos al operador al detalle donde
+      // vive el FacturaElectronicaPanel (firmar, enviar, imprimir KUDE legal).
+      if (resultado.factura?.id) {
+        router.push(`/facturas/${resultado.factura.id}`);
+        return;
+      }
+
+      // Fallback: si el puente falló (facturaWarning) o la venta no generó
+      // factura, mantenemos el flujo previo con ticket + nota de remisión.
       const ticketUrl = `/api/ventas/${v.id}/ticket?mode=comandas&auto=1`;
       const remisionUrl = `/api/ventas/${v.id}/ticket?tipo=remision&auto=1`;
-      // Intento de apertura automática (el ticket sale por el gesto de click; la
-      // segunda pestaña puede ser bloqueada por el navegador → fallback con botones).
       try { window.open(ticketUrl, "_blank", "noopener"); } catch {}
       if (generaNota) { try { window.open(remisionUrl, "_blank", "noopener"); } catch {} }
-      // Panel post-venta: botones siempre disponibles aunque el popup se bloquee.
-      // NOTA: abrir el ticket / la nota / el panel NO vuelve a llamar saveVenta.
       setPostVenta({
         id: v.id,
         numero: v.numero_control,
         generaNota,
         credito: tipoVenta === "CREDITO",
-        facturaId: resultado.factura?.id ?? null,
-        numeroFactura: resultado.factura?.numero_factura ?? null,
+        facturaId: null,
+        numeroFactura: null,
         facturaWarning: resultado.facturaWarning ?? null,
       });
     } finally {
