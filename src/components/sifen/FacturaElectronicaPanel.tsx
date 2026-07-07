@@ -10,6 +10,7 @@ import type {
   SifenJobDTO,
 } from "@/lib/sifen/types";
 import { decodeXmlNumericEntities } from "@/lib/sifen/decode-xml-entities";
+import { friendlyErrorMsg } from "@/lib/sifen/friendly-error-msg";
 import { SifenEstadoBadge } from "./SifenEstadoBadge";
 import { FacturaCorreccionFiscalNC } from "@/components/facturas/FacturaCorreccionFiscalNC";
 
@@ -103,9 +104,7 @@ function subtituloSifenEjecutivo(resumen: Resumen, debugUi: boolean): string {
       return "El documento fue rechazado. Podés regenerar el XML y luego firmar y enviar de nuevo.";
     case "error_envio":
       return fe.error?.trim()
-        ? fe.error.trim().length > 140
-          ? `${fe.error.trim().slice(0, 140)}…`
-          : fe.error.trim()
+        ? friendlyErrorMsg({ raw: fe.error.trim(), estadoSifen: String(fe.estado_sifen) }).titulo
         : "Falló el envío. Podés reintentar.";
     case "cancelado":
       return "Documento anulado en el sistema.";
@@ -1127,12 +1126,28 @@ export function FacturaElectronicaPanel({
                     ) : null}
                   </>
                 ) : null}
-                {mostrarErrorPersistido && (
-                  <div className="rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm px-3 py-2 whitespace-pre-wrap break-words">
-                    <span className="font-semibold">Error: </span>
-                    {decodeXmlNumericEntities(fe.error ?? "")}
-                  </div>
-                )}
+                {mostrarErrorPersistido && (() => {
+                  const decoded = decodeXmlNumericEntities(fe.error ?? "").trim();
+                  const friendly = friendlyErrorMsg({ raw: decoded, estadoSifen: String(fe.estado_sifen) });
+                  return (
+                    <div className="rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm px-3 py-2 space-y-2 whitespace-pre-wrap break-words">
+                      <p className="font-semibold">
+                        {friendly.reconocido ? friendly.titulo : `Error: ${decoded}`}
+                      </p>
+                      {friendly.reconocido && (
+                        <>
+                          <p className="text-xs text-red-700">{friendly.detalle}</p>
+                          <details className="text-xs">
+                            <summary className="cursor-pointer text-red-700/80 hover:text-red-900">
+                              Ver mensaje original de SET{friendly.codigo ? ` (${friendly.codigo})` : ""}
+                            </summary>
+                            <p className="mt-1 font-mono text-[11px] text-red-800">{decoded}</p>
+                          </details>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
                 {resumen.sifen_job &&
                 (resumen.sifen_job.estado === "rechazado" ||
                   resumen.sifen_job.estado === "error") && (
@@ -1155,11 +1170,34 @@ export function FacturaElectronicaPanel({
                           : ""}
                       </p>
                     ) : null}
-                    {resumen.sifen_job.mensaje_set?.trim() ? (
-                      <p className="whitespace-pre-wrap break-words">
-                        {decodeXmlNumericEntities(resumen.sifen_job.mensaje_set)}
-                      </p>
-                    ) : null}
+                    {resumen.sifen_job.mensaje_set?.trim() ? (() => {
+                      const decoded = decodeXmlNumericEntities(resumen.sifen_job.mensaje_set).trim();
+                      const friendly = friendlyErrorMsg({
+                        raw: decoded,
+                        estadoSifen: fe ? String(fe.estado_sifen) : null,
+                      });
+                      if (!friendly.reconocido) {
+                        return (
+                          <p className="whitespace-pre-wrap break-words">{decoded}</p>
+                        );
+                      }
+                      return (
+                        <div className="space-y-1.5">
+                          <p className="font-semibold whitespace-pre-wrap break-words">
+                            {friendly.titulo}
+                          </p>
+                          <p className="whitespace-pre-wrap break-words text-[11px] leading-snug">
+                            {friendly.detalle}
+                          </p>
+                          <details className="text-[11px]">
+                            <summary className="cursor-pointer text-red-800/70 hover:text-red-900">
+                              Ver mensaje original de SET{friendly.codigo ? ` (${friendly.codigo})` : ""}
+                            </summary>
+                            <p className="mt-1 font-mono text-[10px] text-red-800">{decoded}</p>
+                          </details>
+                        </div>
+                      );
+                    })() : null}
                     {resumen.sifen_job.estado === "error" &&
                     resumen.sifen_job.ultimo_error?.trim() ? (
                       <p className="whitespace-pre-wrap break-words">
