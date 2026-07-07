@@ -638,11 +638,12 @@ export default function NuevaVentaPage() {
       const v = resultado.venta;
       const generaNota = v.genera_nota_remision === true || !!v.nota_remision_numero;
 
-      // Redirección directa al panel SIFEN: si el puente creó la factura ERP,
-      // saltamos el modal post-venta y llevamos al operador al detalle donde
-      // vive el FacturaElectronicaPanel (firmar, enviar, imprimir KUDE legal).
+      // Redirección directa al panel SIFEN con ?auto=1: el panel detecta ese
+      // flag y auto-ejecuta el pipeline (borrador → xml → firmar → enviar)
+      // apenas monta. Al aprobar SET, abre el KUDE en una pestaña nueva para
+      // imprimir. Un solo click del operador dispara toda la cadena legal.
       if (resultado.factura?.id) {
-        router.push(`/facturas/${resultado.factura.id}`);
+        router.push(`/facturas/${resultado.factura.id}?auto=1`);
         return;
       }
 

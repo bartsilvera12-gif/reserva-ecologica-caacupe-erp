@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import type {
   FacturaElectronicaDTO,
@@ -510,6 +510,46 @@ export function FacturaElectronicaPanel({
 
   const fe = resumen?.factura_electronica ?? null;
   const estado = fe?.estado_sifen ?? null;
+
+  // Fast path: llegamos con ?auto=1 (redirect desde /ventas/nueva). Ejecutamos
+  // el pipeline sin que el operador tenga que apretar "Generar y enviar".
+  // Ref para que no se dispare más de una vez por montaje (evita loops si el
+  // pipeline devuelve error y el resumen recarga).
+  const autoDisparadoRef = useRef(false);
+  const autoFlag = searchParams?.get("auto") === "1";
+  useEffect(() => {
+    if (!autoFlag) return;
+    if (autoDisparadoRef.current) return;
+    if (loadingResumen) return;
+    if (!resumen?.sifen_config_activa) return;
+    // Solo dispara si el DE aún no fue enviado. Si ya está enviado/aprobado/
+    // rechazado/cancelado no queremos hacer nada.
+    const estActual = String(estado ?? "");
+    const iniciable =
+      !fe ||
+      estActual === "" ||
+      estActual === "borrador" ||
+      estActual === "generado" ||
+      (estActual === "error_envio" && Boolean(fe?.xml_firmado_path?.trim()));
+    if (!iniciable) return;
+    autoDisparadoRef.current = true;
+    void ejecutarGenerarYEnviar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoFlag, loadingResumen, estado]);
+
+  // Cuando SIFEN aprueba el DE, abrimos el KUDE en una pestaña nueva para
+  // que el operador imprima. Un solo intento por montaje (ref).
+  const kudeAutoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (estado !== "aprobado") return;
+    if (kudeAutoOpenedRef.current) return;
+    kudeAutoOpenedRef.current = true;
+    try {
+      window.open(`/api/facturas/${facturaId}/sifen/kude`, "_blank", "noopener");
+    } catch {
+      /* si el navegador bloquea el popup, el operador tiene los botones abajo */
+    }
+  }, [estado, facturaId]);
 
   const puedeBorrador = Boolean(resumen?.sifen_config_activa) && !fe;
   const puedeGenerarXml =
