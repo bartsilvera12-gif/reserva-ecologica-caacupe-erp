@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { FileText, ArrowLeft, Loader2, Download, FileCheck2 } from "lucide-react";
+import { FileText, ArrowLeft, Loader2, Download, FileCheck2, Receipt } from "lucide-react";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { ESTADO_LABEL, type EstadoPresupuesto } from "@/lib/presupuestos/types";
 
@@ -151,6 +151,33 @@ export default function PresupuestoDetallePage() {
     }
   }
 
+  async function facturarDirecto() {
+    if (busy) return;
+    if (!confirm("¿Facturar directamente este presupuesto? Se generará la venta, se descontará el stock y se emitirá la factura electrónica en un solo paso.")) return;
+    setBusy(true);
+    setError(null);
+    setOk(null);
+    try {
+      const res = await fetchWithSupabaseSession(`/api/presupuestos/${id}/facturar`, { method: "POST" });
+      const body = await res.json();
+      if (!res.ok || body?.success === false) {
+        setError(body?.error ?? "No se pudo facturar el presupuesto.");
+        return;
+      }
+      const facturaId = body?.data?.factura_id;
+      if (facturaId) {
+        router.push(`/facturas/${facturaId}`);
+        return;
+      }
+      setOk("Venta creada. La factura se está procesando.");
+      await cargar();
+    } catch {
+      setError("Error de red al facturar el presupuesto.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function abrirPdf() {
     window.open(`/api/presupuestos/${id}/pdf?auto=1`, "_blank", "noopener");
   }
@@ -188,9 +215,14 @@ export default function PresupuestoDetallePage() {
             <Download className="h-4 w-4" /> Descargar PDF
           </button>
           {presu.estado === "aprobado" && (
-            <button onClick={convertir} disabled={busy} className="inline-flex items-center gap-1.5 rounded-md bg-[#4FAEB2] px-4 py-2 text-sm font-medium text-white hover:bg-[#3F8E91] disabled:opacity-50">
-              <FileCheck2 className="h-4 w-4" /> Crear pedido
-            </button>
+            <>
+              <button onClick={convertir} disabled={busy} className="inline-flex items-center gap-1.5 rounded-md border border-[#4FAEB2] px-4 py-2 text-sm font-medium text-[#4FAEB2] hover:bg-[#4FAEB2]/10 disabled:opacity-50" title="Crear un pedido para entrega diferida (no descuenta stock, no factura).">
+                <FileCheck2 className="h-4 w-4" /> Crear pedido
+              </button>
+              <button onClick={facturarDirecto} disabled={busy} className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50" title="Genera venta + descuenta stock + emite factura electrónica en un solo paso.">
+                <Receipt className="h-4 w-4" /> Facturar ahora
+              </button>
+            </>
           )}
         </div>
       </div>

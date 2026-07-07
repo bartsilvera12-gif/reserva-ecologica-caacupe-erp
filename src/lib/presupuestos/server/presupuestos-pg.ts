@@ -1,5 +1,9 @@
 import type { AppSupabaseClient } from "@/lib/supabase/schema";
 import { calcMontoIvaIncluido, type IvaTipoPresupuesto } from "@/lib/presupuestos/types";
+import {
+  createVentaTransaccionalPg,
+  type CreateVentaItemInput,
+} from "@/lib/ventas/server/create-venta-pg";
 
 /** Item crudo que llega del cliente; los totales se recalculan en el server. */
 export interface PresupuestoItemInput {
@@ -293,4 +297,143 @@ export async function convertirEnPedido(
   }
 
   return { pedido_id: pedidoId };
+}
+
+/**
+ * Facturación directa desde presupuesto aprobado, sin pasar por proyecto/pedido ni por
+ * el formulario `/ventas/nueva`. Reutiliza `createVentaTransaccionalPg` para que
+ * stock, movimientos, CxC y puente venta→factura sean idénticos a una venta normal.
+ *
+ * Restricciones:
+ *  - Estado debe ser 'aprobado'.
+ *  - Todos los ítems necesitan `producto_id` (para descontar stock / recetas).
+ *  - Se marca el presupuesto como 'convertido' con `convertido_venta_id`.
+ */
+export async function facturarPresupuestoDirecto(
+  sb: AppSupabaseClient,
+  schema: string,
+  empresaId: string,
+  presupuestoId: string,
+  auditor: { createdBy: string | null; usuarioNombre: string | null }
+): Promise<{
+  venta_id: string;
+  numero_control: string;
+  factura_id: string | null;
+  numero_factura: string | null;
+  factura_warning: string | null;
+}> {
+  const pq = await sb
+    .from("presupuestos")
+    .select("*")
+    .eq("empresa_id", empresaId)
+    .eq("id", presupuestoId)
+    .maybeSingle();
+  if (pq.error) throw new Error(pq.error.message);
+  if (!pq.data) throw new Error("Presupuesto no encontrado.");
+  const p = pq.data as Record<string, unknown>;
+
+  if (p.estado === "convertido" || p.convertido_pedido_id || p.convertido_venta_id) {
+    throw new Error("Este presupuesto ya fue convertido/facturado.");
+  }
+  if (p.estado !== "aprobado") {
+    throw new Error("Solo se puede facturar un presupuesto en estado 'aprobado'.");
+  }
+
+  const itq = await sb
+    .from("presupuesto_items")
+    .select("*")
+    .eq("empresa_id", empresaId)
+    .eq("presupuesto_id", presupuestoId);
+  if (itq.error) throw new Error(itq.error.message);
+  const items = (itq.data ?? []) as Record<string, unknown>[];
+  if (items.length === 0) throw new Error("El presupuesto no tiene ítems.");
+
+  const sinProducto = items.filter((it) => !it.producto_id);
+  if (sinProducto.length > 0) {
+    throw new Error(
+      "El presupuesto tiene ítems sin producto vinculado; no se puede facturar directamente. Editá el presupuesto o convertí en pedido primero."
+    );
+  }
+
+  const ventaItems: CreateVentaItemInput[] = items.map((it) => {
+    const precioUnitario = Number(it.precio_unitario) || 0;
+    const cantidad = Number(it.cantidad) || 0;
+    const subtotal = Number(it.subtotal) || 0;
+    const montoIva = Number(it.monto_iva) || 0;
+    const totalLinea = Number(it.total) || 0;
+    const ivaTipo = String(it.iva_tipo ?? "10%") as IvaTipoPresupuesto;
+    return {
+      producto_id: String(it.producto_id),
+      producto_nombre: String(it.producto_nombre ?? ""),
+      sku: String(it.sku ?? ""),
+      cantidad,
+      precio_venta_original: precioUnitario,
+      precio_venta: precioUnitario,
+      tipo_iva: ivaTipo,
+      tipo_precio: "minorista",
+      subtotal,
+      monto_iva: montoIva,
+      total_linea: totalLinea,
+    };
+  });
+
+  const subtotalDeclarado = ventaItems.reduce((s, it) => s + it.subtotal, 0);
+  const montoIvaDeclarado = ventaItems.reduce((s, it) => s + it.monto_iva, 0);
+  const totalDeclarado = ventaItems.reduce((s, it) => s + it.total_linea, 0);
+
+  const moneda = (String(p.moneda ?? "GS") === "USD" ? "USD" : "GS") as "GS" | "USD";
+  const observacionesOriginales = (p.observaciones as string | null) ?? null;
+  const observacionesVenta = observacionesOriginales
+    ? `Facturación directa del presupuesto ${String(p.numero_control ?? "")}. ${observacionesOriginales}`
+    : `Facturación directa del presupuesto ${String(p.numero_control ?? "")}.`;
+
+  const {
+    ventaId,
+    numeroControl,
+    facturaId,
+    numeroFactura,
+    facturaWarning,
+  } = await createVentaTransaccionalPg({
+    schema,
+    empresaId,
+    clienteId: (p.cliente_id as string | null) ?? null,
+    observaciones: observacionesVenta.slice(0, 500),
+    moneda,
+    tipoCambio: 1,
+    tipoVenta: "CONTADO",
+    plazoDias: null,
+    metodoPago: "efectivo",
+    items: ventaItems,
+    subtotalDeclarado,
+    montoIvaDeclarado,
+    totalDeclarado,
+    createdBy: auditor.createdBy,
+    usuarioNombre: auditor.usuarioNombre,
+  });
+
+  // Marcar presupuesto como convertido (usa columna existente `convertido_venta_id`).
+  const upd = await sb
+    .from("presupuestos")
+    .update({
+      estado: "convertido",
+      convertido_venta_id: ventaId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("empresa_id", empresaId)
+    .eq("id", presupuestoId);
+  if (upd.error) {
+    // No se hace rollback de la venta: ya afectó stock/CxC/factura. Se logea y se sigue.
+    console.error(
+      "[facturarPresupuestoDirecto] no se pudo marcar convertido; venta ya creada:",
+      { presupuestoId, ventaId, error: upd.error.message }
+    );
+  }
+
+  return {
+    venta_id: ventaId,
+    numero_control: numeroControl,
+    factura_id: facturaId ?? null,
+    numero_factura: numeroFactura ?? null,
+    factura_warning: facturaWarning ?? null,
+  };
 }
