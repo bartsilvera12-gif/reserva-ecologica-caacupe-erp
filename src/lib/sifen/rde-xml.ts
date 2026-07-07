@@ -510,8 +510,17 @@ export function buildOfficialRdeFacturaElectronicaXml(
       if (tr.length >= 8) recParts.push(textEl("dTelRec", tr.slice(0, 15)));
     }
     if (receptor.email?.trim()) recParts.push(textEl("dEmailRec", receptor.email.trim()));
-  } else if (receptor.ruc?.trim()) {
-    const { cuerpo: dRucRec, dDV: dDVRec } = splitRucParaXml(receptor.ruc.trim());
+  } else if (
+    receptor.ruc?.trim() ||
+    // Fallback heurístico: si no hay RUC explícito pero el "documento" (CI PY) tiene
+    // formato `<cuerpo>-<DV>` (RUC de persona física en PY = CI + DV), tratarlo como
+    // RUC. Cubre clientes viejos cargados antes del checkbox "es contribuyente".
+    // Riesgo: si la persona NO está inscripta en la SET, SET responde "RUC receptor
+    // inexistente" (código distinto al 0301). Es un fallback consciente.
+    /^\d+-\d$/.test((receptor.documento ?? "").replace(/\s/g, "").trim())
+  ) {
+    const rucSrc = (receptor.ruc?.trim() || (receptor.documento ?? "").replace(/\s/g, "").trim());
+    const { cuerpo: dRucRec, dDV: dDVRec } = splitRucParaXml(rucSrc);
     const iTiContRec = iTipContCodigo(receptor.nombre);
     recParts.push(textEl("iNatRec", "1"));
     recParts.push(textEl("iTiOpe", "1"));
@@ -543,6 +552,9 @@ export function buildOfficialRdeFacturaElectronicaXml(
     recParts.push(textEl("dNumIDRec", doc.slice(0, 20)));
     recParts.push(textEl("dNomRec", receptor.nombre.trim()));
     if (receptor.direccion?.trim()) recParts.push(textEl("dDirRec", receptor.direccion.trim()));
+    /** SIFEN 0362 [1330]: para receptor sin RUC (B2C) es obligatorio dNumCasRec.
+     *  Mismo patrón que la rama manual (líneas ~461 y ~479) que ya lo emitía. */
+    recParts.push(textEl("dNumCasRec", "0"));
     if (receptor.telefono?.trim()) {
       const tr = receptor.telefono.replace(/\D/g, "");
       if (tr.length >= 8) recParts.push(textEl("dTelRec", tr.slice(0, 15)));

@@ -39,6 +39,11 @@ export interface Cliente {
 
   ruc?:                string;
   documento?:          string;          // CI / pasaporte (persona)
+  /** Persona física inscripta como contribuyente en la SET (RUC = CI + DV).
+   *  Cuando `tipo_cliente='persona'`, `es_contribuyente=true` y hay `ruc`
+   *  cargado, la factura electrónica sale como B2B (iTiOpe=1) en vez de B2C.
+   *  No aplica a empresas (siempre son contribuyentes). */
+  es_contribuyente?:   boolean;
 
   telefono?:           string;
   telefono_secundario?: string;

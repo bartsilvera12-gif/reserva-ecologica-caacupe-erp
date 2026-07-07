@@ -27,6 +27,7 @@ interface SupabaseRow {
   nivel_precio: string | null;
   ruc:                string | null;
   documento:          string | null;
+  es_contribuyente?:  boolean | null;
   telefono:           string | null;
   telefono_secundario: string | null;
   email:              string | null;
@@ -92,6 +93,7 @@ function rowToCliente(row: SupabaseRow): Cliente {
     nivel_precio:        (row.nivel_precio === "mayorista" || row.nivel_precio === "distribuidor" ? row.nivel_precio : "minorista") as "minorista" | "mayorista" | "distribuidor",
     ruc:                 row.ruc ?? undefined,
     documento:           row.documento ?? undefined,
+    es_contribuyente:    row.es_contribuyente === true,
     telefono:            row.telefono ?? undefined,
     telefono_secundario: row.telefono_secundario ?? undefined,
     email:               row.email ?? undefined,
@@ -280,6 +282,7 @@ export async function saveCliente(datos: NuevoClienteData): Promise<Cliente | nu
     nivel_precio:       datos.nivel_precio ?? "minorista",
     ruc:                datos.ruc ?? null,
     documento:          datos.documento ?? null,
+    es_contribuyente:   datos.es_contribuyente === true,
     telefono:           datos.telefono ?? null,
     telefono_secundario: datos.telefono_secundario ?? null,
     email:              datos.email ?? null,
@@ -372,6 +375,7 @@ export function construirPatchActualizacionCliente(datos: ActualizarClienteInput
   }
   if (datos.ruc !== undefined) patch.ruc = datos.ruc ?? null;
   if (datos.documento !== undefined) patch.documento = datos.documento ?? null;
+  if (datos.es_contribuyente !== undefined) patch.es_contribuyente = datos.es_contribuyente === true;
   if (datos.telefono !== undefined) patch.telefono = datos.telefono ?? null;
   if (datos.telefono_secundario !== undefined) patch.telefono_secundario = datos.telefono_secundario ?? null;
   if (datos.email !== undefined) patch.email = datos.email ?? null;

@@ -193,6 +193,7 @@ export default function ClienteDetailPage() {
     nivel_precio:        "minorista" as "minorista" | "mayorista" | "distribuidor",
     ruc:                 "",
     documento:           "",
+    es_contribuyente:    false,
     telefono:            "",
     telefono_secundario: "",
     email:               "",
@@ -352,6 +353,7 @@ export default function ClienteDetailPage() {
         nivel_precio:        c.nivel_precio         ?? "minorista",
         ruc:                 c.ruc                 ?? "",
         documento:           c.documento           ?? "",
+        es_contribuyente:    c.es_contribuyente === true,
         telefono:            c.telefono            ?? "",
         telefono_secundario: c.telefono_secundario ?? "",
         email:               c.email               ?? "",
@@ -636,6 +638,7 @@ export default function ClienteDetailPage() {
         nivel_precio:        form.nivel_precio,
         ruc:                 form.ruc.trim()                 || undefined,
         documento:           form.documento.trim()           || undefined,
+        es_contribuyente:    form.tipo_cliente === "persona" ? form.es_contribuyente : false,
         telefono:            form.telefono.trim()            || undefined,
         telefono_secundario: form.telefono_secundario.trim() || undefined,
         email:               form.email.trim()               || undefined,
@@ -1579,6 +1582,43 @@ export default function ClienteDetailPage() {
                     )}
                   </div>
                 </div>
+                {form.tipo_cliente === "persona" && (
+                  <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <label className="flex items-start gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        name="es_contribuyente"
+                        checked={form.es_contribuyente}
+                        onChange={(e) =>
+                          setForm((prev) => ({ ...prev, es_contribuyente: e.target.checked }))
+                        }
+                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-[#0EA5E9] focus:ring-[#0EA5E9]"
+                      />
+                      <span>
+                        <span className="font-medium">Es contribuyente inscripto en la SET</span>
+                        <span className="mt-0.5 block text-xs text-slate-500">
+                          Marcalo solo si esta persona está registrada como contribuyente en Marangatu. Con esta opción activada y RUC cargado, la factura sale como B2B (evita el rechazo 0301 de la SET).
+                        </span>
+                      </span>
+                    </label>
+                    {form.es_contribuyente && (
+                      <div className="mt-3">
+                        <label className={labelClass}>RUC de la persona</label>
+                        <input
+                          type="text"
+                          name="ruc"
+                          value={form.ruc}
+                          onChange={handleChange}
+                          placeholder="Ej: 2431868-0"
+                          className={inputClass}
+                        />
+                        <p className="mt-1 text-xs text-slate-500">
+                          En Paraguay el RUC de persona física es la CI + dígito verificador.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </section>
 
               {/* Contacto */}
