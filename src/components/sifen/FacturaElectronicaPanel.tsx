@@ -824,7 +824,13 @@ export function FacturaElectronicaPanel({
               ) : null}
 
               <div className="flex flex-wrap items-center gap-3">
-                {stStr === "rechazado" && puedeGenerarXml ? (
+                {/* "Regenerar documento" también debe estar disponible en
+                    estado 'error_envio' (rechazo local / falla al enviar):
+                    el backend POST /sifen/xml lo permite (solo bloquea en
+                    aprobado / cancelado), y en la práctica hace falta cuando
+                    los datos del receptor cambiaron (p.ej. FELIX pasa de sin
+                    RUC a contribuyente con RUC → nuevo XML B2B). */}
+                {(stStr === "rechazado" || stStr === "error_envio") && puedeGenerarXml ? (
                   <button
                     type="button"
                     disabled={busy}
