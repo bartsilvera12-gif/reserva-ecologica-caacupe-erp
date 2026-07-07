@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import NuevoClienteRapidoModal, { type NuevoClienteCreado } from "./NuevoClienteRapidoModal";
 import { useRouter } from "next/navigation";
 import MontoInput from "@/components/ui/MontoInput";
 import ProductPickerModal, { type ProductoPickerItem, type AgregarVentaPayload } from "@/components/inventario/ProductPickerModal";
@@ -149,6 +150,7 @@ export default function NuevaVentaPage() {
   const [clientes, setClientes] = useState<ClienteLite[]>([]);
   const [clienteId, setClienteId] = useState("");
   const [clienteQuery, setClienteQuery] = useState("");
+  const [modalNuevoCliente, setModalNuevoCliente] = useState(false);
   const [clienteOpen, setClienteOpen] = useState(false);
   const clienteContainerRef = useRef<HTMLDivElement>(null);
   // Nota de remisión: activada si el cliente la usa; toggle manual solo con cliente.
@@ -726,6 +728,17 @@ export default function NuevaVentaPage() {
               </div>
               {clienteOpen && !clienteSel && (
                 <div className="absolute z-20 mt-1 w-full max-h-64 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+                  {/* Acción al TOPE del dropdown: abre el modal de "nuevo cliente rápido". */}
+                  <button
+                    type="button"
+                    onClick={() => { setClienteOpen(false); setModalNuevoCliente(true); }}
+                    className="flex w-full items-center gap-1.5 border-b border-slate-100 bg-[#4FAEB2]/[0.06] px-3 py-2 text-left text-xs font-semibold text-[#3F8E91] hover:bg-[#4FAEB2]/[0.12]"
+                    title="Se abre un mini formulario acá mismo, sin cambiar de página."
+                  >
+                    <span className="text-base leading-none">＋</span>
+                    Cargar nuevo cliente
+                    {clienteQuery.trim() && <span className="ml-1 truncate text-slate-500">«{clienteQuery.trim()}»</span>}
+                  </button>
                   {clientesFiltrados.length === 0 ? (
                     <p className="px-3 py-2 text-xs text-gray-400">Sin clientes que coincidan.</p>
                   ) : (
@@ -742,17 +755,6 @@ export default function NuevaVentaPage() {
                       </button>
                     ))
                   )}
-                  <a
-                    href={`/clientes/nuevo${clienteQuery.trim() ? `?nombre=${encodeURIComponent(clienteQuery.trim())}` : ""}`}
-                    target="_blank"
-                    rel="noopener"
-                    className="flex items-center gap-1.5 border-t border-slate-100 bg-[#4FAEB2]/[0.06] px-3 py-2 text-xs font-semibold text-[#3F8E91] hover:bg-[#4FAEB2]/[0.12]"
-                    title="Se abre en pestaña nueva. Al volver acá, se recarga la lista automáticamente."
-                  >
-                    <span className="text-base leading-none">＋</span>
-                    Cargar nuevo cliente
-                    {clienteQuery.trim() && <span className="ml-1 text-slate-500">«{clienteQuery.trim()}»</span>}
-                  </a>
                 </div>
               )}
               <p className="mt-1 text-[11px] text-gray-400">
@@ -1228,6 +1230,32 @@ export default function NuevaVentaPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal chico para crear un cliente sin salir del flujo de la venta. */}
+      {modalNuevoCliente && (
+        <NuevoClienteRapidoModal
+          nombreInicial={clienteQuery.trim() || undefined}
+          onClose={() => setModalNuevoCliente(false)}
+          onCreado={(c: NuevoClienteCreado) => {
+            // Insertamos el nuevo cliente en la lista local y lo seleccionamos.
+            setClientes((prev) => [
+              ...prev,
+              {
+                id: c.id,
+                label: c.nombre,
+                ruc: c.ruc,
+                usa_nota_remision: false,
+                nivel_precio: "minorista",
+              },
+            ]);
+            setClienteId(c.id);
+            setClienteQuery("");
+            setModalNuevoCliente(false);
+            // Refresco pasivo para pescar campos derivados (empresa, nombre_facturacion, etc.).
+            void fetchClientes();
+          }}
+        />
       )}
     </div>
   );
