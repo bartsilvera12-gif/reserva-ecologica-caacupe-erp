@@ -596,10 +596,16 @@ export function FacturaElectronicaPanel({
     if (!resumen?.sifen_config_activa) return;
     const estActual = String(estado ?? "");
     // Si el DE ya está en estado terminal, no reencolamos.
+    // `error_envio` y `rechazado` también los tratamos como "no auto-encolar":
+    // la respuesta anterior de SET debe quedar visible para el operador. Si
+    // querés reintentar tras un rechazo, usá el botón "Reintentar" (pasa por
+    // el mismo endpoint /encolar pero de forma explícita). Antes reencolaba
+    // solo con montar el panel y el mensaje SET desaparecía sin que se viera.
     if (
       estActual === "aprobado" ||
       estActual === "cancelado" ||
-      estActual === "rechazado"
+      estActual === "rechazado" ||
+      estActual === "error_envio"
     ) {
       return;
     }
