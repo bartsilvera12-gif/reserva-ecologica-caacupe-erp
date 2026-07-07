@@ -433,7 +433,8 @@ export default function NuevaVentaPage() {
   const plazoDiasNum = parseInt(plazoDias) || 0;
   // Crédito exige cliente seleccionado Y plazo/vencimiento (≥1 día). Genera cuenta por cobrar.
   const creditoValido = tipoVenta === "CONTADO" || (plazoDiasNum >= 1 && !!clienteId);
-  const ventaValida   = items.length > 0 && creditoValido;
+  // Cliente obligatorio: toda venta emite factura ERP para SIFEN, no dejamos pasar sin receptor.
+  const ventaValida   = items.length > 0 && creditoValido && !!clienteId;
 
   // Cliente (opcional) — selección + filtrado del buscador.
   const clienteSel = clientes.find((c) => c.id === clienteId) ?? null;
@@ -588,6 +589,14 @@ export default function NuevaVentaPage() {
     // así que un segundo click/Enter casi simultáneo no puede disparar otra venta.
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
+    // Cliente obligatorio: la factura ERP necesita receptor. Si el operador quiere
+    // vender sin cliente, primero tiene que crearlo (botón "+ Cargar nuevo cliente"
+    // en el buscador arriba).
+    if (!clienteId) {
+      isSubmittingRef.current = false;
+      setErrorVenta("Elegí un cliente antes de confirmar la venta. Podés cargarlo rápido desde el buscador de arriba.");
+      return;
+    }
     setGuardando(true);
     try {
       const resultado = await saveVenta(
@@ -710,7 +719,7 @@ export default function NuevaVentaPage() {
             {/* Cliente (opcional) */}
             <div ref={clienteContainerRef} className="relative">
               <label className={labelClass}>
-                Cliente <span className="text-xs font-normal text-gray-400">(opcional)</span>
+                Cliente <span className="text-rose-600">*</span>
               </label>
               <div className="flex gap-2">
                 <input
@@ -763,8 +772,11 @@ export default function NuevaVentaPage() {
                 </div>
               )}
               <p className="mt-1 text-[11px] text-gray-400">
-                Si no seleccionás cliente, la venta se registra sin cliente.
+                Toda venta emite factura ERP. Si el cliente no existe, cargalo con “＋ Cargar nuevo cliente”.
               </p>
+              {!clienteId && (
+                <p className="mt-1 text-[11px] text-rose-600">Seleccioná un cliente para poder confirmar la venta.</p>
+              )}
 
               {/* Nota de remisión: solo con cliente. Si el cliente la usa, viene activada. */}
               {clienteSel && (
