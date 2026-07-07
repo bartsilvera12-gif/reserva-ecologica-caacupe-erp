@@ -3,7 +3,6 @@ import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import {
-  asMetadataObject,
   estaFacturado,
   estaPendienteCaja,
   marcarCanceladoDesdeCaja,
@@ -12,11 +11,11 @@ import {
 /**
  * POST /api/caja/pedidos-pendientes/[id]/cancelar
  *
- * Cancela un pedido pendiente en Caja (proyecto tipo 'pedido' en estado
- * `facturacion_estado='pendiente_caja'`). NO toca stock — el pedido nunca lo
- * descontó. Si el pedido nació de un presupuesto, revierte el presupuesto a
- * `estado='aprobado'` y limpia `convertido_pedido_id` para permitir re-facturar
- * o volver a convertir.
+ * Quita un pedido de la Caja (proyecto tipo 'pedido' en estado
+ * `facturacion_estado='pendiente_caja'`). Limpia la marca de caja del
+ * proyecto para que vuelva a estar "listo para enviar a caja" desde su
+ * vista de proyecto. NO toca stock, NO toca el presupuesto origen, NO
+ * toca la máquina de estados del proyecto — solo desmarca la caja.
  */
 export async function POST(
   request: NextRequest,
@@ -33,7 +32,7 @@ export async function POST(
 
     const pq = await sb
       .from("proyectos")
-      .select("id, metadata, brief_data")
+      .select("id, metadata")
       .eq("empresa_id", empresaId)
       .eq("id", id)
       .maybeSingle();
@@ -41,11 +40,11 @@ export async function POST(
     if (!pq.data) {
       return NextResponse.json(errorResponse("Pedido no encontrado."), { status: 404 });
     }
-    const proy = pq.data as { id: string; metadata: unknown; brief_data: unknown };
+    const proy = pq.data as { id: string; metadata: unknown };
 
     if (estaFacturado(proy.metadata)) {
       return NextResponse.json(
-        errorResponse("El pedido ya fue facturado; no se puede cancelar desde Caja."),
+        errorResponse("El pedido ya fue facturado; no se puede quitar de Caja."),
         { status: 409 }
       );
     }
@@ -69,46 +68,7 @@ export async function POST(
       .eq("id", id);
     if (upd.error) throw new Error(upd.error.message);
 
-    // Si vino de presupuesto, revertirlo a 'aprobado' para permitir re-uso.
-    // Best-effort: si falla, el pedido ya quedó cancelado — se logea nomás.
-    const brief = asMetadataObject(proy.brief_data);
-    const meta = asMetadataObject(proy.metadata);
-    const presupuestoId =
-      (typeof brief.presupuesto_id === "string" && brief.presupuesto_id) ||
-      (typeof meta.presupuesto_id === "string" && meta.presupuesto_id) ||
-      null;
-    let presupuesto_liberado = false;
-    if (presupuestoId) {
-      try {
-        const rev = await sb
-          .from("presupuestos")
-          .update({
-            estado: "aprobado",
-            convertido_pedido_id: null,
-            updated_at: nowIso,
-          })
-          .eq("empresa_id", empresaId)
-          .eq("id", presupuestoId)
-          .eq("convertido_pedido_id", id);
-        if (rev.error) {
-          console.error(
-            "[/api/caja/pedidos-pendientes/[id]/cancelar] no se pudo revertir presupuesto",
-            { presupuestoId, pedidoId: id, error: rev.error.message }
-          );
-        } else {
-          presupuesto_liberado = true;
-        }
-      } catch (e) {
-        console.error(
-          "[/api/caja/pedidos-pendientes/[id]/cancelar] excepción revirtiendo presupuesto",
-          { presupuestoId, pedidoId: id, e }
-        );
-      }
-    }
-
-    return NextResponse.json(
-      successResponse({ cancelado: true, presupuesto_id: presupuestoId, presupuesto_liberado })
-    );
+    return NextResponse.json(successResponse({ cancelado: true }));
   } catch (err) {
     const msg = err instanceof Error ? err.message : "No se pudo cancelar el pedido.";
     console.error("[/api/caja/pedidos-pendientes/[id]/cancelar]", msg);

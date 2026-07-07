@@ -432,7 +432,7 @@ export default function ProyectoDetalleInner({
               ⏳ Pendiente en Caja
             </span>
           )}
-          {esPedido && facturacionEstado === null && (
+          {esPedido && (facturacionEstado === null || facturacionEstado === "cancelado_caja") && (
             <button
               type="button"
               onClick={() => void enviarACaja()}

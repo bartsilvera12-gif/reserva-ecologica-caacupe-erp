@@ -57,15 +57,25 @@ export function marcarEnviadoACaja(metadata: unknown, nowIso: string): ProyectoM
   };
 }
 
-/** Devuelve la metadata mergeada para marcar el pedido como cancelado desde Caja. */
+/**
+ * Devuelve la metadata "quitada de caja": limpia `facturacion_estado`,
+ * `enviado_a_caja_at` y deja rastro de auditoría de cuándo/quién lo canceló.
+ *
+ * Deja el pedido en estado "nunca enviado a caja" para que la vista del proyecto
+ * vuelva a mostrar el botón "Enviar a Caja" (que exige `facturacionEstado === null`).
+ * NO toca el presupuesto ni la máquina de estados del proyecto.
+ */
 export function marcarCanceladoDesdeCaja(
   metadata: unknown,
   nowIso: string,
   canceladoBy: string | null
 ): ProyectoMetadata {
+  const base = asMetadataObject(metadata);
+  // Explícitamente quitamos las marcas de caja para que `getFacturacionEstado` vuelva a null.
+  const { facturacion_estado: _fe, enviado_a_caja_at: _eca, ...rest } = base;
+  void _fe; void _eca;
   return {
-    ...asMetadataObject(metadata),
-    facturacion_estado: "cancelado_caja",
+    ...rest,
     cancelado_caja_at: nowIso,
     cancelado_caja_by: canceladoBy,
   };

@@ -144,10 +144,10 @@ export default function PedidosPendientesCaja() {
                       <button
                         type="button"
                         onClick={() => abrirConfirmacion(p)}
-                        className="inline-flex items-center rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
-                        title="Cancelar el pedido. No afecta stock. Si vino de presupuesto, se libera para re-facturar."
+                        className="inline-flex items-center rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+                        title="Quitar el pedido de la caja. Queda disponible para volver a enviar desde su vista de proyecto."
                       >
-                        Cancelar
+                        Quitar de caja
                       </button>
                     </div>
                   </td>
@@ -192,8 +192,6 @@ function ConfirmarCancelarModal({
     return () => window.removeEventListener("keydown", onEsc);
   }, [onClose, enviando]);
 
-  const desdePresupuesto = pedido.origen === "presupuesto";
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
@@ -206,12 +204,12 @@ function ConfirmarCancelarModal({
       <div className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl">
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-red-50">
-              <AlertTriangle className="h-5 w-5 text-red-600" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-50">
+              <AlertTriangle className="h-5 w-5 text-amber-600" />
             </div>
             <div>
-              <h3 className="text-base font-semibold text-slate-900">Cancelar pedido</h3>
-              <p className="text-xs text-slate-500">Esta acción no se puede deshacer.</p>
+              <h3 className="text-base font-semibold text-slate-900">Quitar pedido de caja</h3>
+              <p className="text-xs text-slate-500">El pedido queda listo para volver a enviar.</p>
             </div>
           </div>
           <button
@@ -227,31 +225,29 @@ function ConfirmarCancelarModal({
 
         <div className="space-y-3 px-5 py-4 text-sm text-slate-700">
           <p>
-            ¿Cancelar el pedido{" "}
+            ¿Quitar el pedido{" "}
             <span className="font-semibold text-slate-900">
               &ldquo;{pedido.titulo || pedido.id}&rdquo;
-            </span>
-            ?
+            </span>{" "}
+            de la caja?
           </p>
           <ul className="space-y-1.5 rounded-lg bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
             <li className="flex items-start gap-2">
               <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
-              <span>No afecta el stock (el pedido nunca lo descontó).</span>
+              <span>Desaparece del listado de pendientes de facturación.</span>
             </li>
-            {desdePresupuesto ? (
-              <li className="flex items-start gap-2">
-                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-                <span>
-                  El presupuesto origen volverá a estado <span className="font-medium">&ldquo;aprobado&rdquo;</span>{" "}
-                  y podrás re-facturarlo o crear otro pedido.
-                </span>
-              </li>
-            ) : (
-              <li className="flex items-start gap-2">
-                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
-                <span>El pedido dejará de aparecer en la caja.</span>
-              </li>
-            )}
+            <li className="flex items-start gap-2">
+              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+              <span>
+                El pedido queda vivo y con el botón{" "}
+                <span className="font-medium">&ldquo;Enviar a Caja&rdquo;</span> disponible de nuevo
+                desde su vista de proyecto.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+              <span>No afecta stock ni el presupuesto origen.</span>
+            </li>
           </ul>
 
           {error && (
@@ -274,9 +270,9 @@ function ConfirmarCancelarModal({
             type="button"
             onClick={onConfirmar}
             disabled={enviando}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+            className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
           >
-            {enviando ? "Cancelando…" : "Sí, cancelar pedido"}
+            {enviando ? "Quitando…" : "Sí, quitar de caja"}
           </button>
         </div>
       </div>
