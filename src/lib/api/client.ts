@@ -80,6 +80,7 @@ export async function apiCreateCliente(data: {
   nivel_precio?: "minorista" | "mayorista" | "distribuidor";
   ruc?: string;
   documento?: string;
+  es_contribuyente?: boolean;
   telefono?: string;
   email?: string;
   direccion?: string;
