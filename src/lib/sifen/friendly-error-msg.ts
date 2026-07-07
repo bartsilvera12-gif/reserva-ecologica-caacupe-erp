@@ -53,9 +53,22 @@ function esRucRecInvalido(raw: string): boolean {
 }
 
 /** 0362 [1330]: número de casa del receptor obligatorio. Ya resuelto por código;
- *  si vuelve a aparecer, sospechar de XML viejo cacheado o rama no cubierta. */
+ *  si vuelve a aparecer, sospechar de XML viejo cacheado o rama no cubierta.
+ *  Chequeamos el sub-código [1330] para no confundir con 0362 [1001] (CDC duplicado). */
 function esNumCasaFaltante(raw: string): boolean {
-  return /0362/.test(raw) || /n[uú]mero de casa/i.test(raw);
+  const t = raw.toLowerCase();
+  if (/1330/.test(raw)) return true;
+  return /n[uú]mero de casa/i.test(raw) && !t.includes("cdc");
+}
+
+/** 0362 [1001]: CDC duplicado. Ocurre cuando el mismo CDC se envía dos veces a SET.
+ *  Suele pasar al regenerar desde `error_envio` sin bumpear sifen_regeneracion_seq
+ *  (bug del backend, ver handle-sifen-xml-post.ts). Solución para el usuario:
+ *  cambiar algo del DE (por ej. destildar/tildar "es contribuyente" y volver a
+ *  regenerar) para forzar otro CDC. */
+function esCdcDuplicado(raw: string): boolean {
+  const t = raw.toLowerCase();
+  return /1001/.test(raw) || /cdc\s*duplicado/i.test(t);
 }
 
 export function friendlyErrorMsg(input: FriendlyErrorInput): FriendlyErrorOutput {
@@ -95,6 +108,22 @@ export function friendlyErrorMsg(input: FriendlyErrorInput): FriendlyErrorOutput
         "Si el cliente es una persona física y su RUC no está inscripto, destildá «Es contribuyente» y emití como B2C (consumidor final).",
       ].join("\n"),
       codigo: "0160",
+      reconocido: true,
+    };
+  }
+
+  if (esCdcDuplicado(raw)) {
+    return {
+      titulo: "SET rechazó el envío: el CDC ya fue usado en un envío anterior.",
+      detalle: [
+        "El CDC (Código de Control) es único por documento. La SET lo rechaza porque un envío anterior ya lo usó (aunque haya fallado).",
+        "",
+        "Pasos:",
+        "1) Modificá algo del DE — por ejemplo, tildá/destildá «Es contribuyente» en la ficha del cliente, o cambiá el nombre de facturación (podés dejarlo igual después) — y guardá.",
+        "2) Volvé a «Regenerar documento» para que el sistema calcule un CDC nuevo.",
+        "3) Firmá y enviá otra vez.",
+      ].join("\n"),
+      codigo: "0362 [1001]",
       reconocido: true,
     };
   }

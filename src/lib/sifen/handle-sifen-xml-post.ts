@@ -81,16 +81,22 @@ export async function handleSifenXmlPost(
   const previousEstado = String(feSnapshot.estado_sifen ?? "borrador");
   const rawPrev = feSnapshot.sifen_regeneracion_seq;
   const previousRegSeq = Number.isFinite(Number(rawPrev)) ? Math.max(0, Math.floor(Number(rawPrev))) : 0;
-  let bumpRechazoAplicado = false;
+  let bumpAplicado = false;
 
-  if (previousEstado === "rechazado") {
+  // Bumpear el contador de regeneración también en `error_envio`: es el mismo
+  // caso funcional que `rechazado` (el DE anterior ya interactuó con SET, aunque
+  // en `error_envio` la falla fue en el envío, no en la validación del DE).
+  // Si no bumpeamos, el nuevo XML mantiene el mismo código de seguridad → mismo
+  // CDC → SET rebota 0362 [1001] "CDC duplicado".
+  const debeBumpear = previousEstado === "rechazado" || previousEstado === "error_envio";
+  if (debeBumpear) {
     const nextSeq = previousRegSeq + 1;
     const { data: bumped, error: bumpErr } = await supabase
       .from("factura_electronica")
       .update({ sifen_regeneracion_seq: nextSeq })
       .eq("id", feSnapshot.id)
       .eq("empresa_id", auth.empresa_id)
-      .eq("estado_sifen", "rechazado")
+      .eq("estado_sifen", previousEstado)
       .eq("sifen_regeneracion_seq", previousRegSeq)
       .select("sifen_regeneracion_seq")
       .maybeSingle();
@@ -106,12 +112,12 @@ export async function handleSifenXmlPost(
         { status: 409 }
       );
     }
-    bumpRechazoAplicado = true;
+    bumpAplicado = true;
   }
 
   const revertBumpRegSeq = async () => {
-    if (!bumpRechazoAplicado) return;
-    bumpRechazoAplicado = false;
+    if (!bumpAplicado) return;
+    bumpAplicado = false;
     await supabase
       .from("factura_electronica")
       .update({ sifen_regeneracion_seq: previousRegSeq })
@@ -190,7 +196,7 @@ export async function handleSifenXmlPost(
       estado_sifen: "generado",
       xml_firmado_path: null,
       ...(cdc ? { cdc } : {}),
-      ...(previousEstado === "rechazado"
+      ...(debeBumpear
         ? {
             error: null,
             sifen_d_prot_cons_lote: null,
@@ -216,13 +222,13 @@ export async function handleSifenXmlPost(
     );
   }
 
-  bumpRechazoAplicado = false;
+  bumpAplicado = false;
 
   const detalle: SifenApiXmlGeneracionDetalle = {
     origen: "api_xml",
     factura_id: fid,
     xml_path: objectPath,
-    ...(previousEstado === "rechazado" ? { sifen_regeneracion_seq: previousRegSeq + 1 } : {}),
+    ...(debeBumpear ? { sifen_regeneracion_seq: previousRegSeq + 1 } : {}),
   };
 
   const { error: errEvento } = await supabase.from("factura_electronica_evento").insert({
@@ -239,7 +245,7 @@ export async function handleSifenXmlPost(
         xml_path: previousXmlPath,
         estado_sifen: previousEstado,
         xml_firmado_path: previousSignedPath,
-        ...(previousEstado === "rechazado"
+        ...(debeBumpear
           ? {
               sifen_regeneracion_seq: previousRegSeq,
               error: feSnapshot.error ?? null,
