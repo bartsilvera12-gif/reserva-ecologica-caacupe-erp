@@ -396,15 +396,6 @@ export default function VentasPage() {
                       </td>
                       <td className="py-4 text-center align-middle">
                         <div className="inline-flex items-center gap-1.5">
-                          <a
-                            href={`/api/ventas/${v.id}/ticket?mode=comandas`}
-                            target="_blank"
-                            rel="noopener"
-                            className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition-colors"
-                            title="Abrir comandas + ticket cliente"
-                          >
-                            Imprimir
-                          </a>
                           {v.genera_nota_remision && (
                             <a
                               href={`/api/ventas/${v.id}/ticket?tipo=remision`}
