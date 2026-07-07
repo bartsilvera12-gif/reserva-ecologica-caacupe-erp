@@ -93,7 +93,7 @@ function toDto(row: RawJobRow): SifenJobDTO {
     codigo_sub_error_set: row.codigo_sub_error_set,
     mensaje_set: row.mensaje_set,
     ultimo_error: row.ultimo_error,
-    tipo_error: row.tipo_error,
+    tipo_error: row.tipo_error as SifenJobDTO["tipo_error"],
     respuesta_recibe_lote: (row.respuesta_recibe_lote as Record<string, unknown> | null) ?? null,
     respuesta_consulta_lote: (row.respuesta_consulta_lote as Record<string, unknown> | null) ?? null,
     cdc: row.cdc,
