@@ -678,17 +678,25 @@ export function FacturaElectronicaPanel({
     return () => clearTimeout(timer);
   }, [autoFlag, estado, resumen, refresh]);
 
-  // Cuando SIFEN aprueba el DE, abrimos el KUDE en una pestaña nueva para
-  // que el operador imprima. Un solo intento por montaje (ref).
+  // Cuando SIFEN aprueba el DE:
+  //  1) Limpiamos el flash — cualquier mensaje de error anterior (típicamente
+  //     un 409 "estado actual: enviado" que se pisa cuando el operador o un
+  //     efecto disparó /enviar mientras el worker ya estaba enviando) queda
+  //     obsoleto: el DE terminó bien.
+  //  2) Intentamos abrir el KUDE en pestaña nueva. Un solo intento por montaje.
+  //     Si el navegador bloquea el popup (Chrome lo hace cuando el open no
+  //     viene de un user gesture), el operador tiene el botón "Imprimir KUDE"
+  //     visible justo abajo del badge Aprobado.
   const kudeAutoOpenedRef = useRef(false);
   useEffect(() => {
     if (estado !== "aprobado") return;
+    setFlash(null);
     if (kudeAutoOpenedRef.current) return;
     kudeAutoOpenedRef.current = true;
     try {
       window.open(`/api/facturas/${facturaId}/sifen/kude`, "_blank", "noopener");
     } catch {
-      /* si el navegador bloquea el popup, el operador tiene los botones abajo */
+      /* popup bloqueado — el botón "Imprimir KUDE" cubre este caso */
     }
   }, [estado, facturaId]);
 
@@ -920,6 +928,21 @@ export function FacturaElectronicaPanel({
                   </>
                 ) : null}
               </p>
+            )}
+            {fe && estado === "aprobado" && (
+              <div className="flex flex-wrap gap-2 pt-2">
+                {/* Botón siempre visible cuando el DE aprueba — el auto-open
+                    window.open() a veces lo bloquea el navegador (no viene
+                    de un user gesture). Este botón sí viene de un click. */}
+                <a
+                  href={`/api/facturas/${facturaId}/sifen/kude`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-2 text-xs font-semibold rounded-lg bg-emerald-700 text-white hover:bg-emerald-800 inline-flex items-center"
+                >
+                  Imprimir KUDE
+                </a>
+              </div>
             )}
             {fe && estado === "aprobado" && resumen.cancelacion && (
               <div className="flex flex-wrap gap-2 pt-2">
