@@ -531,6 +531,10 @@ export function buildOfficialRdeFacturaElectronicaXml(
     recParts.push(textEl("dDVRec", dDVRec));
     recParts.push(textEl("dNomRec", receptor.nombre.trim()));
     if (receptor.direccion?.trim()) recParts.push(textEl("dDirRec", receptor.direccion.trim()));
+    /** SIFEN 0362 [1330]: dNumCasRec obligatorio siempre que se emita dDirRec,
+     *  también para receptor con RUC (B2B). Mismo patrón que rama manual y
+     *  rama sin RUC. */
+    recParts.push(textEl("dNumCasRec", "0"));
     if (receptor.telefono?.trim()) {
       const tr = receptor.telefono.replace(/\D/g, "");
       if (tr.length >= 8) recParts.push(textEl("dTelRec", tr.slice(0, 15)));
