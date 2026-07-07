@@ -72,6 +72,7 @@ interface RawJobRow {
   procesando_desde: string | null;
   lock_owner: string | null;
   proximo_reintento_at: string | null;
+  veces_re_encolado_consulta: number | string | null;
 }
 
 function toDto(row: RawJobRow): SifenJobDTO {
@@ -116,6 +117,7 @@ function toDto(row: RawJobRow): SifenJobDTO {
     procesando_desde: row.procesando_desde,
     lock_owner: row.lock_owner,
     proximo_reintento_at: row.proximo_reintento_at,
+    veces_re_encolado_consulta: toInt(row.veces_re_encolado_consulta),
   };
 }
 

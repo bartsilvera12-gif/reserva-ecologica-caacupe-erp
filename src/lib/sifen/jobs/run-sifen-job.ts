@@ -28,6 +28,14 @@ const LABEL = "[sifen-worker]";
 /** Config de polling interno de consulta-lote antes de re-encolar. */
 const CONSULTA_INTENTOS_INLINE = 4;
 const CONSULTA_DELAYS_MS = [1_000, 2_000, 4_000, 8_000]; // ~15s total
+/**
+ * Cuántas veces se puede re-encolar el Job por "SET sigue en proceso" antes
+ * de rendirse. 10 re-encolados × 30s = ~5 min de espera total (más los 15s
+ * de polling inline por ciclo). Suficiente para mantenimientos cortos de SET.
+ * Después el Job se cierra con tipo_error='set_timeout' y el operador puede
+ * consultar manualmente cuando quiera.
+ */
+const MAX_RE_ENCOLADOS_CONSULTA = 10;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -106,14 +114,17 @@ async function leerEstadoActual(
 
 /**
  * Re-encola el mismo Job con backoff — para consulta-lote cuando SET sigue
- * procesando. NO cuenta como intento fallido (no incrementa `intentos`).
+ * procesando. NO cuenta como intento fallido (no incrementa `intentos`), pero
+ * sí incrementa `veces_re_encolado_consulta` para poder cortarlo eventualmente.
+ * Devuelve el nuevo valor del contador.
  */
 async function reencolarConsultaEnCurso(
   supabase: AppSupabaseClient,
-  jobId: string,
+  job: SifenJobDTO,
   delayMs: number
-): Promise<void> {
+): Promise<number> {
   const proximo = new Date(Date.now() + delayMs).toISOString();
+  const nuevoContador = job.veces_re_encolado_consulta + 1;
   await supabase
     .from("sifen_jobs")
     .update({
@@ -122,8 +133,45 @@ async function reencolarConsultaEnCurso(
       procesando_desde: null,
       lock_owner: null,
       proximo_reintento_at: proximo,
+      veces_re_encolado_consulta: nuevoContador,
+    })
+    .eq("id", job.id);
+  return nuevoContador;
+}
+
+/**
+ * Cierra el Job en 'error' con tipo_error='set_timeout' cuando SET nunca
+ * confirmó el lote tras MAX_RE_ENCOLADOS_CONSULTA. La factura queda en
+ * estado 'enviado' (que ya está persistido) y el operador puede darle
+ * "Consultar lote" cuando SET responda.
+ */
+async function cerrarPorSetTimeout(
+  supabase: AppSupabaseClient,
+  jobId: string,
+  vecesReencolado: number,
+  tiempoTotalMs: number
+): Promise<void> {
+  const nowIso = new Date().toISOString();
+  const mensaje =
+    `SET no confirmó el lote tras ${vecesReencolado} re-intentos automáticos ` +
+    `(~${Math.round((vecesReencolado * 30) / 60)} min). La factura sigue registrada como enviada ` +
+    `en SET; podés usar "Consultar lote" para verificar el resultado cuando SET responda.`;
+  const { error } = await supabase
+    .from("sifen_jobs")
+    .update({
+      estado: "error",
+      etapa: "consulta_lote",
+      finished_at: nowIso,
+      procesando_desde: null,
+      lock_owner: null,
+      ultimo_error: mensaje,
+      tipo_error: "set_timeout",
+      tiempo_total_ms: Math.max(0, Math.floor(tiempoTotalMs)),
     })
     .eq("id", jobId);
+  if (error) {
+    console.error("[sifen-worker] cerrarPorSetTimeout error:", error.message);
+  }
 }
 
 /**
@@ -391,12 +439,24 @@ export async function runSifenJob(job: SifenJobDTO): Promise<void> {
         // Sigue en enviado/en_proceso. Reintento inline.
       }
 
-      // Se agotaron los intentos inline. SET sigue procesando: re-encolamos
-      // sin contar como intento fallido, con backoff de 30s.
+      // Se agotaron los intentos inline. Decidimos entre re-encolar o cerrar
+      // por set_timeout según el contador de re-encolados previos.
       await setSifenJobEtapaTiempo(supabase, job.id, "consulta_lote", Date.now() - consultaStart);
-      await reencolarConsultaEnCurso(supabase, job.id, 30_000);
+      if (job.veces_re_encolado_consulta >= MAX_RE_ENCOLADOS_CONSULTA) {
+        await cerrarPorSetTimeout(
+          supabase,
+          job.id,
+          job.veces_re_encolado_consulta,
+          Date.now() - totalStart
+        );
+        console.warn(
+          `${label} SET sigue en proceso tras ${job.veces_re_encolado_consulta} re-encolados — cerrando como set_timeout (DE queda en 'enviado' con protocolo; el operador puede consultar-lote manual).`
+        );
+        return;
+      }
+      const nuevoContador = await reencolarConsultaEnCurso(supabase, job, 30_000);
       console.log(
-        `${label} SET sigue en proceso (${ultimoEstado}, resumen="${ultimoResumen ?? "-"}"). Re-encolado +30s.`
+        `${label} SET sigue en proceso (${ultimoEstado}, resumen="${ultimoResumen ?? "-"}"). Re-encolado +30s (${nuevoContador}/${MAX_RE_ENCOLADOS_CONSULTA}).`
       );
       return;
     }

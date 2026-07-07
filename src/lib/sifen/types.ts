@@ -534,7 +534,9 @@ export type SifenJobTipoError =
   | "red"
   | "http_5xx"
   | "storage"
-  | "inesperado";
+  | "inesperado"
+  /** SET nunca dejó de responder "en proceso" tras N re-encolados de consulta-lote. */
+  | "set_timeout";
 
 /** Cada línea de `intentos_log` — auditoría cronológica. */
 export interface SifenJobIntento {
@@ -586,5 +588,14 @@ export interface SifenJobDTO {
   procesando_desde: string | null;
   lock_owner: string | null;
   proximo_reintento_at: string | null;
+
+  /**
+   * Cantidad de veces que el orquestador re-encoló el Job porque SET seguía
+   * respondiendo "en proceso" al consultar-lote. No cuenta como intento
+   * fallido (SET no rechazó nada). Si supera el límite, el Job se cierra en
+   * 'error' con `tipo_error='set_timeout'` — el operador puede consultar
+   * manualmente después.
+   */
+  veces_re_encolado_consulta: number;
 }
 

@@ -230,6 +230,8 @@ export function FacturaElectronicaPanel({
     | null
   >(null);
   const [flash, setFlash] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  /** true cuando el polling se cortó por timeout (90s sin cambios). Fase 3.1. */
+  const [pollingCortadoPorTimeout, setPollingCortadoPorTimeout] = useState(false);
   const [cancelModal, setCancelModal] = useState<"cancelar" | "reemitir" | null>(null);
   const [motivoCancel, setMotivoCancel] = useState("");
 
@@ -645,24 +647,29 @@ export function FacturaElectronicaPanel({
       jobSt === "aprobado" || jobSt === "rechazado" || jobSt === "error" || jobSt === null;
     if (deTerminal) {
       pollingStartedAtRef.current = null;
+      setPollingCortadoPorTimeout(false);
       return;
     }
     // Sin Job activo y DE en estado no-terminal (ej. flujo manual) → sin polling.
     if (jobSt == null && !autoFlag) {
       pollingStartedAtRef.current = null;
+      setPollingCortadoPorTimeout(false);
       return;
     }
     // Job terminal pero DE en estado intermedio (poco común: enviado/en_proceso
     // con consulta pendiente). Dejamos de batir el server; el operador consulta.
     if (jobTerminal && st !== "enviado" && st !== "en_proceso") {
       pollingStartedAtRef.current = null;
+      setPollingCortadoPorTimeout(false);
       return;
     }
     if (pollingStartedAtRef.current == null) {
       pollingStartedAtRef.current = Date.now();
+      setPollingCortadoPorTimeout(false);
     }
     const start = pollingStartedAtRef.current;
     if (Date.now() - start > 90_000) {
+      setPollingCortadoPorTimeout(true);
       return;
     }
     const timer = setTimeout(() => {
@@ -747,6 +754,27 @@ export function FacturaElectronicaPanel({
                   {decodeXmlNumericEntities(flash.text)}
                 </div>
               )}
+              {pollingCortadoPorTimeout &&
+              resumen.sifen_job &&
+              (resumen.sifen_job.estado === "pendiente" ||
+                resumen.sifen_job.estado === "procesando") ? (
+                <div className="rounded-lg text-sm px-3 py-2 bg-amber-50 border border-amber-200 text-amber-900 space-y-1">
+                  <p className="font-semibold">
+                    El sistema sigue procesando en background.
+                  </p>
+                  <p className="text-xs">
+                    Podés actualizar la página para ver el estado actualizado, o
+                    usar los pasos manuales de abajo si preferís emitir ahora.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void refresh()}
+                    className="text-xs font-semibold underline underline-offset-2 hover:no-underline"
+                  >
+                    Actualizar estado ahora
+                  </button>
+                </div>
+              ) : null}
 
               <div className="flex flex-wrap items-center gap-3">
                 {stStr === "rechazado" && puedeGenerarXml ? (
