@@ -347,6 +347,24 @@ export function FacturaElectronicaPanel({
   const runEnviar = async (opts?: { accionUi?: "enviar" | "none" }) => {
     const accionUi = opts?.accionUi ?? "enviar";
     setFlash(null);
+    // Guard defensivo: NUNCA reintentar /enviar si el DE ya salió de 'firmado'.
+    // Estados post-envío (enviado, en_proceso, aprobado, rechazado, cancelado)
+    // hacen que el backend responda 409 y dejaba pegado el flash
+    //   "Solo se puede enviar a SET con estado 'firmado'. Estado actual: 'enviado'"
+    // aun cuando el flujo correcto era esperar /consulta-lote. Este chequeo cubre
+    // races típicas: worker Phase 3 enviando en paralelo, doble click humano,
+    // ejecutarGenerarYEnviar con state stale entre refresh() y runEnviar().
+    const stActual = fe?.estado_sifen ?? "";
+    if (
+      stActual === "enviado" ||
+      stActual === "en_proceso" ||
+      stActual === "aprobado" ||
+      stActual === "rechazado" ||
+      stActual === "cancelado"
+    ) {
+      await refresh();
+      return;
+    }
     if (accionUi === "enviar") setAction("enviar");
     try {
       const res = await fetchWithSupabaseSession(`/api/facturas/${facturaId}/sifen/enviar`, { method: "POST" });
@@ -684,11 +702,24 @@ export function FacturaElectronicaPanel({
     return () => clearTimeout(timer);
   }, [autoFlag, estado, resumen, refresh]);
 
+  // Al cruzar de 'firmado' a 'enviado' (o posterior) limpiamos el flash: si había
+  // un error residual del tipo "Solo se puede enviar a SET con estado 'firmado'.
+  // Estado actual: 'enviado'" (409 por race/reintento redundante), ya no aplica.
+  // Cubre el screenshot del bug: badge "Enviado" + banner rojo pegado al mismo
+  // tiempo. Solo UI — no toca ninguna lógica fiscal / envío / consulta.
+  useEffect(() => {
+    if (
+      estado === "enviado" ||
+      estado === "en_proceso" ||
+      estado === "aprobado" ||
+      estado === "cancelado"
+    ) {
+      setFlash(null);
+    }
+  }, [estado]);
+
   // Cuando SIFEN aprueba el DE:
-  //  1) Limpiamos el flash — cualquier mensaje de error anterior (típicamente
-  //     un 409 "estado actual: enviado" que se pisa cuando el operador o un
-  //     efecto disparó /enviar mientras el worker ya estaba enviando) queda
-  //     obsoleto: el DE terminó bien.
+  //  1) El flash ya se limpió en el efecto de arriba al pasar a 'enviado'/aprobado.
   //  2) Intentamos abrir el KUDE en pestaña nueva. Un solo intento por montaje.
   //     Si el navegador bloquea el popup (Chrome lo hace cuando el open no
   //     viene de un user gesture), el operador tiene el botón "Imprimir KUDE"
@@ -696,7 +727,6 @@ export function FacturaElectronicaPanel({
   const kudeAutoOpenedRef = useRef(false);
   useEffect(() => {
     if (estado !== "aprobado") return;
-    setFlash(null);
     if (kudeAutoOpenedRef.current) return;
     kudeAutoOpenedRef.current = true;
     try {
