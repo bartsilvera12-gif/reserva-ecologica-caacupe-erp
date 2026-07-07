@@ -108,7 +108,16 @@ const TOL = 2;
  */
 export async function createVentaTransaccionalPg(
   params: CreateVentaPgParams
-): Promise<{ ventaId: string; numeroControl: string; fechaIso: string; notaRemisionNumero: string | null; cuentaPorCobrarId?: string | null }> {
+): Promise<{
+  ventaId: string;
+  numeroControl: string;
+  fechaIso: string;
+  notaRemisionNumero: string | null;
+  cuentaPorCobrarId?: string | null;
+  facturaId?: string | null;
+  numeroFactura?: string | null;
+  facturaWarning?: string | null;
+}> {
   const items = params.items;
   if (!items.length) {
     throw new Error("La venta debe tener al menos un ítem.");
@@ -629,7 +638,126 @@ export async function createVentaTransaccionalPg(
       cuentaPorCobrarId = String((insCxc.data as { id: string }).id);
     }
 
-    return { ventaId, numeroControl, fechaIso, notaRemisionNumero, cuentaPorCobrarId };
+    // ── Puente Venta → Factura ERP (SIFEN legal) ───────────────────────────
+    // Al mismo tiempo que la venta creamos una factura ERP con FAC-XXXXXX y las
+    // líneas equivalentes, dejando `ventas.factura_id` linkeado. Después el
+    // detalle /facturas/[id] usa el mismo FacturaElectronicaPanel para firmar,
+    // enviar a SIFEN e imprimir KUDE legal.
+    //
+    // Best-effort: si algo del puente falla, la venta ya está creada y no la
+    // rompemos — devolvemos facturaWarning para que la UI decida qué hacer.
+    let facturaId: string | null = null;
+    let numeroFactura: string | null = null;
+    let facturaWarning: string | null = null;
+    try {
+      // 1) Snapshot de razón social / RUC — si hay cliente_id usamos su ficha
+      //    (nombre_facturacion tiene prioridad sobre razón social/nombre_contacto);
+      //    si no, dejamos vacío y el operador puede editar en el detalle.
+      let razonSocial: string | null = null;
+      let rucSnap: string | null = null;
+      if (params.clienteId) {
+        const cliQ = await sb
+          .from("clientes")
+          .select("empresa, nombre, nombre_contacto, nombre_facturacion, ruc")
+          .eq("id", params.clienteId)
+          .eq("empresa_id", params.empresaId)
+          .maybeSingle();
+        const c = cliQ.data as Record<string, string | null> | null;
+        if (c) {
+          const s = (v: string | null | undefined) =>
+            typeof v === "string" && v.trim() ? v.trim() : null;
+          razonSocial = s(c.nombre_facturacion) || s(c.empresa) || s(c.nombre_contacto) || s(c.nombre);
+          rucSnap = s(c.ruc);
+        }
+      }
+
+      // 2) Próximo FAC-XXXXXX. Best-effort race — el índice único
+      //    (empresa_id, numero_factura) protege contra duplicados.
+      const maxQ = await sb
+        .from("facturas")
+        .select("numero_factura")
+        .eq("empresa_id", params.empresaId)
+        .like("numero_factura", "FAC-%")
+        .order("numero_factura", { ascending: false })
+        .limit(1);
+      let nextNum = 1;
+      const prevRaw =
+        Array.isArray(maxQ.data) && maxQ.data.length > 0
+          ? (maxQ.data[0] as { numero_factura?: string }).numero_factura
+          : null;
+      if (typeof prevRaw === "string") {
+        const m = /^FAC-(\d+)$/.exec(prevRaw.trim());
+        if (m) nextNum = parseInt(m[1], 10) + 1;
+      }
+      numeroFactura = `FAC-${String(nextNum).padStart(6, "0")}`;
+
+      // 3) Insert facturas — cliente_id es NULL si la venta no tiene cliente
+      //    real (el schema ya lo permite tras la migración del puente).
+      const facPayload: Record<string, unknown> = {
+        empresa_id: params.empresaId,
+        cliente_id: params.clienteId ?? null,
+        numero_factura: numeroFactura,
+        fecha: fechaIso.slice(0, 10),
+        fecha_vencimiento: fechaIso.slice(0, 10),
+        monto: calc.total,
+        saldo: params.tipoVenta === "CREDITO" ? calc.total : 0,
+        estado: params.tipoVenta === "CREDITO" ? "Pendiente" : "Pagado",
+        tipo: params.tipoVenta === "CREDITO" ? "credito" : "contado",
+        moneda: params.moneda === "USD" ? "USD" : "GS",
+        cliente_razon_social: razonSocial,
+        cliente_ruc: rucSnap,
+        observaciones: observacionesFinal,
+        origen_venta_id: ventaId,
+      };
+      const insFac = await sb.from("facturas").insert(facPayload).select("id").single();
+      if (insFac.error) throw new Error(insFac.error.message);
+      facturaId = String((insFac.data as { id: string }).id);
+
+      // 4) factura_items — una fila por línea con tipo_iva (para desglose SIFEN).
+      const itemsFacRows = items.map((line) => ({
+        empresa_id: params.empresaId,
+        factura_id: facturaId,
+        descripcion: line.producto_nombre,
+        cantidad: line.cantidad,
+        precio_unitario: line.precio_venta,
+        subtotal: line.subtotal,
+        iva: line.monto_iva,
+        tipo_iva: line.tipo_iva,
+        total: line.total_linea,
+      }));
+      const insFacItems = await sb.from("factura_items").insert(itemsFacRows);
+      if (insFacItems.error) throw new Error(insFacItems.error.message);
+
+      // 5) Link venta → factura.
+      const linkUpd = await sb
+        .from("ventas")
+        .update({ factura_id: facturaId })
+        .eq("id", ventaId)
+        .eq("empresa_id", params.empresaId);
+      if (linkUpd.error) throw new Error(linkUpd.error.message);
+    } catch (bridgeErr) {
+      const msg = bridgeErr instanceof Error ? bridgeErr.message : String(bridgeErr);
+      facturaWarning = `Venta creada pero no se pudo generar la factura ERP: ${msg}`;
+      // Rollback best-effort de la factura (los items caen en cascada por FK).
+      if (facturaId) {
+        try {
+          await sb.from("facturas").delete().eq("id", facturaId).eq("empresa_id", params.empresaId);
+        } catch {}
+        facturaId = null;
+        numeroFactura = null;
+      }
+    }
+
+    return {
+      ventaId,
+      numeroControl,
+      fechaIso,
+      notaRemisionNumero,
+      cuentaPorCobrarId,
+      facturaId,
+      numeroFactura,
+      facturaWarning,
+    };
   } catch (err) {
     await rollback();
     throw err;

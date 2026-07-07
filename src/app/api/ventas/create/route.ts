@@ -217,7 +217,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const { ventaId, numeroControl, fechaIso, notaRemisionNumero } = await createVentaTransaccionalPg({
+    const { ventaId, numeroControl, fechaIso, notaRemisionNumero, facturaId, numeroFactura, facturaWarning } = await createVentaTransaccionalPg({
       schema,
       empresaId: auth.empresa_id,
       clienteId,
@@ -314,7 +314,14 @@ export async function POST(request: NextRequest) {
       nota_remision_numero: notaRemisionNumero,
     });
 
-    return NextResponse.json(successResponse({ venta, nota_remision_numero: notaRemisionNumero }));
+    return NextResponse.json(successResponse({
+      venta,
+      nota_remision_numero: notaRemisionNumero,
+      // Puente Venta → Factura ERP (SIFEN). El front usa `factura.id` para
+      // redirigir al detalle /facturas/[id] donde vive el panel SIFEN.
+      factura: facturaId ? { id: facturaId, numero_factura: numeroFactura } : null,
+      factura_warning: facturaWarning ?? null,
+    }));
   } catch (err) {
     // Falta de stock sin autorizar: 409 con el detalle de faltantes para que la UI
     // muestre el modal de confirmación y reintente con permitir_sin_stock=true.

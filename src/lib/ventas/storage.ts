@@ -13,7 +13,15 @@ export type FaltanteStock = {
 };
 
 export type ResultadoGuardarVenta =
-  | { success: true; venta: Venta }
+  | {
+      success: true;
+      venta: Venta;
+      /** Factura ERP creada junto con la venta (puente SIFEN). El front redirige a
+       *  /facturas/[id] cuando esto viene seteado. Si es null, la venta se creó pero
+       *  el puente falló; ver `facturaWarning`. */
+      factura?: { id: string; numero_factura: string | null } | null;
+      facturaWarning?: string | null;
+    }
   | { success: false; error: string; faltantes?: FaltanteStock[] };
 
 /** Modalidad del pedido (instancia gastronómica En lo de Mari). */
@@ -97,7 +105,11 @@ export async function saveVenta(
 
     const json = (await res.json()) as {
       success?: boolean;
-      data?: { venta?: Venta };
+      data?: {
+        venta?: Venta;
+        factura?: { id: string; numero_factura: string | null } | null;
+        factura_warning?: string | null;
+      };
       error?: string;
       faltantes?: FaltanteStock[];
     };
@@ -110,7 +122,12 @@ export async function saveVenta(
       };
     }
 
-    return { success: true, venta: json.data.venta };
+    return {
+      success: true,
+      venta: json.data.venta,
+      factura: json.data.factura ?? null,
+      facturaWarning: json.data.factura_warning ?? null,
+    };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error de red.";
     return { success: false, error: msg };

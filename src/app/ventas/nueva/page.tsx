@@ -118,7 +118,15 @@ export default function NuevaVentaPage() {
   const [faltantes, setFaltantes] = useState<FaltanteStock[]>([]);
   const [confirmSinStockOpen, setConfirmSinStockOpen] = useState(false);
   // Panel post-venta: tras confirmar, ofrece abrir ticket y (si aplica) nota de remisión.
-  const [postVenta, setPostVenta] = useState<{ id: string; numero: string; generaNota: boolean; credito: boolean } | null>(null);
+  const [postVenta, setPostVenta] = useState<{
+    id: string;
+    numero: string;
+    generaNota: boolean;
+    credito: boolean;
+    facturaId?: string | null;
+    numeroFactura?: string | null;
+    facturaWarning?: string | null;
+  } | null>(null);
   // Guard anti doble-submit: estado para UI (botón/spinner) + ref para bloqueo síncrono
   // inmediato (React puede tardar en aplicar el estado; el ref corta el segundo disparo ya).
   const [guardando, setGuardando] = useState(false);
@@ -619,7 +627,15 @@ export default function NuevaVentaPage() {
       if (generaNota) { try { window.open(remisionUrl, "_blank", "noopener"); } catch {} }
       // Panel post-venta: botones siempre disponibles aunque el popup se bloquee.
       // NOTA: abrir el ticket / la nota / el panel NO vuelve a llamar saveVenta.
-      setPostVenta({ id: v.id, numero: v.numero_control, generaNota, credito: tipoVenta === "CREDITO" });
+      setPostVenta({
+        id: v.id,
+        numero: v.numero_control,
+        generaNota,
+        credito: tipoVenta === "CREDITO",
+        facturaId: resultado.factura?.id ?? null,
+        numeroFactura: resultado.factura?.numero_factura ?? null,
+        facturaWarning: resultado.facturaWarning ?? null,
+      });
     } finally {
       // Liberar el guard SIEMPRE: éxito, error o flujo de "confirmar sin stock".
       isSubmittingRef.current = false;
@@ -1125,12 +1141,29 @@ export default function NuevaVentaPage() {
               {postVenta.generaNota && (
                 <p className="mt-1 text-sm text-sky-700">Esta venta genera nota de remisión.</p>
               )}
+              {postVenta.numeroFactura && (
+                <p className="mt-1 text-sm font-medium text-emerald-700">
+                  Factura ERP <span className="font-mono">{postVenta.numeroFactura}</span> generada — lista para emitir a SIFEN.
+                </p>
+              )}
+              {postVenta.facturaWarning && (
+                <p className="mt-1 text-xs text-rose-700">{postVenta.facturaWarning}</p>
+              )}
               <p className="mt-1 text-xs text-gray-400">
                 Si tu navegador bloqueó las pestañas, abrí los documentos con estos botones.
               </p>
             </div>
 
             <div className="grid grid-cols-1 gap-2">
+              {postVenta.facturaId && (
+                <button
+                  type="button"
+                  onClick={() => router.push(`/facturas/${postVenta.facturaId}`)}
+                  className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
+                >
+                  Emitir factura legal (SIFEN)
+                </button>
+              )}
               <a
                 href={`/api/ventas/${postVenta.id}/ticket?mode=comandas&auto=1`}
                 target="_blank"
