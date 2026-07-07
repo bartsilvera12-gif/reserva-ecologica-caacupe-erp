@@ -354,7 +354,7 @@ export function FacturaElectronicaPanel({
     // aun cuando el flujo correcto era esperar /consulta-lote. Este chequeo cubre
     // races típicas: worker Phase 3 enviando en paralelo, doble click humano,
     // ejecutarGenerarYEnviar con state stale entre refresh() y runEnviar().
-    const stActual = fe?.estado_sifen ?? "";
+    const stActual = String(fe?.estado_sifen ?? "");
     if (
       stActual === "enviado" ||
       stActual === "en_proceso" ||
@@ -708,11 +708,14 @@ export function FacturaElectronicaPanel({
   // Cubre el screenshot del bug: badge "Enviado" + banner rojo pegado al mismo
   // tiempo. Solo UI — no toca ninguna lógica fiscal / envío / consulta.
   useEffect(() => {
+    // Cast a string: 'en_proceso' aparece en runtime (consulta-lote SET) pero
+    // no está en el union EstadoSifen; TS strict falla el compare sin el cast.
+    const st = String(estado ?? "");
     if (
-      estado === "enviado" ||
-      estado === "en_proceso" ||
-      estado === "aprobado" ||
-      estado === "cancelado"
+      st === "enviado" ||
+      st === "en_proceso" ||
+      st === "aprobado" ||
+      st === "cancelado"
     ) {
       setFlash(null);
     }
