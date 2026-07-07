@@ -78,13 +78,38 @@ export async function POST(
     if (head.estado === "anulada") {
       return NextResponse.json(errorResponse("La venta ya fue anulada."), { status: 409 });
     }
+    // Si tiene factura ERP asociada, verificar el estado SIFEN:
+    //  - aprobado / enviado / en_proceso  → bloquear y redirigir al panel SIFEN
+    //    (esas se cancelan via SET; el DE ya está en el sistema fiscal).
+    //  - borrador / generado / firmado / error_envio / rechazado / cancelado /
+    //    sin factura_electronica → permitir y también marcar la factura ERP
+    //    como anulada (el DE nunca llegó a SET o quedó en falla local).
+    let facturaEDescartar: { facturaId: string; feId: string | null } | null = null;
     if (head.factura_id) {
-      return NextResponse.json(
-        errorResponse(
-          "Esta venta tiene una factura ERP asociada. Cancelala desde el detalle de la factura (SIFEN); la venta se anula automáticamente."
-        ),
-        { status: 409 }
-      );
+      const feQ = await sb
+        .from("factura_electronica")
+        .select("id, estado_sifen")
+        .eq("empresa_id", empresaId)
+        .eq("factura_id", head.factura_id)
+        .maybeSingle();
+      if (feQ.error) {
+        return NextResponse.json(errorResponse(feQ.error.message), { status: 400 });
+      }
+      const feEstado = (feQ.data as { id?: string; estado_sifen?: string } | null)?.estado_sifen ?? null;
+      const bloqueaSet =
+        feEstado === "aprobado" || feEstado === "enviado" || feEstado === "en_proceso";
+      if (bloqueaSet) {
+        return NextResponse.json(
+          errorResponse(
+            "Esta venta tiene una factura electrónica ya enviada / aprobada por la SET. Cancelala desde el detalle de la factura (SIFEN); la venta se anula automáticamente."
+          ),
+          { status: 409 }
+        );
+      }
+      facturaEDescartar = {
+        facturaId: head.factura_id,
+        feId: (feQ.data as { id?: string } | null)?.id ?? null,
+      };
     }
 
     // Bloqueo 2: cobros aplicados en CxC.
@@ -109,11 +134,50 @@ export async function POST(
     if (!res.ok) {
       return NextResponse.json(errorResponse(res.message), { status: res.status ?? 500 });
     }
+
+    // Best-effort: si la venta tenía factura ERP no-aceptada, descartarla también.
+    // La venta ya está anulada; si esta parte falla, se logea nomás.
+    let factura_descartada = false;
+    if (facturaEDescartar) {
+      try {
+        const nowIso = new Date().toISOString();
+        const uf = await sb
+          .from("facturas")
+          .update({ estado: "anulada", saldo: 0, updated_at: nowIso })
+          .eq("empresa_id", empresaId)
+          .eq("id", facturaEDescartar.facturaId);
+        if (uf.error) {
+          console.error("[anular venta] no se pudo marcar factura anulada", {
+            facturaId: facturaEDescartar.facturaId,
+            error: uf.error.message,
+          });
+        } else {
+          factura_descartada = true;
+        }
+        if (facturaEDescartar.feId) {
+          const ufe = await sb
+            .from("factura_electronica")
+            .update({ estado_sifen: "cancelado", updated_at: nowIso })
+            .eq("empresa_id", empresaId)
+            .eq("id", facturaEDescartar.feId);
+          if (ufe.error) {
+            console.error("[anular venta] no se pudo marcar factura_electronica cancelada", {
+              feId: facturaEDescartar.feId,
+              error: ufe.error.message,
+            });
+          }
+        }
+      } catch (e) {
+        console.error("[anular venta] excepción descartando factura", { e });
+      }
+    }
+
     return NextResponse.json(
       successResponse({
         venta: { id: ventaId, estado: "anulada", numero_control: res.numeroControl },
         stock_reintegrado: res.stockReintegrado,
         ya_estaba_anulada: res.alreadyAnulada,
+        factura_descartada,
       })
     );
   } catch (err) {

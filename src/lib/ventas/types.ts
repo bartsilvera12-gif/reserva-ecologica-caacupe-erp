@@ -57,4 +57,9 @@ export interface Venta {
   /** Factura ERP asociada (puente venta→factura). null si la venta no emitió factura. */
   factura_id?: string | null;
   numero_factura?: string | null;
+  /** Estado SIFEN de la factura electrónica: borrador | generado | firmado |
+   *  enviado | en_proceso | aprobado | rechazado | error_envio | cancelado.
+   *  El UI usa este dato para permitir anular la venta cuando el DE nunca
+   *  llegó a SET (estados no-aceptados). null si no hay factura. */
+  factura_estado_sifen?: string | null;
 }

@@ -80,6 +80,7 @@ export async function GET(request: NextRequest) {
       ),
     ];
     const facturaByIdMap = new Map<string, string>();
+    const feEstadoByFacturaMap = new Map<string, string>();
     if (facturaIds.length > 0) {
       const facQ = await ctx.supabase
         .from("facturas")
@@ -88,6 +89,18 @@ export async function GET(request: NextRequest) {
         .in("id", facturaIds);
       for (const row of ((facQ.data ?? []) as Array<{ id: string; numero_factura?: string | null }>)) {
         if (row.numero_factura) facturaByIdMap.set(row.id, row.numero_factura);
+      }
+      // Estado SIFEN por factura — el UI usa este dato para decidir si mostrar
+      // el botón "Anular" cuando la factura quedó en error_envio/rechazado.
+      const feQ = await ctx.supabase
+        .from("factura_electronica")
+        .select("factura_id, estado_sifen")
+        .eq("empresa_id", empresaId)
+        .in("factura_id", facturaIds);
+      if (!feQ.error) {
+        for (const row of ((feQ.data ?? []) as Array<{ factura_id: string; estado_sifen?: string | null }>)) {
+          if (row.estado_sifen) feEstadoByFacturaMap.set(row.factura_id, row.estado_sifen);
+        }
       }
     }
 
@@ -142,6 +155,10 @@ export async function GET(request: NextRequest) {
         numero_factura: (() => {
           const fid = (r as unknown as { factura_id?: string | null }).factura_id;
           return fid ? facturaByIdMap.get(fid) ?? null : null;
+        })(),
+        factura_estado_sifen: (() => {
+          const fid = (r as unknown as { factura_id?: string | null }).factura_id;
+          return fid ? feEstadoByFacturaMap.get(fid) ?? null : null;
         })(),
       };
     });

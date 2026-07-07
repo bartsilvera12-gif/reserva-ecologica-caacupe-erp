@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import EdgeScrollArea from "@/components/ui/EdgeScrollArea";
 import { FancySelect } from "@/components/ui/FancySelect";
 import MobileFab from "@/components/ui/MobileFab";
@@ -151,6 +151,16 @@ export default function VentasPage() {
   const [filtroTipo, setFiltroTipo] = useState<TipoVenta | "">("");
   const [filtroIva,  setFiltroIva]  = useState<TipoIvaVenta | "">("");
   const [ventaAnular, setVentaAnular] = useState<{ id: string; numero: string } | null>(null);
+  const [expandidas, setExpandidas] = useState<Set<string>>(() => new Set());
+
+  const toggleExpandida = (id: string) => {
+    setExpandidas((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   async function recargar() {
     const data = await getVentas();
@@ -341,12 +351,37 @@ export default function VentasPage() {
                 filtradas.map((v) => {
                   const cantTotal = v.items.reduce((s, i) => s + i.cantidad, 0);
                   const anulada = v.estado === "anulada";
+                  const abierta = expandidas.has(v.id);
                   return (
-                    <tr key={v.id} className={`border-b border-slate-200 last:border-0 hover:bg-[#4FAEB2]/[0.04] transition-colors ${anulada ? "opacity-60" : ""}`}>
+                    <Fragment key={v.id}>
+                    <tr className={`border-b border-slate-200 last:border-0 hover:bg-[#4FAEB2]/[0.04] transition-colors ${anulada ? "opacity-60" : ""}`}>
                       <td className="py-4 pr-4 font-mono text-xs text-gray-500 align-middle">
-                        {v.numero_control}
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => toggleExpandida(v.id)}
+                            className="flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                            aria-label={abierta ? "Ocultar ítems" : "Ver todos los ítems"}
+                            title={abierta ? "Ocultar ítems" : "Ver todos los ítems"}
+                          >
+                            <svg
+                              width="12"
+                              height="12"
+                              viewBox="0 0 12 12"
+                              fill="none"
+                              className={`transition-transform ${abierta ? "rotate-90" : ""}`}
+                            >
+                              <path d="M4 2l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </button>
+                          <span>{v.numero_control}</span>
+                        </div>
                       </td>
-                      <td className="py-4 pr-4 align-middle">
+                      <td
+                        className="py-4 pr-4 align-middle cursor-pointer"
+                        onClick={() => toggleExpandida(v.id)}
+                        title="Ver todos los ítems"
+                      >
                         <ResumenProductos v={v} />
                       </td>
                       <td className="hidden py-4 pr-4 text-center align-middle lg:table-cell">
@@ -408,11 +443,15 @@ export default function VentasPage() {
                               Nota de remisión
                             </a>
                           )}
-                          {/* Si la venta emitió factura ERP: se ve el link a la
-                              factura y NO se ve el botón "Anular". Toda cancelación
-                              pasa por el panel SIFEN — el server anula la venta
-                              origen en cascada. */}
-                          {v.factura_id ? (
+                          {/* Regla de anulación:
+                              - Sin factura ERP → botón Anular directo (reintegra stock).
+                              - Factura ERP con estado SIFEN aprobado/enviado/en_proceso
+                                → sólo link al panel SIFEN (cancelar via SET; cascada
+                                anula la venta en el server).
+                              - Factura ERP en borrador/generado/firmado/error_envio/
+                                rechazado/cancelado → link a la factura + botón Anular:
+                                el DE nunca llegó a SET, se puede descartar localmente. */}
+                          {v.factura_id && (
                             <Link
                               href={`/facturas/${v.factura_id}`}
                               className="inline-flex items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition-colors"
@@ -420,21 +459,89 @@ export default function VentasPage() {
                             >
                               {v.numero_factura ? `Factura ${v.numero_factura}` : "Factura"}
                             </Link>
-                          ) : (
-                            !anulada && (
+                          )}
+                          {!anulada && (() => {
+                            const est = v.factura_estado_sifen;
+                            const facturaBloqueaAnular =
+                              est === "aprobado" || est === "enviado" || est === "en_proceso";
+                            if (v.factura_id && facturaBloqueaAnular) return null;
+                            return (
                               <button
                                 type="button"
                                 onClick={() => setVentaAnular({ id: v.id, numero: v.numero_control })}
                                 className="inline-flex items-center justify-center rounded-md border border-rose-200 bg-white px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50 transition-colors"
-                                title="Anular esta venta (reintegra stock)"
+                                title={
+                                  v.factura_id
+                                    ? "Anular venta y descartar factura (el DE nunca llegó a SET)"
+                                    : "Anular esta venta (reintegra stock)"
+                                }
                               >
                                 Anular
                               </button>
-                            )
-                          )}
+                            );
+                          })()}
                         </div>
                       </td>
                     </tr>
+                    {abierta && (
+                      <tr className={`border-b border-slate-200 bg-slate-50/60 ${anulada ? "opacity-60" : ""}`}>
+                        <td colSpan={11} className="px-4 py-3">
+                          <div className="rounded-lg border border-slate-200 bg-white p-3">
+                            <div className="mb-2 flex items-baseline justify-between">
+                              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                Detalle de la venta {v.numero_control}
+                              </h4>
+                              <span className="text-xs text-slate-500">
+                                {v.items.length} ítem{v.items.length === 1 ? "" : "s"} · {cantTotal} unidad{cantTotal === 1 ? "" : "es"}
+                              </span>
+                            </div>
+                            <div className="overflow-x-auto">
+                              <table className="w-full min-w-[560px] text-left text-sm">
+                                <thead>
+                                  <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                                    <th className="py-2 pr-3 font-medium">SKU</th>
+                                    <th className="py-2 pr-3 font-medium">Producto</th>
+                                    <th className="py-2 pr-3 font-medium text-right">Cant.</th>
+                                    <th className="py-2 pr-3 font-medium text-right">Precio unit.</th>
+                                    <th className="py-2 pr-3 font-medium">IVA</th>
+                                    <th className="py-2 font-medium text-right">Subtotal</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {v.items.map((it, idx) => (
+                                    <tr key={`${v.id}-item-${idx}`} className="border-b border-slate-100 last:border-0">
+                                      <td className="py-2 pr-3 font-mono text-xs text-slate-500">{it.sku || "—"}</td>
+                                      <td className="py-2 pr-3 text-slate-800">{it.producto_nombre}</td>
+                                      <td className="py-2 pr-3 text-right tabular-nums text-slate-700">{it.cantidad}</td>
+                                      <td className="py-2 pr-3 text-right tabular-nums text-slate-700">{formatGs(it.precio_venta)}</td>
+                                      <td className="py-2 pr-3">
+                                        <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                                          {ivaLabel[it.tipo_iva]}
+                                        </span>
+                                      </td>
+                                      <td className="py-2 text-right tabular-nums font-semibold text-slate-800">
+                                        {formatGs(it.total_linea)}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                                <tfoot>
+                                  <tr className="border-t border-slate-200 text-sm">
+                                    <td colSpan={5} className="py-2 pr-3 text-right font-medium text-slate-600">
+                                      Total
+                                    </td>
+                                    <td className="py-2 text-right tabular-nums font-bold text-slate-900">
+                                      {formatGs(v.total)}
+                                    </td>
+                                  </tr>
+                                </tfoot>
+                              </table>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })
               )}
