@@ -34,6 +34,7 @@ function fmtFecha(iso: string | null) {
 export default function PedidosPendientesCaja() {
   const [pedidos, setPedidos] = useState<PedidoPendiente[]>([]);
   const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancel = false;
@@ -47,6 +48,32 @@ export default function PedidosPendientesCaja() {
       .finally(() => { if (!cancel) setLoading(false); });
     return () => { cancel = true; };
   }, []);
+
+  async function cancelarPedido(p: PedidoPendiente) {
+    if (busyId) return;
+    const msgOrigen =
+      p.origen === "presupuesto"
+        ? " El presupuesto origen volverá a estado 'aprobado' para que puedas re-facturarlo."
+        : "";
+    if (!confirm(`¿Cancelar el pedido "${p.titulo || p.id}"?${msgOrigen} No afecta stock.`)) return;
+    setBusyId(p.id);
+    try {
+      const res = await fetch(`/api/caja/pedidos-pendientes/${p.id}/cancelar`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body?.success === false) {
+        alert(body?.error ?? "No se pudo cancelar el pedido.");
+        return;
+      }
+      setPedidos((prev) => prev.filter((x) => x.id !== p.id));
+    } catch {
+      alert("Error de red al cancelar el pedido.");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   // Mientras carga, no ocupar espacio; si no hay pendientes, no mostrar la sección.
   if (loading || pedidos.length === 0) return null;
@@ -93,12 +120,23 @@ export default function PedidosPendientesCaja() {
                 </td>
                 <td className="py-2.5 pr-4 text-slate-500">{fmtFecha(p.fecha)}</td>
                 <td className="py-2.5 pr-2 text-right">
-                  <Link
-                    href={`/ventas/nueva?pedido_id=${p.id}`}
-                    className="inline-flex items-center rounded-lg bg-[#4FAEB2] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#3F8E91]"
-                  >
-                    Facturar / Cobrar
-                  </Link>
+                  <div className="inline-flex items-center gap-2">
+                    <Link
+                      href={`/ventas/nueva?pedido_id=${p.id}`}
+                      className="inline-flex items-center rounded-lg bg-[#4FAEB2] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#3F8E91]"
+                    >
+                      Facturar / Cobrar
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => cancelarPedido(p)}
+                      disabled={busyId === p.id}
+                      className="inline-flex items-center rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                      title="Cancelar el pedido. No afecta stock. Si vino de presupuesto, se libera para re-facturar."
+                    >
+                      {busyId === p.id ? "Cancelando…" : "Cancelar"}
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

@@ -10,7 +10,7 @@
  * Pensado para ser reutilizable por otras instancias: la forma es genérica.
  */
 
-export type FacturacionEstado = "pendiente_caja" | "facturado";
+export type FacturacionEstado = "pendiente_caja" | "facturado" | "cancelado_caja";
 
 export interface FacturacionMeta {
   facturacion_estado?: FacturacionEstado;
@@ -18,6 +18,8 @@ export interface FacturacionMeta {
   facturado_at?: string;
   venta_id?: string;
   venta_numero?: string;
+  cancelado_caja_at?: string;
+  cancelado_caja_by?: string | null;
 }
 
 /** Metadata genérica de un proyecto (incluye trazabilidad de origen + facturación). */
@@ -31,7 +33,9 @@ export function asMetadataObject(raw: unknown): ProyectoMetadata {
 
 export function getFacturacionEstado(metadata: unknown): FacturacionEstado | null {
   const m = asMetadataObject(metadata);
-  return m.facturacion_estado === "pendiente_caja" || m.facturacion_estado === "facturado"
+  return m.facturacion_estado === "pendiente_caja" ||
+    m.facturacion_estado === "facturado" ||
+    m.facturacion_estado === "cancelado_caja"
     ? m.facturacion_estado
     : null;
 }
@@ -50,6 +54,20 @@ export function marcarEnviadoACaja(metadata: unknown, nowIso: string): ProyectoM
     ...asMetadataObject(metadata),
     facturacion_estado: "pendiente_caja",
     enviado_a_caja_at: nowIso,
+  };
+}
+
+/** Devuelve la metadata mergeada para marcar el pedido como cancelado desde Caja. */
+export function marcarCanceladoDesdeCaja(
+  metadata: unknown,
+  nowIso: string,
+  canceladoBy: string | null
+): ProyectoMetadata {
+  return {
+    ...asMetadataObject(metadata),
+    facturacion_estado: "cancelado_caja",
+    cancelado_caja_at: nowIso,
+    cancelado_caja_by: canceladoBy,
   };
 }
 
