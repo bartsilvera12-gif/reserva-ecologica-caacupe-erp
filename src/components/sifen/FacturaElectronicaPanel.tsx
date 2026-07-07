@@ -80,40 +80,12 @@ function subtituloSifenEjecutivo(resumen: Resumen, debugUi: boolean): string {
   }
 }
 
-/** Etiqueta corta que resume la ETAPA activa del pipeline server-side cuando
- *  vinimos con ?auto=1. La lógica es display-only; el trabajo real lo hace
- *  pipeline-async en el server. */
-function etiquetaProgresoAuto(estadoSifen: string | null): string | null {
-  const st = String(estadoSifen ?? "");
-  if (!st || st === "") return "Iniciando…";
-  if (st === "borrador") return "Generando XML…";
-  if (st === "generado") return "Firmando…";
-  if (st === "firmado") return "Enviando a SET…";
-  if (st === "enviado" || st === "en_proceso") return "En proceso en SET";
-  return null; // aprobado / rechazado / cancelado / error_envio: no mostrar
-}
-
-function ResumenSifenCompacto({
-  resumen,
-  debugUi,
-  autoRunning,
-}: {
-  resumen: Resumen;
-  debugUi: boolean;
-  autoRunning: boolean;
-}) {
+function ResumenSifenCompacto({ resumen, debugUi }: { resumen: Resumen; debugUi: boolean }) {
   const fe = resumen.factura_electronica;
   const st = fe?.estado_sifen ?? null;
-  const progreso = autoRunning ? etiquetaProgresoAuto(st) : null;
   return (
     <div className="flex flex-wrap items-center gap-3 min-w-0">
       <SifenEstadoBadge estadoSifen={st} mostrarPistaEnvioSet={false} className="shrink-0" />
-      {progreso && (
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-800 ring-1 ring-sky-200 shrink-0">
-          <span className="h-1.5 w-1.5 rounded-full bg-sky-500 animate-pulse" aria-hidden />
-          {progreso}
-        </span>
-      )}
       <div className="min-w-0 flex-1">
         <p className="text-sm text-slate-600 leading-snug">{subtituloSifenEjecutivo(resumen, debugUi)}</p>
         {!resumen.sifen_config_activa ? (
@@ -539,14 +511,10 @@ export function FacturaElectronicaPanel({
   const fe = resumen?.factura_electronica ?? null;
   const estado = fe?.estado_sifen ?? null;
 
-  // Fast path: llegamos con ?auto=1 (redirect desde /ventas/nueva).
-  // En lugar de correr el pipeline client-side (que dejaba al operador viendo
-  // un spinner 5-9 segundos bloqueando la UI), llamamos al endpoint
-  // pipeline-async que dispara la cadena SIFEN en background en el server y
-  // responde 202 al toque. Después poleamos /sifen/resumen cada 4s para
-  // actualizar el estado visible (Generando XML → Firmando → Enviando a
-  // SET → En proceso → Aprobado/Rechazado). El operador puede navegar sin
-  // interrumpir el pipeline server-side.
+  // Fast path: llegamos con ?auto=1 (redirect desde /ventas/nueva). Ejecutamos
+  // el pipeline sin que el operador tenga que apretar "Generar y enviar".
+  // Ref para que no se dispare más de una vez por montaje (evita loops si el
+  // pipeline devuelve error y el resumen recarga).
   const autoDisparadoRef = useRef(false);
   const autoFlag = searchParams?.get("auto") === "1";
   useEffect(() => {
@@ -554,6 +522,8 @@ export function FacturaElectronicaPanel({
     if (autoDisparadoRef.current) return;
     if (loadingResumen) return;
     if (!resumen?.sifen_config_activa) return;
+    // Solo dispara si el DE aún no fue enviado. Si ya está enviado/aprobado/
+    // rechazado/cancelado no queremos hacer nada.
     const estActual = String(estado ?? "");
     const iniciable =
       !fe ||
@@ -563,43 +533,9 @@ export function FacturaElectronicaPanel({
       (estActual === "error_envio" && Boolean(fe?.xml_firmado_path?.trim()));
     if (!iniciable) return;
     autoDisparadoRef.current = true;
-    // Fire-and-forget: no await → la UI no queda bloqueada, el server sigue.
-    void fetchWithSupabaseSession(`/api/facturas/${facturaId}/sifen/pipeline-async`, {
-      method: "POST",
-    }).catch(() => { /* si falla el kickoff, el operador tiene "Generar y enviar" abajo */ });
+    void ejecutarGenerarYEnviar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoFlag, loadingResumen, estado]);
-
-  // Polling liviano mientras el pipeline SIFEN corre en background: cada 4s
-  // refrescamos el resumen. Paramos en estados terminales (aprobado, cancelado,
-  // rechazado) y también después de 60s en 'enviado' / 'en_proceso' (SET
-  // tardando — el operador lo actualiza a mano con "Consultar lote" cuando
-  // quiera). No es un loop agresivo: 15 polls máximo por sesión de auto=1.
-  const pollingStartedAtRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (!autoFlag) return;
-    if (!resumen?.sifen_config_activa) return;
-    const st = String(estado ?? "");
-    // Terminal: paramos el polling.
-    if (st === "aprobado" || st === "cancelado" || st === "rechazado") {
-      pollingStartedAtRef.current = null;
-      return;
-    }
-    // Ya hay pipeline corriendo/pendiente → arrancamos o mantenemos el poll.
-    if (pollingStartedAtRef.current == null) {
-      pollingStartedAtRef.current = Date.now();
-    }
-    const start = pollingStartedAtRef.current;
-    // Timeout: si pasa 60s en enviado/en_proceso, cortamos — no queremos
-    // batir SET en loop y el operador puede seguir operando.
-    if ((st === "enviado" || st === "en_proceso") && Date.now() - start > 60_000) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      void refresh();
-    }, 4_000);
-    return () => clearTimeout(timer);
-  }, [autoFlag, estado, resumen, refresh]);
 
   // Cuando SIFEN aprueba el DE, abrimos el KUDE en una pestaña nueva para
   // que el operador imprima. Un solo intento por montaje (ref).
@@ -662,18 +598,7 @@ export function FacturaElectronicaPanel({
 
           {loadingResumen && <p className="text-sm text-slate-400">Cargando…</p>}
 
-          {!loadingResumen && resumen && (
-            <ResumenSifenCompacto
-              resumen={resumen}
-              debugUi={debugUi}
-              autoRunning={
-                autoFlag &&
-                estado !== "aprobado" &&
-                estado !== "cancelado" &&
-                estado !== "rechazado"
-              }
-            />
-          )}
+          {!loadingResumen && resumen && <ResumenSifenCompacto resumen={resumen} debugUi={debugUi} />}
 
           {!loadingResumen && resumen && (
             <>
