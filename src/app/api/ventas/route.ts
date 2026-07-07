@@ -63,12 +63,33 @@ export async function GET(request: NextRequest) {
     const ventasQ = await ctx.supabase
       .from("ventas")
       .select(
-        "id, empresa_id, numero_control, moneda, tipo_cambio, subtotal, monto_iva, total, tipo_venta, plazo_dias, metodo_pago, fecha, genera_nota_remision, nota_remision_numero, estado, anulada_at, anulacion_motivo"
+        "id, empresa_id, numero_control, moneda, tipo_cambio, subtotal, monto_iva, total, tipo_venta, plazo_dias, metodo_pago, fecha, genera_nota_remision, nota_remision_numero, estado, anulada_at, anulacion_motivo, factura_id"
       )
       .eq("empresa_id", empresaId)
       .order("fecha", { ascending: false })
       .limit(500);
     if (ventasQ.error) throw new Error(ventasQ.error.message);
+
+    // Cargar numero_factura para las ventas que ya tienen factura ERP. Un batch
+    // por eficiencia; si el join falla, degradamos a solo id (la UI muestra "Facturada").
+    const facturaIds = [
+      ...new Set(
+        ((ventasQ.data ?? []) as Array<{ factura_id?: string | null }>)
+          .map((v) => v.factura_id)
+          .filter((v): v is string => !!v)
+      ),
+    ];
+    const facturaByIdMap = new Map<string, string>();
+    if (facturaIds.length > 0) {
+      const facQ = await ctx.supabase
+        .from("facturas")
+        .select("id, numero_factura")
+        .eq("empresa_id", empresaId)
+        .in("id", facturaIds);
+      for (const row of ((facQ.data ?? []) as Array<{ id: string; numero_factura?: string | null }>)) {
+        if (row.numero_factura) facturaByIdMap.set(row.id, row.numero_factura);
+      }
+    }
 
     const itemsQ = await ctx.supabase
       .from("ventas_items")
@@ -117,6 +138,11 @@ export async function GET(request: NextRequest) {
         })(),
         anulada_at: (r as unknown as { anulada_at?: string | null }).anulada_at ?? null,
         anulacion_motivo: (r as unknown as { anulacion_motivo?: string | null }).anulacion_motivo ?? null,
+        factura_id: ((r as unknown as { factura_id?: string | null }).factura_id) ?? null,
+        numero_factura: (() => {
+          const fid = (r as unknown as { factura_id?: string | null }).factura_id;
+          return fid ? facturaByIdMap.get(fid) ?? null : null;
+        })(),
       };
     });
 

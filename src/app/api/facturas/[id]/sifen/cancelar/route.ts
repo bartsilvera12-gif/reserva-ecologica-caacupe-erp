@@ -8,6 +8,7 @@ import {
   normalizePlazoCancelacionHoras,
 } from "@/lib/sifen/sifen-cancelacion-rules";
 import type { FacturaElectronicaDTO } from "@/lib/sifen/types";
+import { anularVentaCore } from "@/lib/ventas/server/anular-venta-core";
 
 function trimMotivo(raw: unknown): string | null {
   if (raw == null) return null;
@@ -56,7 +57,7 @@ export async function POST(
 
     const { data: factura, error: errF } = await supabase
       .from("facturas")
-      .select("id, empresa_id")
+      .select("id, empresa_id, origen_venta_id, numero_factura")
       .eq("id", fid)
       .eq("empresa_id", auth.empresa_id)
       .maybeSingle();
@@ -193,9 +194,41 @@ export async function POST(
       );
     }
 
+    // Cascada Opción A: si la factura vino del puente venta→factura, anular
+    // la venta origen (rollback stock, marca 'anulada', trazabilidad). Best-effort:
+    // si algo falla acá NO revertimos la cancelación SIFEN (el DE ya está cancelado
+    // en la SET); solo devolvemos un warning para que la UI lo muestre.
+    const facturaRow = factura as { origen_venta_id?: string | null; numero_factura?: string };
+    let ventaAnuladaWarning: string | null = null;
+    let ventaAnuladaOrigenId: string | null = null;
+    if (facturaRow.origen_venta_id) {
+      const ventaOrigenId = String(facturaRow.origen_venta_id);
+      const motivoCascada = `Cancelación SIFEN ${facturaRow.numero_factura ?? feDto.numero_factura ?? ""}`.trim();
+      const resVenta = await anularVentaCore({
+        sb: supabase,
+        empresaId: auth.empresa_id,
+        ventaId: ventaOrigenId,
+        motivo: motivoCascada.length >= 5 ? motivoCascada : `Cancelación SIFEN. Motivo: ${motivo}`,
+        userId: auth.user.id,
+        movCreatedBy: auth.usuarioCatalogId ?? null,
+        movUsuarioNombre: auth.user?.email ?? null,
+      });
+      if (!resVenta.ok) {
+        ventaAnuladaWarning = `Factura cancelada en SIFEN pero no se pudo anular la venta origen: ${resVenta.message}. Anulala manualmente desde /ventas.`;
+      } else if (!resVenta.alreadyAnulada) {
+        ventaAnuladaOrigenId = ventaOrigenId;
+      }
+    }
+
     const dto = toFacturaElectronicaDto(updatedFe as Record<string, unknown>);
-    const data: { factura_electronica: FacturaElectronicaDTO } = {
+    const data: {
+      factura_electronica: FacturaElectronicaDTO;
+      venta_anulada_id: string | null;
+      venta_anulada_warning: string | null;
+    } = {
       factura_electronica: dto,
+      venta_anulada_id: ventaAnuladaOrigenId,
+      venta_anulada_warning: ventaAnuladaWarning,
     };
 
     return NextResponse.json(successResponse(data));

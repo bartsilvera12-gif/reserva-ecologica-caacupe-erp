@@ -53,4 +53,8 @@ export interface Venta {
   estado?: EstadoVenta;
   anulada_at?: string | null;
   anulacion_motivo?: string | null;
+
+  /** Factura ERP asociada (puente venta→factura). null si la venta no emitió factura. */
+  factura_id?: string | null;
+  numero_factura?: string | null;
 }

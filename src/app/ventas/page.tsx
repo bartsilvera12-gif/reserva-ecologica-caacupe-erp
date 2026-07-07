@@ -416,15 +416,29 @@ export default function VentasPage() {
                               Nota de remisión
                             </a>
                           )}
-                          {!anulada && (
-                            <button
-                              type="button"
-                              onClick={() => setVentaAnular({ id: v.id, numero: v.numero_control })}
-                              className="inline-flex items-center justify-center rounded-md border border-rose-200 bg-white px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50 transition-colors"
-                              title="Anular esta venta (reintegra stock)"
+                          {/* Si la venta emitió factura ERP: se ve el link a la
+                              factura y NO se ve el botón "Anular". Toda cancelación
+                              pasa por el panel SIFEN — el server anula la venta
+                              origen en cascada. */}
+                          {v.factura_id ? (
+                            <Link
+                              href={`/facturas/${v.factura_id}`}
+                              className="inline-flex items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition-colors"
+                              title="Ver / gestionar factura electrónica (SIFEN)"
                             >
-                              Anular
-                            </button>
+                              {v.numero_factura ? `Factura ${v.numero_factura}` : "Factura"}
+                            </Link>
+                          ) : (
+                            !anulada && (
+                              <button
+                                type="button"
+                                onClick={() => setVentaAnular({ id: v.id, numero: v.numero_control })}
+                                className="inline-flex items-center justify-center rounded-md border border-rose-200 bg-white px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50 transition-colors"
+                                title="Anular esta venta (reintegra stock)"
+                              >
+                                Anular
+                              </button>
+                            )
                           )}
                         </div>
                       </td>
