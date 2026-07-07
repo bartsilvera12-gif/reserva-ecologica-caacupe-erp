@@ -203,7 +203,7 @@ export async function POST(
     let ventaAnuladaOrigenId: string | null = null;
     if (facturaRow.origen_venta_id) {
       const ventaOrigenId = String(facturaRow.origen_venta_id);
-      const motivoCascada = `Cancelación SIFEN ${facturaRow.numero_factura ?? feDto.numero_factura ?? ""}`.trim();
+      const motivoCascada = `Cancelación SIFEN ${facturaRow.numero_factura ?? ""}`.trim();
       const resVenta = await anularVentaCore({
         sb: supabase,
         empresaId: auth.empresa_id,
