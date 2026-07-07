@@ -53,8 +53,6 @@ export default function NuevoClienteRapidoModal({ nombreInicial, onClose, onCrea
       ruc: tipo === "empresa" ? ruc.trim() || undefined : undefined,
       documento: tipo === "persona" ? documento.trim() || undefined : undefined,
       telefono: telefono.trim() || undefined,
-      origen: "VENTA",
-      estado: "activo",
     });
     setEnviando(false);
     if (!res.ok) {
