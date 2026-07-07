@@ -180,6 +180,25 @@ function NuevoClienteForm() {
     if (p) setFormContado((fc) => ({ ...fc, monto: String(p.precio) }));
   }, [formSusc.plan_id, form.condicion_pago, planes]);
 
+  // Pre-fill desde el buscador de ventas si viene con ?nombre= (o ?ruc=).
+  // Ejemplo: /ventas/nueva → botón "Cargar nuevo cliente" abre esta ruta con
+  // el texto tipeado por el operador ya cargado en Razón social / Contacto.
+  useEffect(() => {
+    const nombrePrefill = searchParams?.get("nombre");
+    const rucPrefill = searchParams?.get("ruc");
+    if (!nombrePrefill && !rucPrefill) return;
+    setForm((prev) => ({
+      ...prev,
+      empresa: nombrePrefill ? nombrePrefill.trim().toUpperCase() : prev.empresa,
+      nombre_contacto:
+        prev.tipo_cliente === "empresa"
+          ? prev.nombre_contacto
+          : (nombrePrefill ? nombrePrefill.trim().toUpperCase() : prev.nombre_contacto),
+      ruc: rucPrefill ? rucPrefill.trim() : prev.ruc,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Pre-fill desde CRM si viene con ?from_crm=id
   useEffect(() => {
     if (!fromCrmId) return;
