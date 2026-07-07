@@ -31,7 +31,7 @@ export async function loadValidatedSifenPayload(
 
   const { data: factura, error: errFactura } = await supabase
     .from("facturas")
-    .select("id, cliente_id, numero_factura, fecha, tipo, moneda, monto, saldo")
+    .select("id, cliente_id, numero_factura, fecha, tipo, moneda, monto, saldo, cliente_razon_social, cliente_ruc")
     .eq("id", fid)
     .eq("empresa_id", empresaId)
     .maybeSingle();
@@ -43,7 +43,7 @@ export async function loadValidatedSifenPayload(
     return { ok: false, error: { status: 404, message: "Factura no encontrada" } };
   }
 
-  const clienteId = factura.cliente_id as string;
+  const clienteId = (factura.cliente_id as string | null) ?? null;
 
   const [itemsRes, clienteRes, configRes, electronicaRes] = await Promise.all([
     supabase
@@ -52,14 +52,20 @@ export async function loadValidatedSifenPayload(
       .eq("factura_id", fid)
       .eq("empresa_id", empresaId)
       .order("created_at", { ascending: true }),
-    supabase
-      .from("clientes")
-      .select(
-        "id, empresa, nombre_contacto, nombre, ruc, documento, direccion, telefono, email, pais, sifen_receptor_extranjero, sifen_codigo_pais, sifen_tipo_doc_receptor, sifen_receptor_manual, sifen_receptor_naturaleza, sifen_ti_ope, sifen_num_id_de, sifen_direccion_de, sifen_num_casa_de, sifen_descripcion_tipo_doc"
-      )
-      .eq("id", clienteId)
-      .eq("empresa_id", empresaId)
-      .maybeSingle(),
+    // Solo consultamos clientes si la factura tiene cliente_id real. Cuando la
+    // factura viene del puente venta→factura sin cliente (venta a consumidor final),
+    // usamos las columnas denormalizadas (cliente_razon_social + cliente_ruc)
+    // para armar un receptor mínimo para SIFEN.
+    clienteId
+      ? supabase
+          .from("clientes")
+          .select(
+            "id, empresa, nombre_contacto, nombre, ruc, documento, direccion, telefono, email, pais, sifen_receptor_extranjero, sifen_codigo_pais, sifen_tipo_doc_receptor, sifen_receptor_manual, sifen_receptor_naturaleza, sifen_ti_ope, sifen_num_id_de, sifen_direccion_de, sifen_num_casa_de, sifen_descripcion_tipo_doc"
+          )
+          .eq("id", clienteId)
+          .eq("empresa_id", empresaId)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null } as { data: null; error: null }),
     supabase
       .from("empresa_sifen_config")
       .select(
@@ -88,10 +94,37 @@ export async function loadValidatedSifenPayload(
     return { ok: false, error: { status: 400, message: electronicaRes.error.message } };
   }
 
+  // Si no hay clientes.id, armamos un receptor mínimo a partir de los campos
+  // denormalizados de la factura (cliente_razon_social + cliente_ruc). Esto
+  // habilita el flujo SIFEN para ventas a "consumidor final" con datos manuales.
+  let clienteInput: BuildSifenPayloadInput["cliente"];
+  if (clienteRes.data) {
+    clienteInput = clienteRes.data as BuildSifenPayloadInput["cliente"];
+  } else {
+    const razon = typeof factura.cliente_razon_social === "string" ? factura.cliente_razon_social.trim() : "";
+    const rucSnap = typeof factura.cliente_ruc === "string" ? factura.cliente_ruc.trim() : "";
+    if (razon || rucSnap) {
+      clienteInput = {
+        id: "",
+        empresa: razon || null,
+        nombre_contacto: null,
+        nombre: razon || null,
+        ruc: rucSnap || null,
+        documento: null,
+        direccion: null,
+        telefono: null,
+        email: null,
+        pais: null,
+      };
+    } else {
+      clienteInput = null;
+    }
+  }
+
   const buildInput: BuildSifenPayloadInput = {
     factura: {
       id: factura.id as string,
-      cliente_id: factura.cliente_id as string,
+      cliente_id: (factura.cliente_id as string | null) ?? "",
       numero_factura: factura.numero_factura as string,
       fecha: factura.fecha as string,
       tipo: factura.tipo as string,
@@ -100,7 +133,7 @@ export async function loadValidatedSifenPayload(
       saldo: factura.saldo,
     },
     items: (itemsRes.data ?? []) as BuildSifenPayloadInput["items"],
-    cliente: clienteRes.data as BuildSifenPayloadInput["cliente"],
+    cliente: clienteInput,
     config: configRes.data as BuildSifenPayloadInput["config"],
     facturaElectronica: electronicaRes.data as BuildSifenPayloadInput["facturaElectronica"],
   };
