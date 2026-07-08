@@ -214,9 +214,13 @@ function drawTableChunk(
   drawRectFromTop(page, margin, fromTop, innerW, totalH, { fill: rgb(1, 1, 1), border: primary });
   drawRectFromTop(page, margin, fromTop, innerW, headH, { fill: primaryFill, border: primary });
 
+  // Ancho de columnas: se amplió "Código" de 32pt a 66pt para que quepan códigos
+  // de barras EAN-13 (13 dígitos ≈ 45pt a fsz=6.5) sin pisar la descripción.
+  // "Descripción" queda con 120pt (antes 150pt) — sigue alcanzando para la
+  // mayoría de productos; los muy largos truncan con "…".
   const xCod = margin + 4;
-  const xDesc = margin + 36;
-  const xUm = margin + 186;
+  const xDesc = margin + 70;
+  const xUm = margin + 190;
   const xPr = margin + 228;
   const xCan = margin + 282;
   const { xEx, x5, x10 } = kudeTableMoneyXs(margin);
@@ -249,8 +253,8 @@ function drawTableChunk(
     // código del XML (comportamiento previo). No afecta el XML ni SIFEN.
     const codigoBarras = codigosBarras[i]?.trim() ?? "";
     const codigoMostrar = codigoBarras || row.codigo;
-    page.drawText(trunc(codigoMostrar, 14), { x: xCod, y: yb, size: fsz, font, color: BLACK });
-    page.drawText(trunc(row.descripcion, 40), { x: xDesc, y: yb, size: fsz, font, color: BLACK });
+    page.drawText(trunc(codigoMostrar, 18), { x: xCod, y: yb, size: fsz, font, color: BLACK });
+    page.drawText(trunc(row.descripcion, 32), { x: xDesc, y: yb, size: fsz, font, color: BLACK });
     page.drawText(trunc(row.unidadMedida, 8), { x: xUm, y: yb, size: fsz, font, color: BLACK });
     page.drawText(formatMonto(row.precioUnit, parsed.monedaCodigo), { x: xPr, y: yb, size: fsz, font, color: BLACK });
     page.drawText(row.cantidad || "—", { x: xCan, y: yb, size: fsz, font, color: BLACK });
