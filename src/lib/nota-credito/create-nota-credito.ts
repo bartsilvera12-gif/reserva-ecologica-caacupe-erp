@@ -4,7 +4,23 @@ import {
   normalizePlazoCancelacionHoras,
 } from "@/lib/sifen/sifen-cancelacion-rules";
 import { validarXmlFirmadoFacturaOrigenParaNc } from "@/lib/sifen/validar-factura-origen-xml-para-nc";
-import type { NotaCreditoEventoTipo } from "./types";
+import type {
+  NotaCreditoEventoTipo,
+  NotaCreditoItemInput,
+  NotaCreditoTipoNc,
+} from "./types";
+
+/** Redondea a 2 decimales (moneda). */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/** Devuelve el `monto_iva` incluido en un `total_linea` según la tasa. */
+function ivaIncluidoDeTotal(total: number, tipoIva: "EXENTA" | "5%" | "10%"): number {
+  if (tipoIva === "10%") return round2((total * 10) / 110);
+  if (tipoIva === "5%") return round2((total * 5) / 105);
+  return 0;
+}
 
 function trimMotivo(raw: unknown): string | null {
   if (raw == null) return null;
@@ -26,6 +42,9 @@ export type CreateNotaCreditoParams = {
   authNombre: string | null;
   motivo: string;
   observacionInterna: string | null;
+  /** 'total' (default): monto NC = saldo disponible; sin items. 'parcial': items[] obligatorio. */
+  tipoNc?: NotaCreditoTipoNc;
+  items?: NotaCreditoItemInput[] | null;
 };
 
 export type CreateNotaCreditoResult =
@@ -164,30 +183,152 @@ export async function createNotaCreditoBorrador(p: CreateNotaCreditoParams): Pro
     };
   }
 
-  const montoNc = saldo;
-  const esperadoSaldo = Math.max(0, montoFactura - sumaPagos);
+  // Consideramos NC previas: sumaAprobadas (ya restadas del saldo por el RPC)
+  // + sumaEnCurso (compromiso pendiente). Se permiten múltiples NC hasta agotar
+  // el saldo disponible (política del negocio confirmada por el operador).
+  const { data: ncsPrevRows, error: errNcsPrev } = await p.supabase
+    .from("nota_credito")
+    .select("id, monto, estado_erp")
+    .eq("factura_id", p.facturaId)
+    .eq("empresa_id", p.empresaId)
+    .in("estado_erp", ["aprobada", "borrador", "pendiente_envio_sifen"]);
+  if (errNcsPrev) {
+    return { ok: false, status: 400, error: errNcsPrev.message };
+  }
+  const ncsPrev = (ncsPrevRows ?? []) as { monto?: unknown; estado_erp?: string }[];
+  const sumaAprobadas = ncsPrev
+    .filter((n) => n.estado_erp === "aprobada")
+    .reduce((s, n) => s + num(n.monto), 0);
+  const sumaEnCurso = ncsPrev
+    .filter((n) => n.estado_erp === "borrador" || n.estado_erp === "pendiente_envio_sifen")
+    .reduce((s, n) => s + num(n.monto), 0);
+
+  const esperadoSaldo = Math.max(0, montoFactura - sumaPagos - sumaAprobadas);
   if (Math.abs(saldo - esperadoSaldo) > 0.02) {
     return {
       ok: false,
       status: 409,
-      error: `El saldo pendiente (${saldo}) no coincide con monto − pagos (${esperadoSaldo}). Revisá la factura antes de crear una nota de crédito.`,
+      error: `El saldo pendiente (${saldo}) no coincide con monto − pagos − NC aprobadas (${esperadoSaldo}). Revisá la factura antes de crear una nota de crédito.`,
     };
   }
 
-  const { data: existeAprobada } = await p.supabase
-    .from("nota_credito")
-    .select("id")
-    .eq("factura_id", p.facturaId)
-    .eq("empresa_id", p.empresaId)
-    .eq("estado_erp", "aprobada")
-    .maybeSingle();
-
-  if (existeAprobada) {
+  const saldoDisponibleParaNc = Math.max(0, saldo - sumaEnCurso);
+  if (saldoDisponibleParaNc <= 0.02) {
     return {
       ok: false,
       status: 409,
-      error: "Ya existe una nota de crédito aprobada para esta factura.",
+      error:
+        "No hay saldo disponible para nuevas notas de crédito (ya está comprometido por NC en curso).",
     };
+  }
+
+  // Decidir monto según tipo. Si es 'parcial' se exige items[]; el sistema
+  // recalcula subtotal + monto_iva a partir de tipo_iva para no depender
+  // del cliente. Si es 'total' el monto es el saldo disponible.
+  const tipoNc: NotaCreditoTipoNc = p.tipoNc === "parcial" ? "parcial" : "total";
+  type ItemNormalizado = {
+    factura_item_id: string | null;
+    producto_id: string | null;
+    producto_nombre_snapshot: string;
+    sku_snapshot: string | null;
+    cantidad: number;
+    precio_unitario: number;
+    tipo_iva: "EXENTA" | "5%" | "10%";
+    subtotal: number;
+    monto_iva: number;
+    total_linea: number;
+    modo: "unidades" | "monto";
+  };
+  let montoNc: number;
+  let itemsNormalizados: ItemNormalizado[] = [];
+
+  if (tipoNc === "parcial") {
+    const itemsInput = Array.isArray(p.items) ? p.items : [];
+    if (itemsInput.length === 0) {
+      return {
+        ok: false,
+        status: 400,
+        error: "Nota de crédito parcial: se requiere al menos un ítem.",
+      };
+    }
+    if (itemsInput.length > 200) {
+      return {
+        ok: false,
+        status: 400,
+        error: "Nota de crédito parcial: máximo 200 ítems por NC.",
+      };
+    }
+    for (let idx = 0; idx < itemsInput.length; idx++) {
+      const it = itemsInput[idx]!;
+      const nombre = trimMotivo(it.producto_nombre);
+      if (!nombre) {
+        return {
+          ok: false,
+          status: 400,
+          error: `Ítem ${idx + 1}: producto_nombre es obligatorio.`,
+        };
+      }
+      const cantidad = num(it.cantidad);
+      if (cantidad <= 0) {
+        return {
+          ok: false,
+          status: 400,
+          error: `Ítem ${idx + 1}: cantidad debe ser mayor a 0.`,
+        };
+      }
+      const precioUnit = num(it.precio_unitario);
+      if (precioUnit < 0) {
+        return {
+          ok: false,
+          status: 400,
+          error: `Ítem ${idx + 1}: precio_unitario no puede ser negativo.`,
+        };
+      }
+      const tipoIva: "EXENTA" | "5%" | "10%" =
+        it.tipo_iva === "5%" || it.tipo_iva === "10%" ? it.tipo_iva : "EXENTA";
+      const totalLinea = round2(num(it.total_linea));
+      if (totalLinea <= 0) {
+        return {
+          ok: false,
+          status: 400,
+          error: `Ítem ${idx + 1}: total_linea debe ser mayor a 0.`,
+        };
+      }
+      const montoIva = ivaIncluidoDeTotal(totalLinea, tipoIva);
+      const subtotal = round2(totalLinea - montoIva);
+      itemsNormalizados.push({
+        factura_item_id: it.factura_item_id?.trim() || null,
+        producto_id: it.producto_id?.trim() || null,
+        producto_nombre_snapshot: nombre,
+        sku_snapshot: it.sku?.trim() || null,
+        cantidad,
+        precio_unitario: precioUnit,
+        tipo_iva: tipoIva,
+        subtotal,
+        monto_iva: montoIva,
+        total_linea: totalLinea,
+        modo: it.modo === "monto" ? "monto" : "unidades",
+      });
+    }
+    montoNc = round2(itemsNormalizados.reduce((s, it) => s + it.total_linea, 0));
+    if (montoNc <= 0) {
+      return {
+        ok: false,
+        status: 400,
+        error: "Nota de crédito parcial: la suma de ítems debe ser mayor a 0.",
+      };
+    }
+    if (montoNc > saldoDisponibleParaNc + 0.02) {
+      return {
+        ok: false,
+        status: 409,
+        error: `La suma de ítems (${montoNc}) supera el saldo disponible (${saldoDisponibleParaNc}).`,
+      };
+    }
+  } else {
+    // NC total: acredita todo el saldo disponible en un solo tramo.
+    montoNc = round2(saldoDisponibleParaNc);
+    itemsNormalizados = [];
   }
 
   const feId = String((feRow as { id: string }).id);
@@ -236,6 +377,7 @@ export async function createNotaCreditoBorrador(p: CreateNotaCreditoParams): Pro
     motivo,
     observacion_interna: obs,
     estado_erp: "borrador" as const,
+    tipo_nc: tipoNc,
     created_by_user_id: p.authUserId,
     created_by_email_snapshot: p.authEmail,
     created_by_nombre_snapshot: p.authNombre,
@@ -263,6 +405,30 @@ export async function createNotaCreditoBorrador(p: CreateNotaCreditoParams): Pro
   const ncId = String((ncRow as { id: string }).id);
 
   try {
+    // Ítems (solo si tipo_nc='parcial'). Best-effort agrupado: si el insert
+    // falla, borramos NC + registros derivados y devolvemos error.
+    if (itemsNormalizados.length > 0) {
+      const itemsPayload = itemsNormalizados.map((it) => ({
+        empresa_id: p.empresaId,
+        nota_credito_id: ncId,
+        factura_item_id: it.factura_item_id,
+        producto_id: it.producto_id,
+        producto_nombre_snapshot: it.producto_nombre_snapshot,
+        sku_snapshot: it.sku_snapshot,
+        cantidad: it.cantidad,
+        precio_unitario: it.precio_unitario,
+        tipo_iva: it.tipo_iva,
+        subtotal: it.subtotal,
+        monto_iva: it.monto_iva,
+        total_linea: it.total_linea,
+        modo: it.modo,
+      }));
+      const { error: errItems } = await p.supabase
+        .from("nota_credito_items")
+        .insert(itemsPayload);
+      if (errItems) throw new Error(`Error insertando ítems NC: ${errItems.message}`);
+    }
+
     const { error: errNe } = await p.supabase.from("nota_credito_electronica").insert({
       empresa_id: p.empresaId,
       nota_credito_id: ncId,
@@ -282,9 +448,20 @@ export async function createNotaCreditoBorrador(p: CreateNotaCreditoParams): Pro
         monto: montoNc,
         motivo,
         observacion_interna: obs,
+        tipo_nc: tipoNc,
+        items_cantidad: itemsNormalizados.length,
+        items_resumen: itemsNormalizados.map((it) => ({
+          producto: it.producto_nombre_snapshot,
+          cantidad: it.cantidad,
+          total: it.total_linea,
+          tipo_iva: it.tipo_iva,
+        })),
         saldo_previo_snapshot: saldo,
+        saldo_disponible_para_nc: saldoDisponibleParaNc,
         monto_factura_snapshot: montoFactura,
         suma_pagos_snapshot: sumaPagos,
+        suma_ncs_aprobadas_previas: sumaAprobadas,
+        suma_ncs_en_curso_previas: sumaEnCurso,
         moneda_snapshot: monedaSnapshot,
         factura_electronica_origen_id: feId,
         cdc_factura_origen: cdcOrigen,

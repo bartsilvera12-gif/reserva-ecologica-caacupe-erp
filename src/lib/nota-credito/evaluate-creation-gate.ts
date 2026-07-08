@@ -146,39 +146,43 @@ export async function evaluateNotaCreditoCreationGate(
     };
   }
 
-  const esperadoSaldo = Math.max(0, monto - sumaPagos);
+  // Se admiten múltiples NC por factura mientras el acumulado (aprobadas +
+  // en curso) no supere el saldo disponible. La regla de coherencia
+  // saldo === monto − pagos ahora considera lo ya acreditado (RPC
+  // nota_credito_aplicar_aprobacion_set restó del saldo al aprobar).
+  const { data: ncsRows, error: errNcs } = await supabase
+    .from("nota_credito")
+    .select("monto, estado_erp")
+    .eq("factura_id", facturaId)
+    .eq("empresa_id", empresaId)
+    .in("estado_erp", ["aprobada", "borrador", "pendiente_envio_sifen"]);
+  if (errNcs) {
+    return { puede_crear: false, motivo_bloqueo: errNcs.message };
+  }
+  const ncs = (ncsRows ?? []) as { monto?: unknown; estado_erp?: string }[];
+  const sumaAprobadas = ncs
+    .filter((n) => n.estado_erp === "aprobada")
+    .reduce((s, n) => s + num(n.monto), 0);
+  const sumaEnCurso = ncs
+    .filter((n) => n.estado_erp === "borrador" || n.estado_erp === "pendiente_envio_sifen")
+    .reduce((s, n) => s + num(n.monto), 0);
+
+  const esperadoSaldo = Math.max(0, monto - sumaPagos - sumaAprobadas);
   if (Math.abs(saldo - esperadoSaldo) > 0.02) {
     return {
       puede_crear: false,
-      motivo_bloqueo: "El saldo no coincide con monto − pagos; corregí la factura antes de continuar.",
+      motivo_bloqueo: "El saldo no coincide con monto − pagos − NC aprobadas; corregí la factura antes de continuar.",
     };
   }
 
-  const { data: aprob } = await supabase
-    .from("nota_credito")
-    .select("id")
-    .eq("factura_id", facturaId)
-    .eq("empresa_id", empresaId)
-    .eq("estado_erp", "aprobada")
-    .maybeSingle();
-
-  if (aprob) {
-    return { puede_crear: false, motivo_bloqueo: "Ya existe una nota de crédito aprobada para esta factura." };
-  }
-
-  const { data: enCurso } = await supabase
-    .from("nota_credito")
-    .select("id, estado_erp")
-    .eq("factura_id", facturaId)
-    .eq("empresa_id", empresaId)
-    .in("estado_erp", ["borrador", "pendiente_envio_sifen"])
-    .maybeSingle();
-
-  if (enCurso) {
+  const saldoDisponibleParaNc = Math.max(0, saldo - sumaEnCurso);
+  if (saldoDisponibleParaNc <= 0.02) {
     return {
       puede_crear: false,
       motivo_bloqueo:
-        "Ya existe una nota de crédito en curso para esta factura. Anulá el borrador o continuá con ese trámite.",
+        sumaEnCurso > 0
+          ? "El saldo ya está totalmente comprometido por notas de crédito en curso. Anulá alguna borrador o esperá su resolución en SET."
+          : "No hay saldo disponible para nuevas notas de crédito en esta factura.",
     };
   }
 

@@ -64,9 +64,37 @@ export type NotaCreditoListItemDTO = {
   sifen_respuestas_set: Record<string, unknown> | null;
 };
 
+/** Tipo de NC: total (acredita todo el saldo, sin ítems) o parcial (líneas). */
+export type NotaCreditoTipoNc = "total" | "parcial";
+
+/** Modo con que el operador armó cada línea de una NC parcial.
+ *  - unidades: cantidad libre × precio fijo → sistema calcula subtotal + IVA.
+ *  - monto:    total_linea libre (típico ajuste post-venta) → sistema deriva IVA. */
+export type NotaCreditoItemModo = "unidades" | "monto";
+
+/** Item de una NC parcial. Todos los montos son IVA-incluido en Gs./USD sin decimales
+ *  (salvo cantidad, que sí acepta decimales). El servidor recalcula subtotal/monto_iva
+ *  a partir de tipo_iva para evitar depender del cliente. */
+export type NotaCreditoItemInput = {
+  /** Trazabilidad opcional al item origen de la factura. */
+  factura_item_id?: string | null;
+  producto_id?: string | null;
+  producto_nombre: string;
+  sku?: string | null;
+  cantidad: number;
+  precio_unitario: number;
+  tipo_iva: "EXENTA" | "5%" | "10%";
+  total_linea: number;
+  modo?: NotaCreditoItemModo;
+};
+
 export type NotaCreditoCreateBody = {
   motivo: string;
   observacion_interna?: string | null;
+  /** Default 'total' por compat. Si es 'parcial' se exigen items[]. */
+  tipo_nc?: NotaCreditoTipoNc;
+  /** Líneas de una NC parcial. Se ignora si tipo_nc='total'. */
+  items?: NotaCreditoItemInput[];
 };
 
 /** Resultado de `obtenerSifenPrevueloFacturaParaNcs` (listado por factura, sin NC concreta). */

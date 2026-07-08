@@ -165,6 +165,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       authNombre: auth.nombre ?? null,
       motivo: b.motivo ?? "",
       observacionInterna: b.observacion_interna ?? null,
+      tipoNc: b.tipo_nc === "parcial" ? "parcial" : "total",
+      items: Array.isArray(b.items) ? b.items : null,
     });
 
     if (!result.ok) {
