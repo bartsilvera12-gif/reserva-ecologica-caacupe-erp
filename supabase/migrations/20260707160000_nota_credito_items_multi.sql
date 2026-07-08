@@ -38,7 +38,19 @@ DECLARE
   r RECORD;
   empresas_schema text;
   empresas_fk text;
+  tiene_rls_helper boolean;
 BEGIN
+  -- Verificar si la función RLS multi-tenant existe. Si no (deploys standalone
+  -- que no aplicaron 20250312000000_rls_multiempresa.sql), habilitamos RLS
+  -- pero sin policies — la app usa service role via getTenantSupabaseFromAuth
+  -- que bypassea RLS, y no exponemos esta tabla vía PostgREST directo al anon.
+  SELECT EXISTS (
+    SELECT 1 FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = 'puede_acceder_empresa'
+  ) INTO tiene_rls_helper;
+
   -- Resolver dónde vive la tabla `empresas` en esta instancia. Distintos
   -- despliegues Supabase tienen la tabla o bien en `zentra_erp` (multi-tenant
   -- original) o bien en `public` (deploy standalone). Si no está en ninguno
@@ -135,40 +147,22 @@ BEGIN
       r.sch
     );
 
-    -- RLS: mismo criterio que nota_credito (puede_acceder_empresa).
+    -- RLS: siempre habilitado. Policies solo si existe el helper multi-tenant.
+    -- Sin helper, la tabla queda accesible únicamente por service role — que
+    -- es lo que la app usa via getTenantSupabaseFromAuth.
     EXECUTE format('ALTER TABLE %I.nota_credito_items ENABLE ROW LEVEL SECURITY', r.sch);
-    EXECUTE format(
-      'DROP POLICY IF EXISTS "nota_credito_items_select" ON %I.nota_credito_items',
-      r.sch
-    );
-    EXECUTE format(
-      'CREATE POLICY "nota_credito_items_select" ON %I.nota_credito_items FOR SELECT USING (public.puede_acceder_empresa(empresa_id))',
-      r.sch
-    );
-    EXECUTE format(
-      'DROP POLICY IF EXISTS "nota_credito_items_insert" ON %I.nota_credito_items',
-      r.sch
-    );
-    EXECUTE format(
-      'CREATE POLICY "nota_credito_items_insert" ON %I.nota_credito_items FOR INSERT WITH CHECK (public.puede_acceder_empresa(empresa_id))',
-      r.sch
-    );
-    EXECUTE format(
-      'DROP POLICY IF EXISTS "nota_credito_items_update" ON %I.nota_credito_items',
-      r.sch
-    );
-    EXECUTE format(
-      'CREATE POLICY "nota_credito_items_update" ON %I.nota_credito_items FOR UPDATE USING (public.puede_acceder_empresa(empresa_id)) WITH CHECK (public.puede_acceder_empresa(empresa_id))',
-      r.sch
-    );
-    EXECUTE format(
-      'DROP POLICY IF EXISTS "nota_credito_items_delete" ON %I.nota_credito_items',
-      r.sch
-    );
-    EXECUTE format(
-      'CREATE POLICY "nota_credito_items_delete" ON %I.nota_credito_items FOR DELETE USING (public.puede_acceder_empresa(empresa_id))',
-      r.sch
-    );
+    IF tiene_rls_helper THEN
+      EXECUTE format('DROP POLICY IF EXISTS "nota_credito_items_select" ON %I.nota_credito_items', r.sch);
+      EXECUTE format('CREATE POLICY "nota_credito_items_select" ON %I.nota_credito_items FOR SELECT USING (public.puede_acceder_empresa(empresa_id))', r.sch);
+      EXECUTE format('DROP POLICY IF EXISTS "nota_credito_items_insert" ON %I.nota_credito_items', r.sch);
+      EXECUTE format('CREATE POLICY "nota_credito_items_insert" ON %I.nota_credito_items FOR INSERT WITH CHECK (public.puede_acceder_empresa(empresa_id))', r.sch);
+      EXECUTE format('DROP POLICY IF EXISTS "nota_credito_items_update" ON %I.nota_credito_items', r.sch);
+      EXECUTE format('CREATE POLICY "nota_credito_items_update" ON %I.nota_credito_items FOR UPDATE USING (public.puede_acceder_empresa(empresa_id)) WITH CHECK (public.puede_acceder_empresa(empresa_id))', r.sch);
+      EXECUTE format('DROP POLICY IF EXISTS "nota_credito_items_delete" ON %I.nota_credito_items', r.sch);
+      EXECUTE format('CREATE POLICY "nota_credito_items_delete" ON %I.nota_credito_items FOR DELETE USING (public.puede_acceder_empresa(empresa_id))', r.sch);
+    ELSE
+      RAISE NOTICE 'public.puede_acceder_empresa no existe; se salta el CREATE POLICY. La tabla queda accesible sólo con service role.';
+    END IF;
 
     EXECUTE format(
       'COMMENT ON TABLE %I.nota_credito_items IS ''Líneas de una NC parcial. La suma de total_linea debe coincidir con nota_credito.monto. Modo unidades = cantidad libre / precio fijo; modo monto = total_linea libre.''',
