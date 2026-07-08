@@ -96,12 +96,35 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     const items = (rows ?? []).map((x) => mapListRow(x as unknown as Record<string, unknown>));
 
+    // Agregados: monto acreditado (NC ya aprobadas por SIFEN) + monto pendiente
+    // (borradores + en curso, aún no aplicados al saldo). Se usan en la ficha
+    // de factura para mostrar "Acreditado / Saldo restante" sin cálculos extra
+    // en el cliente.
+    let monto_acreditado = 0;
+    let monto_pendiente_aprobacion = 0;
+    for (const it of items) {
+      const monto = Number(it.monto) || 0;
+      if (it.estado_erp === "aprobada") monto_acreditado += monto;
+      else if (
+        it.estado_erp === "borrador" ||
+        it.estado_erp === "pendiente_envio_sifen"
+      ) {
+        monto_pendiente_aprobacion += monto;
+      }
+    }
+
     return NextResponse.json(
       successResponse({
         items,
         puede_crear: gate.puede_crear,
         motivo_bloqueo_creacion: gate.motivo_bloqueo,
         sifen_prevuelo_factura,
+        resumen: {
+          monto_acreditado,
+          monto_pendiente_aprobacion,
+          cantidad_ncs: items.length,
+          cantidad_aprobadas: items.filter((i) => i.estado_erp === "aprobada").length,
+        },
       })
     );
   } catch (e) {

@@ -4,7 +4,16 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { getClientes } from "@/lib/clientes/storage";
+import { getUsuariosActivosEmpresa, type UsuarioEmpresa } from "@/lib/usuarios/empresa";
 import type { NotaCreditoGlobalListItemDTO } from "@/lib/nota-credito/types";
+
+/** Número visible de la NC. La tabla `nota_credito` no persiste un correlativo
+ *  tipo NC-XXXXXX (a diferencia de facturas/ventas); mostramos un derivado
+ *  estable del UUID como identificador humano. Los primeros 6 hex del uuid son
+ *  únicos en la práctica dentro de una empresa. */
+function ncNumeroCorto(id: string): string {
+  return `NC-${id.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
+}
 
 const inputClass =
   "w-full border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[#0EA5E9] text-sm bg-white";
@@ -72,6 +81,7 @@ export default function NotasCreditoListClient() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [clientes, setClientes] = useState<{ id: string; nombre: string }[]>([]);
+  const [usuarios, setUsuarios] = useState<UsuarioEmpresa[]>([]);
 
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
@@ -83,6 +93,7 @@ export default function NotasCreditoListClient() {
   const [buscar, setBuscar] = useState("");
   const [cdc, setCdc] = useState("");
   const [conError, setConError] = useState("");
+  const [numeroNc, setNumeroNc] = useState("");
 
   const limit = 50;
 
@@ -95,6 +106,9 @@ export default function NotasCreditoListClient() {
         }))
       )
     );
+    getUsuariosActivosEmpresa()
+      .then((us) => setUsuarios(us))
+      .catch(() => setUsuarios([]));
   }, []);
 
   const queryString = useMemo(() => {
@@ -111,8 +125,11 @@ export default function NotasCreditoListClient() {
     if (buscar.trim()) p.set("buscar", buscar.trim());
     if (cdc.trim().length >= 8) p.set("cdc", cdc.trim());
     if (conError) p.set("con_error", conError);
+    // Número derivado (NC-XXXXXX o solo el fragmento hex del uuid); el backend
+    // matchea por fragmento sobre `nota_credito.id::text ILIKE %fragmento%`.
+    if (numeroNc.trim()) p.set("numero_fragmento", numeroNc.trim().replace(/^NC-/i, "").toLowerCase());
     return p.toString();
-  }, [page, desde, hasta, clienteId, estadoErp, estadoSifen, usuarioId, facturaId, buscar, cdc, conError]);
+  }, [page, desde, hasta, clienteId, estadoErp, estadoSifen, usuarioId, facturaId, buscar, cdc, conError, numeroNc]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -206,13 +223,28 @@ export default function NotasCreditoListClient() {
             </select>
           </div>
           <div className="sm:col-span-2">
-            <label className={labelClass}>Usuario creador (UUID)</label>
+            <label className={labelClass}>Número NC</label>
             <input
               className={inputClass}
-              placeholder="auth user id"
+              placeholder="NC-XXXXXX o fragmento"
+              value={numeroNc}
+              onChange={(e) => setNumeroNc(e.target.value)}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={labelClass}>Usuario creador</label>
+            <select
+              className={inputClass}
               value={usuarioId}
               onChange={(e) => setUsuarioId(e.target.value)}
-            />
+            >
+              <option value="">Todos</option>
+              {usuarios.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.nombre?.trim() || u.email || u.id.slice(0, 8)}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="sm:col-span-2">
             <label className={labelClass}>Factura (UUID)</label>
@@ -248,6 +280,7 @@ export default function NotasCreditoListClient() {
               setBuscar("");
               setCdc("");
               setConError("");
+              setNumeroNc("");
               setPage(1);
             }}
             className="px-4 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 hover:bg-slate-50"
@@ -266,6 +299,7 @@ export default function NotasCreditoListClient() {
           <table className="w-full text-sm text-left min-w-[1100px]">
             <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
               <tr>
+                <th className="px-3 py-2.5">Número</th>
                 <th className="px-3 py-2.5">Fecha</th>
                 <th className="px-3 py-2.5">Cliente</th>
                 <th className="px-3 py-2.5">Factura</th>
@@ -282,19 +316,24 @@ export default function NotasCreditoListClient() {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="px-3 py-8 text-center text-slate-400">
+                  <td colSpan={12} className="px-3 py-8 text-center text-slate-400">
                     Cargando…
                   </td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-3 py-8 text-center text-slate-400">
+                  <td colSpan={12} className="px-3 py-8 text-center text-slate-400">
                     Sin resultados
                   </td>
                 </tr>
               ) : (
                 items.map((nc) => (
                   <tr key={nc.id} className="hover:bg-slate-50/80">
+                    <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-slate-700">
+                      <Link href={`/notas-credito/${nc.id}`} className="hover:underline">
+                        {ncNumeroCorto(nc.id)}
+                      </Link>
+                    </td>
                     <td className="px-3 py-2 whitespace-nowrap text-slate-600">
                       {new Date(nc.created_at).toLocaleString("es-PY", { dateStyle: "short", timeStyle: "short" })}
                     </td>

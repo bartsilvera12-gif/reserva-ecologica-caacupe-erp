@@ -71,6 +71,11 @@ export async function GET(request: NextRequest) {
     const buscar = sp.get("buscar")?.trim() ?? "";
     const cdcBuscar = sp.get("cdc")?.trim() ?? "";
     const conError = sp.get("con_error")?.trim() ?? "";
+    /** Fragmento hex del uuid para el filtro visual "Número NC" (NC-XXXXXX).
+     *  Se compara con `nota_credito.id::text ILIKE %fragmento%`. */
+    const numeroFragmento = (sp.get("numero_fragmento")?.trim() ?? "")
+      .replace(/[^0-9a-f-]/gi, "")
+      .toLowerCase();
 
     const limit = Math.min(Math.max(parseInt(sp.get("limit") ?? "50", 10) || 50, 1), 200);
     const page = Math.max(parseInt(sp.get("page") ?? "1", 10) || 1, 1);
@@ -118,6 +123,13 @@ export async function GET(request: NextRequest) {
     if (facturaId) q = q.eq("factura_id", facturaId);
     if (buscar.length >= 2) {
       q = q.ilike("motivo", `%${buscar.replace(/%/g, "")}%`);
+    }
+    if (numeroFragmento.length >= 2) {
+      // uuid no acepta ilike directo. Usamos el operator PostgREST `ilike` sobre
+      // el cast `id::text` (Postgres normaliza el uuid a formato con guiones).
+      // Filtramos por el fragmento en cualquier posición para que el operador
+      // pueda pegar 6-8 chars del código NC-XXXXXX visible en la UI.
+      q = q.filter("id::text", "ilike", `%${numeroFragmento}%`);
     }
 
     const { data: rows, error: errQ, count } = await q.range(offset, offset + limit - 1);

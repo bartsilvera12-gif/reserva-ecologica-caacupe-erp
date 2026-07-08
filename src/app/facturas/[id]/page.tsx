@@ -54,6 +54,12 @@ function FacturaDetalleInner() {
   const [resumen, setResumen] = useState<SifenResumen | null>(null);
   const [loadingF, setLoadingF] = useState(true);
   const [loadingS, setLoadingS] = useState(true);
+  const [ncResumen, setNcResumen] = useState<{
+    monto_acreditado: number;
+    monto_pendiente_aprobacion: number;
+    cantidad_ncs: number;
+    cantidad_aprobadas: number;
+  } | null>(null);
 
   const onResumenLoaded = useCallback((r: SifenResumen) => {
     setResumen(r);
@@ -118,6 +124,31 @@ function FacturaDetalleInner() {
         if (!cancelled) setResumen(null);
       } finally {
         if (!cancelled) setLoadingS(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  // Agregados de notas de crédito de esta factura (monto acreditado / pendiente).
+  // No bloqueante: si falla, la ficha se muestra igual sin la sección extra.
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetchWithSupabaseSession(`/api/facturas/${id}/notas-credito`, { cache: "no-store" });
+        const j = (await res.json()) as {
+          success?: boolean;
+          data?: { resumen?: typeof ncResumen };
+        };
+        if (cancelled) return;
+        if (res.ok && j.success && j.data?.resumen) {
+          setNcResumen(j.data.resumen);
+        }
+      } catch {
+        /* silencioso */
       }
     })();
     return () => {
@@ -251,6 +282,47 @@ function FacturaDetalleInner() {
             <dd className="font-medium text-slate-800">{factura.estado}</dd>
           </div>
         </dl>
+
+        {ncResumen && ncResumen.cantidad_ncs > 0 && (
+          <div className="mt-3 rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-slate-500">Notas de crédito</p>
+                <p className="font-semibold text-slate-800">
+                  {ncResumen.cantidad_ncs}{" "}
+                  <span className="text-[11px] font-normal text-slate-500">
+                    ({ncResumen.cantidad_aprobadas} aprob.)
+                  </span>
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-slate-500">Acreditado</p>
+                <p className="font-semibold text-emerald-800 tabular-nums">
+                  {monedaLabel}{" "}
+                  {ncResumen.monto_acreditado.toLocaleString(factura.moneda === "USD" ? "en-US" : "es-PY")}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-slate-500">Pendiente NC</p>
+                <p className="font-semibold text-amber-900 tabular-nums">
+                  {monedaLabel}{" "}
+                  {ncResumen.monto_pendiente_aprobacion.toLocaleString(factura.moneda === "USD" ? "en-US" : "es-PY")}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-slate-500">Saldo restante</p>
+                <p className="font-bold text-slate-900 tabular-nums">
+                  {monedaLabel}{" "}
+                  {factura.saldo.toLocaleString(factura.moneda === "USD" ? "en-US" : "es-PY")}
+                </p>
+              </div>
+            </div>
+            <p className="mt-1.5 text-[10px] text-slate-500">
+              &quot;Acreditado&quot; suma NC ya aprobadas por SIFEN (ya restadas del saldo). &quot;Pendiente&quot;
+              son NC en borrador o esperando SET (no impactan saldo aún).
+            </p>
+          </div>
+        )}
       </div>
 
       <FacturaElectronicaPanel

@@ -28,12 +28,16 @@ function labelTipoEvento(t: string) {
   return m[t] ?? t;
 }
 
+type AccionSifen = "xml" | "firmar" | "procesar" | "enviar" | "consulta-lote";
+
 export default function NotaCreditoDetalleClient() {
   const params = useParams();
   const id = String(params?.id ?? "");
   const [data, setData] = useState<NotaCreditoGlobalDetailDTO | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [accion, setAccion] = useState<AccionSifen | null>(null);
+  const [flash, setFlash] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -55,6 +59,29 @@ export default function NotaCreditoDetalleClient() {
       setLoading(false);
     }
   }, [id]);
+
+  const runAccion = useCallback(async (a: AccionSifen) => {
+    if (accion) return;
+    setAccion(a);
+    setFlash(null);
+    try {
+      const res = await fetchWithSupabaseSession(
+        `/api/notas-credito/${id}/sifen/${a}`,
+        { method: "POST" }
+      );
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body?.success === false) {
+        setFlash({ kind: "err", text: body?.error ?? `No se pudo ejecutar ${a}.` });
+      } else {
+        setFlash({ kind: "ok", text: `Acción "${a}" completada.` });
+      }
+      await load();
+    } catch {
+      setFlash({ kind: "err", text: "Error de red." });
+    } finally {
+      setAccion(null);
+    }
+  }, [accion, id, load]);
 
   useEffect(() => {
     void load();
@@ -188,6 +215,92 @@ export default function NotaCreditoDetalleClient() {
           </details>
         </section>
       )}
+
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Acciones SIFEN</h2>
+          <span className="text-[11px] text-slate-400">
+            Estado actual: <strong>{ne?.estado_sifen != null ? String(ne.estado_sifen) : "—"}</strong>
+          </span>
+        </div>
+        {flash && (
+          <div
+            className={`rounded-md border px-3 py-2 text-xs ${
+              flash.kind === "ok"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border-red-200 bg-red-50 text-red-800"
+            }`}
+          >
+            {flash.text}
+          </div>
+        )}
+        <div className="flex flex-wrap gap-2">
+          {(() => {
+            const stSifen = String(ne?.estado_sifen ?? "");
+            const stErp = String(nc.estado_erp ?? "");
+            const generable = stErp !== "aprobada" && stSifen !== "aprobado" && stSifen !== "cancelado";
+            const firmable = stSifen === "generado" || stSifen === "error_envio" || stSifen === "rechazado";
+            const enviable = stSifen === "firmado" || stSifen === "error_envio";
+            const consultable = stSifen === "enviado" || stSifen === "en_proceso";
+            const procesable = generable;
+            const btn = "inline-flex items-center rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50 transition-colors";
+            return (
+              <>
+                <button
+                  type="button"
+                  disabled={!generable || accion !== null}
+                  onClick={() => void runAccion("xml")}
+                  className={`${btn} border border-slate-300 bg-white text-slate-800 hover:bg-slate-50`}
+                >
+                  {accion === "xml" ? "Generando…" : "Generar XML"}
+                </button>
+                <button
+                  type="button"
+                  disabled={!firmable || accion !== null}
+                  onClick={() => void runAccion("firmar")}
+                  className={`${btn} border border-slate-300 bg-white text-slate-800 hover:bg-slate-50`}
+                >
+                  {accion === "firmar" ? "Firmando…" : "Firmar"}
+                </button>
+                <button
+                  type="button"
+                  disabled={!enviable || accion !== null}
+                  onClick={() => void runAccion("enviar")}
+                  className={`${btn} bg-slate-900 text-white hover:bg-slate-800`}
+                >
+                  {accion === "enviar" ? "Enviando…" : "Enviar a SET"}
+                </button>
+                <button
+                  type="button"
+                  disabled={!consultable || accion !== null}
+                  onClick={() => void runAccion("consulta-lote")}
+                  className={`${btn} border border-slate-300 bg-white text-slate-800 hover:bg-slate-50`}
+                >
+                  {accion === "consulta-lote" ? "Consultando…" : "Consultar lote"}
+                </button>
+                <button
+                  type="button"
+                  disabled={!procesable || accion !== null}
+                  onClick={() => void runAccion("procesar")}
+                  className={`${btn} border border-slate-300 bg-white text-slate-800 hover:bg-slate-50`}
+                  title="Ejecuta la cadena xml → firmar → enviar en un solo paso."
+                >
+                  {accion === "procesar" ? "Procesando…" : "Procesar completo"}
+                </button>
+              </>
+            );
+          })()}
+        </div>
+        <p className="text-[11px] text-slate-500 leading-relaxed">
+          Los botones se habilitan según el estado SIFEN actual. También podés operar desde el panel embebido en la ficha
+          de la factura origen. Para descargar XML/KUDE de la nota de crédito ya aprobada, andá al
+          {" "}
+          <Link href={`/facturas/${data.factura.id}`} className="text-[#0EA5E9] font-medium hover:underline">
+            panel de la factura
+          </Link>{" "}
+          (mismo pipeline reutilizado).
+        </p>
+      </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
         <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Auditoría / eventos</h2>
