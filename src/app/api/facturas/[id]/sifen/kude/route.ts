@@ -211,34 +211,67 @@ export async function GET(
       return null;
     });
 
-    // Códigos de barras por item (mismo orden que parsed.items). Los buscamos
-    // en productos por SKU (parsed.items[i].codigo suele ser el dCodInt = SKU).
-    // Si el item no tiene match, queda null y el KUDE cae al código interno.
-    const skus = Array.from(
-      new Set(parsed.items.map((it) => it.codigo?.trim() ?? "").filter((s) => s.length > 0))
-    );
+    // Códigos de barras por item, alineados posicionalmente con parsed.items.
+    // El XML no lleva SKU (dCodInt hardcodeado como "L1","L2"...), así que
+    // no se puede matchear por SKU. Path: factura → origen_venta_id →
+    // ventas_items (ordered) → productos → codigo_barras. Match por posición
+    // con parsed.items (el XML preserva el mismo orden que factura_items /
+    // ventas_items al momento de emitir).
     let codigosBarrasPorItem: (string | null)[] | undefined;
-    if (skus.length > 0) {
-      const { data: prods, error: errProds } = await supabase
-        .from("productos")
-        .select("sku, codigo_barras")
+    try {
+      const { data: facMeta } = await supabase
+        .from("facturas")
+        .select("origen_venta_id")
+        .eq("id", fid)
         .eq("empresa_id", auth.empresa_id)
-        .in("sku", skus);
-      if (errProds) {
-        console.warn("[kude] no se pudieron cargar codigos_barras (se omite columna)", {
-          message: errProds.message,
-        });
-      } else {
-        const bySku = new Map<string, string>();
-        for (const p of (prods ?? []) as Array<{ sku: string; codigo_barras?: string | null }>) {
-          const cb = (p.codigo_barras ?? "").trim();
-          if (cb) bySku.set(p.sku, cb);
+        .maybeSingle();
+      const origenVentaId = (facMeta as { origen_venta_id?: string | null } | null)?.origen_venta_id ?? null;
+      if (origenVentaId) {
+        const { data: viRows, error: errVi } = await supabase
+          .from("ventas_items")
+          .select("producto_id, sku, created_at")
+          .eq("empresa_id", auth.empresa_id)
+          .eq("venta_id", origenVentaId)
+          .order("created_at", { ascending: true });
+        if (errVi) {
+          console.warn("[kude] no se pudieron cargar ventas_items para codigos_barras", {
+            message: errVi.message,
+          });
+        } else {
+          const items = (viRows ?? []) as Array<{ producto_id: string | null; sku: string | null }>;
+          const productoIds = Array.from(
+            new Set(items.map((it) => it.producto_id).filter((v): v is string => !!v))
+          );
+          const codigoByProdId = new Map<string, string>();
+          if (productoIds.length > 0) {
+            const { data: prods, error: errProds } = await supabase
+              .from("productos")
+              .select("id, codigo_barras")
+              .eq("empresa_id", auth.empresa_id)
+              .in("id", productoIds);
+            if (errProds) {
+              console.warn("[kude] no se pudo cargar codigo_barras de productos", {
+                message: errProds.message,
+              });
+            } else {
+              for (const p of (prods ?? []) as Array<{ id: string; codigo_barras?: string | null }>) {
+                const cb = (p.codigo_barras ?? "").trim();
+                if (cb) codigoByProdId.set(p.id, cb);
+              }
+            }
+          }
+          // Match posicional con parsed.items (mismo orden que emisión).
+          codigosBarrasPorItem = parsed.items.map((_it, idx) => {
+            const vi = items[idx];
+            if (!vi?.producto_id) return null;
+            return codigoByProdId.get(vi.producto_id) ?? null;
+          });
         }
-        codigosBarrasPorItem = parsed.items.map((it) => {
-          const s = it.codigo?.trim() ?? "";
-          return s ? bySku.get(s) ?? null : null;
-        });
       }
+    } catch (e) {
+      console.warn("[kude] excepción cargando codigos_barras (se omite)", {
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
 
     const numeroFactura = fac.numero_factura == null ? "" : String(fac.numero_factura);
