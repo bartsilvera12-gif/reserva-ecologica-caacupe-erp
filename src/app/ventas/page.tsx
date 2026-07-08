@@ -1,10 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useState } from "react";
+import { AlertTriangle, RotateCw, X } from "lucide-react";
 import EdgeScrollArea from "@/components/ui/EdgeScrollArea";
 import { FancySelect } from "@/components/ui/FancySelect";
 import MobileFab from "@/components/ui/MobileFab";
+import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { getVentas } from "@/lib/ventas/storage";
 import PedidosPendientesCaja from "./PedidosPendientesCaja";
 import AnularVentaModal from "./AnularVentaModal";
@@ -146,11 +149,15 @@ function ivaResumen(v: Venta): string {
 // ── Componente principal ───────────────────────────────────────────────────────
 
 export default function VentasPage() {
+  const router = useRouter();
   const [todas,      setTodas]      = useState<Venta[]>([]);
   const [busqueda,   setBusqueda]   = useState("");
   const [filtroTipo, setFiltroTipo] = useState<TipoVenta | "">("");
   const [filtroIva,  setFiltroIva]  = useState<TipoIvaVenta | "">("");
   const [ventaAnular, setVentaAnular] = useState<{ id: string; numero: string } | null>(null);
+  const [ventaRegenerar, setVentaRegenerar] = useState<{ id: string; numero: string } | null>(null);
+  const [regenerandoId, setRegenerandoId] = useState<string | null>(null);
+  const [errorRegenerar, setErrorRegenerar] = useState<string | null>(null);
   const [expandidas, setExpandidas] = useState<Set<string>>(() => new Set());
 
   const toggleExpandida = (id: string) => {
@@ -498,6 +505,17 @@ export default function VentasPage() {
                               </button>
                             );
                           })()}
+                          {anulada && (
+                            <button
+                              type="button"
+                              onClick={() => setVentaRegenerar({ id: v.id, numero: v.numero_control })}
+                              disabled={regenerandoId === v.id}
+                              className="inline-flex items-center justify-center rounded-md border border-[#4FAEB2] bg-[#4FAEB2]/10 px-3 py-1.5 text-xs font-semibold text-[#3F8E91] hover:bg-[#4FAEB2]/20 transition-colors disabled:opacity-50"
+                              title="Regenerar: crear una nueva venta clonando cliente, ítems y precios"
+                            >
+                              {regenerandoId === v.id ? "Regenerando…" : "Regenerar"}
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -583,6 +601,153 @@ export default function VentasPage() {
           }}
         />
       )}
+
+      {ventaRegenerar && (
+        <RegenerarVentaModal
+          numero={ventaRegenerar.numero}
+          enviando={regenerandoId === ventaRegenerar.id}
+          error={errorRegenerar}
+          onClose={() => {
+            if (regenerandoId) return;
+            setVentaRegenerar(null);
+            setErrorRegenerar(null);
+          }}
+          onConfirmar={async () => {
+            if (!ventaRegenerar) return;
+            const v = ventaRegenerar;
+            setRegenerandoId(v.id);
+            setErrorRegenerar(null);
+            try {
+              const res = await fetchWithSupabaseSession(
+                `/api/ventas/${v.id}/regenerar`,
+                { method: "POST" }
+              );
+              const body = await res.json().catch(() => ({}));
+              if (!res.ok || body?.success === false) {
+                setErrorRegenerar(body?.error ?? "No se pudo regenerar la venta.");
+                return;
+              }
+              const facturaId = body?.data?.factura?.id;
+              if (facturaId) {
+                router.push(`/facturas/${facturaId}?auto=1`);
+                return;
+              }
+              setVentaRegenerar(null);
+              void recargar();
+            } catch {
+              setErrorRegenerar("Error de red al regenerar la venta.");
+            } finally {
+              setRegenerandoId(null);
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function RegenerarVentaModal({
+  numero,
+  enviando,
+  error,
+  onClose,
+  onConfirmar,
+}: {
+  numero: string;
+  enviando: boolean;
+  error: string | null;
+  onClose: () => void;
+  onConfirmar: () => void | Promise<void>;
+}) {
+  useEffect(() => {
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !enviando) onClose();
+    };
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+  }, [onClose, enviando]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !enviando) onClose();
+      }}
+    >
+      <div className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#4FAEB2]/15">
+              <RotateCw className="h-5 w-5 text-[#3F8E91]" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-slate-900">Regenerar venta</h3>
+              <p className="text-xs text-slate-500">Se crea una nueva venta con los mismos datos.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={enviando}
+            className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-50"
+            aria-label="Cerrar"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-3 px-5 py-4 text-sm text-slate-700">
+          <p>
+            Vamos a crear una nueva venta clonando <span className="font-semibold text-slate-900">{numero}</span>.
+          </p>
+          <ul className="space-y-1.5 rounded-lg bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
+            <li className="flex items-start gap-2">
+              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+              <span>Se copian cliente, ítems, precios, moneda y método de pago.</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+              <span>Se emite una nueva factura FAC-XXXXXX y arranca el pipeline SIFEN.</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+              <span>Se descuenta stock otra vez (se re-cobra a la caja).</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+              <span>La venta anulada {numero} queda intacta como registro histórico.</span>
+            </li>
+          </ul>
+
+          {error && (
+            <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-5 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={enviando}
+            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => void onConfirmar()}
+            disabled={enviando}
+            className="rounded-lg bg-[#4FAEB2] px-4 py-2 text-sm font-semibold text-white hover:bg-[#3F8E91] disabled:opacity-50"
+          >
+            {enviando ? "Regenerando…" : "Sí, regenerar venta"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
