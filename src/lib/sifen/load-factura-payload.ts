@@ -60,7 +60,7 @@ export async function loadValidatedSifenPayload(
       ? supabase
           .from("clientes")
           .select(
-            "id, empresa, nombre_contacto, nombre, nombre_facturacion, ruc, documento, direccion, telefono, email, pais, sifen_receptor_extranjero, sifen_codigo_pais, sifen_tipo_doc_receptor, sifen_receptor_manual, sifen_receptor_naturaleza, sifen_ti_ope, sifen_num_id_de, sifen_direccion_de, sifen_num_casa_de, sifen_descripcion_tipo_doc"
+            "id, empresa, nombre_contacto, nombre, nombre_facturacion, ruc, documento, tipo_cliente, es_contribuyente, direccion, telefono, email, pais, sifen_receptor_extranjero, sifen_codigo_pais, sifen_tipo_doc_receptor, sifen_receptor_manual, sifen_receptor_naturaleza, sifen_ti_ope, sifen_num_id_de, sifen_direccion_de, sifen_num_casa_de, sifen_descripcion_tipo_doc"
           )
           .eq("id", clienteId)
           .eq("empresa_id", empresaId)

@@ -511,13 +511,16 @@ export function buildOfficialRdeFacturaElectronicaXml(
     }
     if (receptor.email?.trim()) recParts.push(textEl("dEmailRec", receptor.email.trim()));
   } else if (
+    // B2B (contribuyente PY): dos vías de entrada.
     receptor.ruc?.trim() ||
-    // Fallback heurístico: si no hay RUC explícito pero el "documento" (CI PY) tiene
-    // formato `<cuerpo>-<DV>` (RUC de persona física en PY = CI + DV), tratarlo como
-    // RUC. Cubre clientes viejos cargados antes del checkbox "es contribuyente".
-    // Riesgo: si la persona NO está inscripta en la SET, SET responde "RUC receptor
-    // inexistente" (código distinto al 0301). Es un fallback consciente.
-    /^\d+-\d$/.test((receptor.documento ?? "").replace(/\s/g, "").trim())
+    // Fallback heurístico: documento con formato XXXXXXX-Y (CI PY con DV) SÓLO
+    // se trata como RUC contribuyente si el operador marcó explícitamente
+    // `es_contribuyente_py`. Antes se disparaba solo por el guión, ignorando
+    // el checkbox — causaba rechazo SET 0301 [1264] cuando la persona no
+    // estaba realmente inscripta en Marangatu. Con este guard, si el operador
+    // no marcó el flag, cae a la rama B2C aunque el formato sea de RUC.
+    (receptor.es_contribuyente_py === true &&
+      /^\d+-\d$/.test((receptor.documento ?? "").replace(/\s/g, "").trim()))
   ) {
     const rucSrc = (receptor.ruc?.trim() || (receptor.documento ?? "").replace(/\s/g, "").trim());
     const { cuerpo: dRucRec, dDV: dDVRec } = splitRucParaXml(rucSrc);

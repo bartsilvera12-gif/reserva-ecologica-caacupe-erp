@@ -247,6 +247,15 @@ export interface SifenPayloadReceptor {
   nombre: string;
   documento: string | null;
   ruc: string | null;
+  /**
+   * Persona física inscripta como contribuyente en Marangatu. Solo con
+   * true (y RUC PY válido o documento en formato XXXXXXX-Y) el DE sale como
+   * B2B (iTiOpe=1, iNatRec=1). Con false, se fuerza B2C (iTiOpe=2, iNatRec=2)
+   * aunque el documento tenga formato de RUC — evita el rechazo SET 0301 [1264]
+   * cuando el operador cargó la CI con DV sin intención de emitir B2B.
+   * null/undefined equivale a false (default seguro).
+   */
+  es_contribuyente_py?: boolean | null;
   direccion: string | null;
   telefono: string | null;
   email: string | null;
