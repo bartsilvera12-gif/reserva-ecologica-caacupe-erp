@@ -22,6 +22,17 @@
 -- misma instancia pero NO deben tocarse desde este repo.
 -- =============================================================================
 
+-- Nos aseguramos que exista la función helper `public.set_updated_at` (usada
+-- por los triggers de actualización). Este proyecto Supabase puede no tener
+-- corrido `20250312000003_erp_schema.sql`, así que la crearemos si falta.
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS TRIGGER AS $set_updated_at$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$set_updated_at$ LANGUAGE plpgsql;
+
 DO $$
 DECLARE
   r RECORD;
