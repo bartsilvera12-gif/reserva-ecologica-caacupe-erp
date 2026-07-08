@@ -17,19 +17,46 @@
 -- 3) NUEVA COLUMNA `nota_credito.tipo_nc` con check ('total' | 'parcial')
 --    y default 'total' para retro-compatibilidad.
 --
--- Idempotente. Aplica en cualquier schema tenant donde exista `nota_credito`.
+-- Idempotente. Aplica SOLO al schema `reservacaacupe`: es el único tenant
+-- activo para este proyecto. Otros tenants (luciastudios, etc.) viven en la
+-- misma instancia pero NO deben tocarse desde este repo.
 -- =============================================================================
 
 DO $$
 DECLARE
   r RECORD;
+  empresas_schema text;
+  empresas_fk text;
 BEGIN
+  -- Resolver dónde vive la tabla `empresas` en esta instancia. Distintos
+  -- despliegues Supabase tienen la tabla o bien en `zentra_erp` (multi-tenant
+  -- original) o bien en `public` (deploy standalone). Si no está en ninguno
+  -- de los dos, dejamos empresa_id sin FK — la app valida el empresa_id via
+  -- getTenantSupabaseFromAuth antes de insertar.
+  SELECT n.nspname
+    INTO empresas_schema
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE c.relname = 'empresas'
+      AND c.relkind = 'r'
+      AND n.nspname IN ('zentra_erp', 'public')
+    ORDER BY (n.nspname = 'zentra_erp') DESC
+    LIMIT 1;
+
+  IF empresas_schema IS NOT NULL THEN
+    empresas_fk := format(' REFERENCES %I.empresas(id) ON DELETE CASCADE', empresas_schema);
+  ELSE
+    empresas_fk := '';
+    RAISE NOTICE 'Tabla empresas no encontrada en zentra_erp ni public; se crea nota_credito_items sin FK a empresas.';
+  END IF;
+
   FOR r IN
     SELECT n.nspname AS sch
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE c.relname = 'nota_credito'
       AND c.relkind = 'r'
+      AND n.nspname = 'reservacaacupe'
   LOOP
     -- (1) tipo_nc en nota_credito
     EXECUTE format(
@@ -53,11 +80,12 @@ BEGIN
     -- La validación acumulada pasa al backend (sum aprobadas + pendientes <= saldo).
     EXECUTE format('DROP INDEX IF EXISTS %I.%I', r.sch, 'uq_nota_credito_factura_estado_activo');
 
-    -- (3) Tabla de ítems
+    -- (3) Tabla de ítems. La FK a empresas se resuelve dinámicamente arriba
+    -- para tolerar deploys donde la tabla vive en public o en zentra_erp.
     EXECUTE format($ddl$
       CREATE TABLE IF NOT EXISTS %1$s.nota_credito_items (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        empresa_id uuid NOT NULL REFERENCES zentra_erp.empresas(id) ON DELETE CASCADE,
+        empresa_id uuid NOT NULL%2$s,
         nota_credito_id uuid NOT NULL REFERENCES %1$s.nota_credito(id) ON DELETE CASCADE,
         -- Trazabilidad al item origen (nullable: puede ser un ajuste libre no
         -- ligado a una línea concreta de la factura).
@@ -78,7 +106,7 @@ BEGIN
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now()
       )
-    $ddl$, r.sch);
+    $ddl$, r.sch, empresas_fk);
 
     EXECUTE format(
       'CREATE INDEX IF NOT EXISTS idx_nota_credito_items_nc ON %I.nota_credito_items (empresa_id, nota_credito_id)',
