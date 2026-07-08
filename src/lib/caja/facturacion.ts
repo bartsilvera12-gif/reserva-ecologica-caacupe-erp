@@ -96,3 +96,26 @@ export function marcarFacturado(
     venta_numero: ventaNumero,
   };
 }
+
+/**
+ * Devuelve la metadata mergeada para "des-facturar" un pedido cuando la venta
+ * asociada fue anulada. Vuelve al estado 'pendiente_caja' para que reaparezca
+ * en el listado de Pedidos pendientes de facturación. Limpia venta_id /
+ * venta_numero / facturado_at (ya no representan la realidad) y deja rastro
+ * de auditoría con `desfacturado_at` y el número de venta que se anuló.
+ */
+export function marcarDesfacturadoPorAnulacion(
+  metadata: unknown,
+  nowIso: string,
+  ventaNumeroAnulado: string | null
+): ProyectoMetadata {
+  const base = asMetadataObject(metadata);
+  const { facturado_at: _fa, venta_id: _vi, venta_numero: _vn, ...rest } = base;
+  void _fa; void _vi; void _vn;
+  return {
+    ...rest,
+    facturacion_estado: "pendiente_caja",
+    desfacturado_at: nowIso,
+    desfacturado_venta_numero: ventaNumeroAnulado,
+  };
+}

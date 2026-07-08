@@ -3,6 +3,7 @@ import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { anularVentaCore, ventaTieneCobrosAplicados } from "@/lib/ventas/server/anular-venta-core";
+import { marcarDesfacturadoPorAnulacion } from "@/lib/caja/facturacion";
 
 /**
  * POST /api/ventas/[id]/anular
@@ -172,12 +173,65 @@ export async function POST(
       }
     }
 
+    // Best-effort: si la venta vino de un pedido (proyecto), revertir su
+    // metadata a 'pendiente_caja' para que reaparezca en el chip de Caja y
+    // se pueda facturar de nuevo. La detección es por metadata.venta_id ===
+    // ventaId (que fue seteado en /api/ventas/create al marcar el pedido
+    // como facturado). Si la venta no vino de un pedido, esta query no
+    // encuentra nada y se salta silenciosamente.
+    let pedido_reactivado_id: string | null = null;
+    try {
+      const nowIso = new Date().toISOString();
+      const pq = await sb
+        .from("proyectos")
+        .select("id, metadata")
+        .eq("empresa_id", empresaId)
+        .eq("metadata->>venta_id", ventaId)
+        .eq("metadata->>facturacion_estado", "facturado")
+        .limit(1);
+      if (pq.error) {
+        console.error("[anular venta] no se pudo buscar pedido origen", {
+          error: pq.error.message,
+        });
+      } else {
+        const rows = (pq.data ?? []) as Array<{ id: string; metadata: unknown }>;
+        if (rows.length > 0) {
+          const proy = rows[0]!;
+          const nuevaMeta = marcarDesfacturadoPorAnulacion(
+            proy.metadata,
+            nowIso,
+            res.numeroControl ?? null
+          );
+          const upd = await sb
+            .from("proyectos")
+            .update({
+              metadata: nuevaMeta,
+              last_activity_at: nowIso,
+              ultimo_movimiento_at: nowIso,
+            })
+            .eq("empresa_id", empresaId)
+            .eq("id", proy.id);
+          if (upd.error) {
+            console.error("[anular venta] no se pudo re-activar pedido en caja", {
+              pedidoId: proy.id,
+              error: upd.error.message,
+            });
+          } else {
+            pedido_reactivado_id = proy.id;
+          }
+        }
+      }
+    } catch (e) {
+      console.error("[anular venta] excepción reactivando pedido", { e });
+    }
+
     return NextResponse.json(
       successResponse({
         venta: { id: ventaId, estado: "anulada", numero_control: res.numeroControl },
         stock_reintegrado: res.stockReintegrado,
         ya_estaba_anulada: res.alreadyAnulada,
         factura_descartada,
+        pedido_reactivado_id,
       })
     );
   } catch (err) {
