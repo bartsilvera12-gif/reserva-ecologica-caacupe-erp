@@ -113,6 +113,33 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       }
     }
 
+    // Ítems de la factura origen: se usan para precargar el editor de NC
+    // parcial (Fase B) sin requerir un fetch extra. Best-effort: si la
+    // factura no tiene ítems desglosados (ej. facturas de suscripción),
+    // se devuelve array vacío.
+    const { data: facItemsRows } = await supabase
+      .from("factura_items")
+      .select("id, descripcion, cantidad, precio_unitario, subtotal, iva, total, tipo_iva")
+      .eq("factura_id", fid)
+      .eq("empresa_id", auth.empresa_id)
+      .order("created_at", { ascending: true });
+    const factura_items = (facItemsRows ?? []).map((r) => {
+      const row = r as Record<string, unknown>;
+      const tipoIvaRaw = String(row.tipo_iva ?? "").trim();
+      const tipoIva: "EXENTA" | "5%" | "10%" =
+        tipoIvaRaw === "5%" || tipoIvaRaw === "10%" ? tipoIvaRaw : "EXENTA";
+      return {
+        id: String(row.id ?? ""),
+        descripcion: String(row.descripcion ?? ""),
+        cantidad: Number(row.cantidad) || 0,
+        precio_unitario: Number(row.precio_unitario) || 0,
+        subtotal: Number(row.subtotal) || 0,
+        monto_iva: Number(row.iva) || 0,
+        total_linea: Number(row.total) || 0,
+        tipo_iva: tipoIva,
+      };
+    });
+
     return NextResponse.json(
       successResponse({
         items,
@@ -125,6 +152,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           cantidad_ncs: items.length,
           cantidad_aprobadas: items.filter((i) => i.estado_erp === "aprobada").length,
         },
+        factura_items,
       })
     );
   } catch (e) {

@@ -8,6 +8,17 @@ import type { NotaCreditoListItemDTO, SifenPrevueloFacturaNcDTO } from "@/lib/no
 const MSG_BLOQUEO_TIMBRADO_ORIGEN =
   "No se puede generar la NC porque el timbrado de la factura origen es inválido o inconsistente.";
 
+type FacturaItemPrecarga = {
+  id: string;
+  descripcion: string;
+  cantidad: number;
+  precio_unitario: number;
+  subtotal: number;
+  monto_iva: number;
+  total_linea: number;
+  tipo_iva: "EXENTA" | "5%" | "10%";
+};
+
 type NcApiGet = {
   success?: boolean;
   data?: {
@@ -15,9 +26,36 @@ type NcApiGet = {
     puede_crear: boolean;
     motivo_bloqueo_creacion: string | null;
     sifen_prevuelo_factura?: SifenPrevueloFacturaNcDTO;
+    factura_items?: FacturaItemPrecarga[];
   };
   error?: string;
 };
+
+/** Línea del editor de NC parcial. Coincide con el input backend, más un
+ *  `checked` para permitir seleccionar solo algunas líneas de la factura. */
+type LineaNcEditor = {
+  checked: boolean;
+  factura_item_id: string | null;
+  producto_nombre: string;
+  cantidad_max: number;
+  precio_unitario: number;
+  tipo_iva: "EXENTA" | "5%" | "10%";
+  cantidad: number;
+  total_linea: number;
+  modo: "unidades" | "monto";
+};
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+function ivaIncluidoDeTotal(total: number, tipoIva: "EXENTA" | "5%" | "10%"): number {
+  if (tipoIva === "10%") return round2((total * 10) / 110);
+  if (tipoIva === "5%") return round2((total * 5) / 105);
+  return 0;
+}
+function totalDesdeCantidad(cantidad: number, precioUnit: number): number {
+  return round2(cantidad * precioUnit);
+}
 
 function labelEstadoErp(e: string) {
   const m: Record<string, string> = {
@@ -173,6 +211,9 @@ export function FacturaCorreccionFiscalNC({
   const [motivo, setMotivo] = useState("");
   const [obs, setObs] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [tipoNc, setTipoNc] = useState<"total" | "parcial">("total");
+  const [facturaItemsCache, setFacturaItemsCache] = useState<FacturaItemPrecarga[]>([]);
+  const [lineasEditor, setLineasEditor] = useState<LineaNcEditor[]>([]);
   const [flash, setFlash] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [sifenNcId, setSifenNcId] = useState<string | null>(null);
   /** Config SIFEN empresa + flag servidor (solo para herramientas *-test opcionales). */
@@ -227,6 +268,7 @@ export function FacturaCorreccionFiscalNC({
       setPuedeCrear(j.data.puede_crear);
       setBloqueo(j.data.motivo_bloqueo_creacion ?? null);
       setSifenPrevueloFactura(j.data.sifen_prevuelo_factura ?? null);
+      setFacturaItemsCache(j.data.factura_items ?? []);
     } catch {
       setItems([]);
       setPuedeCrear(false);
@@ -241,6 +283,67 @@ export function FacturaCorreccionFiscalNC({
     void reload();
   }, [reload]);
 
+  function abrirModalCrear() {
+    setMotivo("");
+    setObs("");
+    setTipoNc("total");
+    // Precarga las líneas desde factura_items. Todas empiezan desmarcadas
+    // en modo 'unidades' con la cantidad y precio originales.
+    const lineas: LineaNcEditor[] = facturaItemsCache.map((it) => {
+      const precioUnit =
+        it.cantidad > 0
+          ? round2(it.total_linea / it.cantidad)
+          : round2(it.precio_unitario);
+      return {
+        checked: false,
+        factura_item_id: it.id,
+        producto_nombre: it.descripcion,
+        cantidad_max: it.cantidad,
+        precio_unitario: precioUnit,
+        tipo_iva: it.tipo_iva,
+        cantidad: it.cantidad,
+        total_linea: it.total_linea,
+        modo: "unidades",
+      };
+    });
+    setLineasEditor(lineas);
+    setModalOpen(true);
+  }
+
+  const totalParcialSeleccionado = round2(
+    lineasEditor.filter((l) => l.checked).reduce((s, l) => s + l.total_linea, 0)
+  );
+
+  function actualizarLinea(idx: number, patch: Partial<LineaNcEditor>) {
+    setLineasEditor((prev) => {
+      const next = prev.slice();
+      const actual = next[idx];
+      if (!actual) return prev;
+      const merged: LineaNcEditor = { ...actual, ...patch };
+      // Si cambia el modo, recalcula base sensata.
+      if (patch.modo && patch.modo !== actual.modo) {
+        if (merged.modo === "unidades") {
+          merged.cantidad = Math.min(actual.cantidad_max, actual.cantidad || 1);
+          merged.total_linea = totalDesdeCantidad(merged.cantidad, merged.precio_unitario);
+        } else {
+          merged.cantidad = 1;
+        }
+      }
+      // Si cambia cantidad en modo 'unidades', recalcula total.
+      if ("cantidad" in patch && merged.modo === "unidades") {
+        const clamped = Math.max(0, Math.min(merged.cantidad_max, Number(patch.cantidad) || 0));
+        merged.cantidad = clamped;
+        merged.total_linea = totalDesdeCantidad(clamped, merged.precio_unitario);
+      }
+      // Si cambia total en modo 'monto', respetá el valor libre.
+      if ("total_linea" in patch && merged.modo === "monto") {
+        merged.total_linea = Math.max(0, round2(Number(patch.total_linea) || 0));
+      }
+      next[idx] = merged;
+      return next;
+    });
+  }
+
   async function handleCrear() {
     setFlash(null);
     const m = motivo.trim();
@@ -248,15 +351,43 @@ export function FacturaCorreccionFiscalNC({
       setFlash({ kind: "err", text: "El motivo debe tener al menos 5 caracteres." });
       return;
     }
+    // Validaciones cliente para NC parcial.
+    const lineasElegidas = lineasEditor.filter((l) => l.checked && l.total_linea > 0);
+    if (tipoNc === "parcial") {
+      if (lineasElegidas.length === 0) {
+        setFlash({ kind: "err", text: "Marcá al menos una línea con total mayor a 0." });
+        return;
+      }
+      if (totalParcialSeleccionado > saldo + 0.02) {
+        setFlash({
+          kind: "err",
+          text: `La suma seleccionada (${monedaLabel} ${formatGs(totalParcialSeleccionado, moneda)}) supera el saldo (${monedaLabel} ${formatGs(saldo, moneda)}).`,
+        });
+        return;
+      }
+    }
     setSubmitting(true);
     try {
+      const body: Record<string, unknown> = {
+        motivo: m,
+        observacion_interna: obs.trim() || null,
+        tipo_nc: tipoNc,
+      };
+      if (tipoNc === "parcial") {
+        body.items = lineasElegidas.map((l) => ({
+          factura_item_id: l.factura_item_id,
+          producto_nombre: l.producto_nombre,
+          cantidad: l.modo === "unidades" ? l.cantidad : 1,
+          precio_unitario: l.modo === "unidades" ? l.precio_unitario : l.total_linea,
+          tipo_iva: l.tipo_iva,
+          total_linea: l.total_linea,
+          modo: l.modo,
+        }));
+      }
       const res = await fetchWithSupabaseSession(`/api/facturas/${facturaId}/notas-credito`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          motivo: m,
-          observacion_interna: obs.trim() || null,
-        }),
+        body: JSON.stringify(body),
       });
       const j = (await res.json()) as { success?: boolean; error?: string };
       if (!res.ok || !j.success) {
@@ -403,10 +534,8 @@ export function FacturaCorreccionFiscalNC({
           <button
             type="button"
             onClick={() => {
-              setMotivo("");
-              setObs("");
               setFlash(null);
-              setModalOpen(true);
+              abrirModalCrear();
             }}
             className="px-4 py-2.5 text-xs font-semibold rounded-lg bg-amber-600 text-white hover:bg-amber-700 shadow-sm"
           >
@@ -652,7 +781,9 @@ export function FacturaCorreccionFiscalNC({
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-400">Saldo pendiente (= NC)</dt>
+                <dt className="text-slate-400">
+                  Saldo disponible {tipoNc === "total" ? "(= NC)" : ""}
+                </dt>
                 <dd className="tabular-nums font-bold text-amber-900">
                   {monedaLabel} {formatGs(saldo, moneda)}
                 </dd>
@@ -662,6 +793,163 @@ export function FacturaCorreccionFiscalNC({
                 ambiente de la empresa).
               </div>
             </dl>
+
+            {/* Toggle Total / Parcial */}
+            <div>
+              <div className="text-xs font-semibold text-slate-600 mb-1">Tipo de nota de crédito</div>
+              <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setTipoNc("total")}
+                  className={`px-3 py-1.5 text-xs font-semibold ${
+                    tipoNc === "total"
+                      ? "bg-amber-600 text-white"
+                      : "bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  Total (acredita todo)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTipoNc("parcial")}
+                  disabled={facturaItemsCache.length === 0}
+                  title={
+                    facturaItemsCache.length === 0
+                      ? "No hay ítems de factura para seleccionar."
+                      : undefined
+                  }
+                  className={`px-3 py-1.5 text-xs font-semibold ${
+                    tipoNc === "parcial"
+                      ? "bg-amber-600 text-white"
+                      : "bg-white text-slate-700 hover:bg-slate-50"
+                  } disabled:opacity-40 disabled:cursor-not-allowed`}
+                >
+                  Parcial (por ítem)
+                </button>
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500">
+                {tipoNc === "total"
+                  ? "Acredita todo el saldo pendiente en un solo tramo."
+                  : "Elegí líneas y modo por cada ítem. Podés emitir varias NC parciales hasta agotar el saldo."}
+              </p>
+            </div>
+
+            {/* Editor de líneas cuando es parcial */}
+            {tipoNc === "parcial" && lineasEditor.length > 0 && (
+              <div className="rounded-lg border border-slate-200 overflow-hidden">
+                <div className="max-h-64 overflow-auto">
+                  <table className="w-full text-[11px]">
+                    <thead className="bg-slate-50 sticky top-0">
+                      <tr className="text-left text-slate-500">
+                        <th className="px-2 py-1 w-8"></th>
+                        <th className="px-2 py-1">Producto</th>
+                        <th className="px-2 py-1">Modo</th>
+                        <th className="px-2 py-1 text-right">Cant.</th>
+                        <th className="px-2 py-1 text-right">Total línea</th>
+                        <th className="px-2 py-1 text-right">IVA</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lineasEditor.map((l, idx) => {
+                        const iva = ivaIncluidoDeTotal(l.total_linea, l.tipo_iva);
+                        return (
+                          <tr key={idx} className="border-t border-slate-100">
+                            <td className="px-2 py-1 align-middle">
+                              <input
+                                type="checkbox"
+                                checked={l.checked}
+                                onChange={(e) => actualizarLinea(idx, { checked: e.target.checked })}
+                              />
+                            </td>
+                            <td className="px-2 py-1 align-middle">
+                              <div className="text-slate-800">{l.producto_nombre}</div>
+                              <div className="text-[10px] text-slate-400">
+                                Máx {l.cantidad_max} × {monedaLabel} {formatGs(l.precio_unitario, moneda)} ({l.tipo_iva})
+                              </div>
+                            </td>
+                            <td className="px-2 py-1 align-middle">
+                              <select
+                                value={l.modo}
+                                disabled={!l.checked}
+                                onChange={(e) =>
+                                  actualizarLinea(idx, { modo: e.target.value as "unidades" | "monto" })
+                                }
+                                className="text-[11px] border border-slate-200 rounded px-1 py-0.5 disabled:opacity-40"
+                              >
+                                <option value="unidades">Unidades</option>
+                                <option value="monto">Monto</option>
+                              </select>
+                            </td>
+                            <td className="px-2 py-1 align-middle text-right">
+                              {l.modo === "unidades" ? (
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={l.cantidad_max}
+                                  step={l.cantidad_max % 1 === 0 ? 1 : 0.01}
+                                  value={l.cantidad}
+                                  disabled={!l.checked}
+                                  onChange={(e) => actualizarLinea(idx, { cantidad: Number(e.target.value) })}
+                                  className="w-16 text-right border border-slate-200 rounded px-1 py-0.5 disabled:opacity-40"
+                                />
+                              ) : (
+                                <span className="text-slate-400">1</span>
+                              )}
+                            </td>
+                            <td className="px-2 py-1 align-middle text-right">
+                              {l.modo === "monto" ? (
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={1}
+                                  value={l.total_linea}
+                                  disabled={!l.checked}
+                                  onChange={(e) => actualizarLinea(idx, { total_linea: Number(e.target.value) })}
+                                  className="w-24 text-right border border-slate-200 rounded px-1 py-0.5 disabled:opacity-40 tabular-nums"
+                                />
+                              ) : (
+                                <span className="tabular-nums text-slate-800">
+                                  {monedaLabel} {formatGs(l.total_linea, moneda)}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-2 py-1 align-middle text-right tabular-nums text-slate-500">
+                              {monedaLabel} {formatGs(iva, moneda)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot className="bg-slate-50 border-t border-slate-200">
+                      <tr>
+                        <td colSpan={4} className="px-2 py-1 text-right font-semibold text-slate-600">
+                          Total NC seleccionada
+                        </td>
+                        <td className="px-2 py-1 text-right tabular-nums font-bold text-amber-900">
+                          {monedaLabel} {formatGs(totalParcialSeleccionado, moneda)}
+                        </td>
+                        <td />
+                      </tr>
+                      <tr>
+                        <td colSpan={6} className="px-2 py-1 text-right text-[10px] text-slate-500">
+                          Saldo disponible: {monedaLabel} {formatGs(saldo, moneda)}.
+                          {totalParcialSeleccionado > saldo + 0.02 && (
+                            <span className="text-red-600 ml-1">Supera el saldo.</span>
+                          )}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {tipoNc === "parcial" && lineasEditor.length === 0 && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                Esta factura no tiene ítems desglosados (ej. factura de suscripción). Usá el modo Total.
+              </div>
+            )}
+
             <label className="block text-xs font-semibold text-slate-600">
               Motivo (obligatorio)
               <textarea
