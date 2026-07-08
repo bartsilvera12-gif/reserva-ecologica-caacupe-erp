@@ -323,6 +323,16 @@ export interface SifenNotaCreditoPayload {
     motivo: string;
     /** Fecha calendario YYYY-MM-DD alineada al CDC (emisión NC = misma lógica que FE). */
     fecha_emision: string;
+    /** Líneas de una NC parcial. Si es null/undefined, el XML emite un solo
+     *  ítem genérico con el total. Cada línea es IVA-incluido en Gs./USD. */
+    items?: {
+      producto_nombre: string;
+      sku?: string | null;
+      cantidad: number;
+      precio_unitario: number;
+      tipo_iva: "EXENTA" | "5%" | "10%";
+      total_linea: number;
+    }[] | null;
   };
   facturaOrigen: {
     numero_factura: string;

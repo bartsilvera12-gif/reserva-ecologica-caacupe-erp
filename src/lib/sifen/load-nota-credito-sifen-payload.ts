@@ -200,6 +200,36 @@ export async function loadValidatedNotaCreditoSifenPayload(
 
   const fx = vOrigen.fiscal;
 
+  // Fase B: si la NC es parcial, cargamos las líneas de nota_credito_items
+  // para que el XML emita un gCamItem por producto. NC total mantiene ítem
+  // genérico único.
+  const tipoNcRaw = String((nc as { tipo_nc?: string }).tipo_nc ?? "total");
+  let ncItems: NonNullable<SifenNotaCreditoPayload["notaCredito"]["items"]> | null = null;
+  if (tipoNcRaw === "parcial") {
+    const { data: ncItemsRows } = await supabase
+      .from("nota_credito_items")
+      .select("producto_nombre_snapshot, sku_snapshot, cantidad, precio_unitario, tipo_iva, total_linea")
+      .eq("nota_credito_id", nid)
+      .eq("empresa_id", empresaId)
+      .order("created_at", { ascending: true });
+    const rows = (ncItemsRows ?? []) as Record<string, unknown>[];
+    if (rows.length > 0) {
+      ncItems = rows.map((r) => {
+        const tipoIvaRaw = String(r.tipo_iva ?? "").trim();
+        const tipoIva: "EXENTA" | "5%" | "10%" =
+          tipoIvaRaw === "5%" || tipoIvaRaw === "10%" ? tipoIvaRaw : "EXENTA";
+        return {
+          producto_nombre: String(r.producto_nombre_snapshot ?? "").trim() || "Ítem NC",
+          sku: r.sku_snapshot == null ? null : String(r.sku_snapshot),
+          cantidad: Number(r.cantidad) || 0,
+          precio_unitario: Number(r.precio_unitario) || 0,
+          tipo_iva: tipoIva,
+          total_linea: Number(r.total_linea) || 0,
+        };
+      });
+    }
+  }
+
   const payload: SifenNotaCreditoPayload = {
     emisor: {
       ruc: String(cfg.ruc ?? "").trim(),
@@ -236,6 +266,7 @@ export async function loadValidatedNotaCreditoSifenPayload(
       monto: Number((nc as { monto: unknown }).monto),
       motivo: String((nc as { motivo: string }).motivo ?? "").trim(),
       fecha_emision: String((factura as { fecha: string }).fecha).trim(),
+      items: ncItems,
     },
     facturaOrigen: {
       numero_factura: String((factura as { numero_factura: string }).numero_factura),

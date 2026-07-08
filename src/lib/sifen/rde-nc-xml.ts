@@ -292,48 +292,114 @@ export function buildOfficialRdeNotaCreditoElectronicaXml(
   const { iMotEmi, dDesMotEmi } = mapMotivoNcSifen(notaCredito.motivo);
   const T = Math.round(Number(notaCredito.monto));
   if (!(T > 0)) throw new Error("El monto de la nota de crédito debe ser mayor a cero.");
-  const sp = splitIvaIncluidoDesdeTotal(T, 10);
-  const baseGrav = sp.base;
-  const dLiq = sp.iva;
-  const dTotOpeItem = T;
 
-  const dDesProSer =
-    esAmbienteTest && SIFEN_TEST_LITERAL_DOCUMENTO.length > 0
-      ? SIFEN_TEST_LITERAL_DOCUMENTO.slice(0, 120)
-      : `Nota de crédito — ${notaCredito.motivo.slice(0, 100)}`;
+  // Fase B: si hay items[] emitimos un gCamItem por producto, con su propia
+  // tasa de IVA. Si no, mantenemos el ítem genérico único (compat con NC total).
+  type LineaXml = { descripcion: string; codigo: string; total: number; tasa: 0 | 5 | 10; base: number; iva: number };
+  const items = Array.isArray(notaCredito.items) && notaCredito.items.length > 0
+    ? notaCredito.items
+    : null;
 
-  const itemXml = [
-    "<gCamItem>",
-    textEl("dCodInt", "NC1"),
-    textEl("dDesProSer", dDesProSer),
-    textEl("cUniMed", "77"),
-    textEl("dDesUniMed", XSD_DES_UNI_MED),
-    textEl("dCantProSer", "1"),
-    "<gValorItem>",
-    textEl("dPUniProSer", dTotOpeItem),
-    textEl("dTotBruOpeItem", dTotOpeItem),
-    "<gValorRestaItem>",
-    textEl("dDescItem", "0"),
-    textEl("dTotOpeItem", dTotOpeItem),
-    "</gValorRestaItem>",
-    "</gValorItem>",
-    "<gCamIVA>",
-    textEl("iAfecIVA", "1"),
-    textEl("dDesAfecIVA", XSD_DES_AFEC_GRAVADO),
-    textEl("dPropIVA", 100),
-    textEl("dTasaIVA", 10),
-    textEl("dBasGravIVA", baseGrav),
-    textEl("dLiqIVAItem", dLiq),
-    textEl("dBasExe", 0),
-    "</gCamIVA>",
-    "</gCamItem>",
-  ].join("");
+  let lineas: LineaXml[];
+  if (items) {
+    let sumaTotales = 0;
+    lineas = items.map((it, idx) => {
+      const totalLinea = Math.round(Number(it.total_linea));
+      sumaTotales += totalLinea;
+      const tasa: 0 | 5 | 10 = it.tipo_iva === "10%" ? 10 : it.tipo_iva === "5%" ? 5 : 0;
+      let base = totalLinea;
+      let iva = 0;
+      if (tasa === 10 || tasa === 5) {
+        const sp = splitIvaIncluidoDesdeTotal(totalLinea, tasa);
+        base = sp.base;
+        iva = sp.iva;
+      }
+      return {
+        descripcion:
+          esAmbienteTest && SIFEN_TEST_LITERAL_DOCUMENTO.length > 0 && idx === 0
+            ? SIFEN_TEST_LITERAL_DOCUMENTO.slice(0, 120)
+            : String(it.producto_nombre).slice(0, 120),
+        codigo: (it.sku && String(it.sku).trim()) || `L${idx + 1}`,
+        total: totalLinea,
+        tasa,
+        base,
+        iva,
+      };
+    });
+    if (Math.abs(sumaTotales - T) > 2) {
+      throw new Error(
+        `NC parcial: la suma de items (${sumaTotales}) no coincide con el monto de la NC (${T}).`
+      );
+    }
+  } else {
+    const sp = splitIvaIncluidoDesdeTotal(T, 10);
+    const dDesProSer =
+      esAmbienteTest && SIFEN_TEST_LITERAL_DOCUMENTO.length > 0
+        ? SIFEN_TEST_LITERAL_DOCUMENTO.slice(0, 120)
+        : `Nota de crédito — ${notaCredito.motivo.slice(0, 100)}`;
+    lineas = [
+      {
+        descripcion: dDesProSer,
+        codigo: "NC1",
+        total: T,
+        tasa: 10,
+        base: sp.base,
+        iva: sp.iva,
+      },
+    ];
+  }
+
+  const itemXml = lineas
+    .map((l) => {
+      const iAfec = l.tasa === 0 ? "3" : "1";
+      const desAfec = l.tasa === 0 ? "Exento" : XSD_DES_AFEC_GRAVADO;
+      return [
+        "<gCamItem>",
+        textEl("dCodInt", l.codigo.slice(0, 20)),
+        textEl("dDesProSer", l.descripcion),
+        textEl("cUniMed", "77"),
+        textEl("dDesUniMed", XSD_DES_UNI_MED),
+        textEl("dCantProSer", "1"),
+        "<gValorItem>",
+        textEl("dPUniProSer", l.total),
+        textEl("dTotBruOpeItem", l.total),
+        "<gValorRestaItem>",
+        textEl("dDescItem", "0"),
+        textEl("dTotOpeItem", l.total),
+        "</gValorRestaItem>",
+        "</gValorItem>",
+        "<gCamIVA>",
+        textEl("iAfecIVA", iAfec),
+        textEl("dDesAfecIVA", desAfec),
+        textEl("dPropIVA", 100),
+        textEl("dTasaIVA", l.tasa),
+        textEl("dBasGravIVA", l.base),
+        textEl("dLiqIVAItem", l.iva),
+        textEl("dBasExe", l.tasa === 0 ? l.total : 0),
+        "</gCamIVA>",
+        "</gCamItem>",
+      ].join("");
+    })
+    .join("");
+
+  const sumaTotOpeItem = lineas.reduce((s, l) => s + l.total, 0);
+  const sumaSub10 = lineas.filter((l) => l.tasa === 10).reduce((s, l) => s + l.total, 0);
+  const sumaSub5 = lineas.filter((l) => l.tasa === 5).reduce((s, l) => s + l.total, 0);
+  const sumaSubExe = lineas.filter((l) => l.tasa === 0).reduce((s, l) => s + l.total, 0);
+  const sumaIva10 = lineas.filter((l) => l.tasa === 10).reduce((s, l) => s + l.iva, 0);
+  const sumaIva5 = lineas.filter((l) => l.tasa === 5).reduce((s, l) => s + l.iva, 0);
+  const sumaBase10 = lineas.filter((l) => l.tasa === 10).reduce((s, l) => s + l.base, 0);
+  const sumaBase5 = lineas.filter((l) => l.tasa === 5).reduce((s, l) => s + l.base, 0);
+  const sumaTotIva = sumaIva10 + sumaIva5;
+  const sumaBaseGravTotal = sumaBase10 + sumaBase5;
 
   /** Secuencia estricta `tgTotSub` en DE_v150.xsd (igual que `buildOfficialRdeElectronicaXml` en rde-xml.ts). */
   const totParts: string[] = ["<gTotSub>"];
-  totParts.push(textEl("dSub10", dTotOpeItem));
+  if (sumaSubExe > 0) totParts.push(textEl("dSubExe", sumaSubExe));
+  if (sumaSub5 > 0) totParts.push(textEl("dSub5", sumaSub5));
+  totParts.push(textEl("dSub10", sumaSub10));
   totParts.push(
-    textEl("dTotOpe", dTotOpeItem),
+    textEl("dTotOpe", sumaTotOpeItem),
     textEl("dTotDesc", "0"),
     textEl("dTotDescGlotem", "0"),
     textEl("dTotAntItem", "0"),
@@ -342,12 +408,14 @@ export function buildOfficialRdeNotaCreditoElectronicaXml(
     textEl("dDescTotal", "0"),
     textEl("dAnticipo", "0"),
     textEl("dRedon", montoRedondeo(0)),
-    textEl("dTotGralOpe", dTotOpeItem)
+    textEl("dTotGralOpe", sumaTotOpeItem)
   );
-  totParts.push(textEl("dIVA10", dLiq));
-  totParts.push(textEl("dTotIVA", dLiq));
-  totParts.push(textEl("dBaseGrav10", baseGrav));
-  totParts.push(textEl("dTBasGraIVA", baseGrav));
+  if (sumaIva5 > 0) totParts.push(textEl("dIVA5", sumaIva5));
+  totParts.push(textEl("dIVA10", sumaIva10));
+  totParts.push(textEl("dTotIVA", sumaTotIva));
+  if (sumaBase5 > 0) totParts.push(textEl("dBaseGrav5", sumaBase5));
+  totParts.push(textEl("dBaseGrav10", sumaBase10));
+  totParts.push(textEl("dTBasGraIVA", sumaBaseGravTotal));
   /**
    * `dTotalGs` (minOccurs=0): solo si `cMoneOpe` ≠ PYG. Con Guaraníes, omitir (SET 2389),
    * coherente con factura electrónica en `rde-xml.ts`.
