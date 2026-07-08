@@ -63,12 +63,47 @@ export async function GET(request: NextRequest) {
     const ventasQ = await ctx.supabase
       .from("ventas")
       .select(
-        "id, empresa_id, numero_control, moneda, tipo_cambio, subtotal, monto_iva, total, tipo_venta, plazo_dias, metodo_pago, fecha, genera_nota_remision, nota_remision_numero, estado, anulada_at, anulacion_motivo, factura_id"
+        "id, empresa_id, numero_control, moneda, tipo_cambio, subtotal, monto_iva, total, tipo_venta, plazo_dias, metodo_pago, fecha, genera_nota_remision, nota_remision_numero, estado, anulada_at, anulacion_motivo, factura_id, cliente_id"
       )
       .eq("empresa_id", empresaId)
       .order("fecha", { ascending: false })
       .limit(500);
     if (ventasQ.error) throw new Error(ventasQ.error.message);
+
+    // Cargar nombre del cliente para las ventas asociadas a un cliente.
+    // Batch por eficiencia; si el join falla se degrada silenciosamente
+    // (el UI muestra "Consumidor final" cuando no hay cliente).
+    const clienteIds = [
+      ...new Set(
+        ((ventasQ.data ?? []) as Array<{ cliente_id?: string | null }>)
+          .map((v) => v.cliente_id)
+          .filter((v): v is string => !!v)
+      ),
+    ];
+    const clienteNombreByIdMap = new Map<string, string>();
+    if (clienteIds.length > 0) {
+      const clQ = await ctx.supabase
+        .from("clientes")
+        .select("id, empresa, nombre_contacto, nombre, nombre_facturacion")
+        .eq("empresa_id", empresaId)
+        .in("id", clienteIds);
+      if (!clQ.error) {
+        for (const row of ((clQ.data ?? []) as Array<{
+          id: string;
+          empresa?: string | null;
+          nombre_contacto?: string | null;
+          nombre?: string | null;
+          nombre_facturacion?: string | null;
+        }>)) {
+          const disp =
+            (row.nombre_facturacion?.trim() || "") ||
+            (row.empresa?.trim() || "") ||
+            (row.nombre_contacto?.trim() || "") ||
+            (row.nombre?.trim() || "");
+          if (disp) clienteNombreByIdMap.set(row.id, disp);
+        }
+      }
+    }
 
     // Cargar numero_factura para las ventas que ya tienen factura ERP. Un batch
     // por eficiencia; si el join falla, degradamos a solo id (la UI muestra "Facturada").
@@ -159,6 +194,11 @@ export async function GET(request: NextRequest) {
         factura_estado_sifen: (() => {
           const fid = (r as unknown as { factura_id?: string | null }).factura_id;
           return fid ? feEstadoByFacturaMap.get(fid) ?? null : null;
+        })(),
+        cliente_id: ((r as unknown as { cliente_id?: string | null }).cliente_id) ?? null,
+        cliente_nombre: (() => {
+          const cid = (r as unknown as { cliente_id?: string | null }).cliente_id;
+          return cid ? clienteNombreByIdMap.get(cid) ?? null : null;
         })(),
       };
     });

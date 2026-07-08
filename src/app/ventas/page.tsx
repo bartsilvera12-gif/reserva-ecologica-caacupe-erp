@@ -179,10 +179,13 @@ export default function VentasPage() {
   const metricas = calcularMetricas(todas);
 
   const filtradas = todas.filter((v) => {
-    // Búsqueda global: número de control, nombre o SKU de cualquier ítem
+    // Búsqueda global: número de control, CLIENTE, nombre o SKU de cualquier ítem.
+    // Se prioriza para que buscar el nombre del cliente sea el caso principal
+    // (pedido explícito del cliente: "filtrar por cliente en vez de productos").
     if (busqueda.trim() !== "") {
       const t = busqueda.toLowerCase().trim();
       const coincide =
+        (v.cliente_nombre ?? "").toLowerCase().includes(t) ||
         v.numero_control.toLowerCase().includes(t) ||
         v.items.some(
           (i) =>
@@ -276,7 +279,7 @@ export default function VentasPage() {
         <div className="flex flex-wrap items-center gap-3 mb-5 pb-5 border-b border-gray-100">
           <input
             type="text"
-            placeholder="Buscar por número, producto o SKU..."
+            placeholder="Buscar por cliente, número, producto o SKU..."
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
             className={`${inputFilterClass} min-w-0 flex-1 sm:min-w-64`}
@@ -326,6 +329,7 @@ export default function VentasPage() {
             <thead>
               <tr className="bg-slate-50 text-slate-600 text-sm font-semibold">
                 <th className="py-3 pr-4 font-medium">Número</th>
+                <th className="py-3 pr-4 font-medium">Cliente</th>
                 <th className="py-3 pr-4 font-medium">Productos</th>
                 <th className="hidden py-3 pr-4 text-center font-medium lg:table-cell">Ítems</th>
                 <th className="py-3 pr-4 font-medium text-right hidden lg:table-cell">Cant. total</th>
@@ -341,7 +345,7 @@ export default function VentasPage() {
             <tbody>
               {filtradas.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-12 text-center text-gray-400">
+                  <td colSpan={12} className="py-12 text-center text-gray-400">
                     {todas.length === 0
                       ? "No hay ventas registradas"
                       : "Ninguna venta coincide con los filtros"}
@@ -376,6 +380,20 @@ export default function VentasPage() {
                           </button>
                           <span>{v.numero_control}</span>
                         </div>
+                      </td>
+                      <td className="py-4 pr-4 align-middle text-slate-700">
+                        {v.cliente_id && v.cliente_nombre ? (
+                          <Link
+                            href={`/clientes/${v.cliente_id}`}
+                            className="font-medium text-slate-800 hover:underline"
+                          >
+                            {v.cliente_nombre}
+                          </Link>
+                        ) : v.cliente_nombre ? (
+                          <span className="font-medium text-slate-800">{v.cliente_nombre}</span>
+                        ) : (
+                          <span className="text-xs italic text-slate-400">Consumidor final</span>
+                        )}
                       </td>
                       <td
                         className="py-4 pr-4 align-middle cursor-pointer"
@@ -485,7 +503,7 @@ export default function VentasPage() {
                     </tr>
                     {abierta && (
                       <tr className={`border-b border-slate-200 bg-slate-50/60 ${anulada ? "opacity-60" : ""}`}>
-                        <td colSpan={11} className="px-4 py-3">
+                        <td colSpan={12} className="px-4 py-3">
                           <div className="rounded-lg border border-slate-200 bg-white p-3">
                             <div className="mb-2 flex items-baseline justify-between">
                               <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">

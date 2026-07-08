@@ -54,6 +54,11 @@ export interface Venta {
   anulada_at?: string | null;
   anulacion_motivo?: string | null;
 
+  /** Cliente asociado a la venta. null cuando la venta fue a consumidor final sin ficha. */
+  cliente_id?: string | null;
+  /** Nombre para mostrar en listados de Caja (prioriza nombre_facturacion → empresa
+   *  → nombre_contacto → nombre). null cuando no hay cliente. */
+  cliente_nombre?: string | null;
   /** Factura ERP asociada (puente venta→factura). null si la venta no emitió factura. */
   factura_id?: string | null;
   numero_factura?: string | null;
