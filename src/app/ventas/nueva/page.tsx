@@ -578,6 +578,31 @@ export default function NuevaVentaPage() {
     setTimeout(() => comboInputRef.current?.focus(), 0);
   }
 
+  /**
+   * Cambia la cantidad de una línea ya cargada al carrito. Recalcula subtotal /
+   * monto_iva / total_linea manteniendo IVA incluido. Rechaza silenciosamente
+   * cantidades inválidas (0, negativas, NaN) — el input las mantiene visualmente
+   * pero no dispara update hasta que el usuario tipee algo válido.
+   */
+  function handleCambiarCantidad(index: number, nuevaCantidad: number) {
+    if (!Number.isFinite(nuevaCantidad) || nuevaCantidad <= 0) return;
+    setItems((prev) =>
+      prev.map((it, i) => {
+        if (i !== index) return it;
+        const totalLinea = nuevaCantidad * it.precio_venta;
+        const montoIva = calcIva(it.tipo_iva, totalLinea);
+        const subtotal = totalLinea - montoIva;
+        return {
+          ...it,
+          cantidad: nuevaCantidad,
+          subtotal,
+          monto_iva: montoIva,
+          total_linea: totalLinea,
+        };
+      })
+    );
+  }
+
   function handleEliminarLinea(index: number) {
     setItems((prev) => prev.filter((_, i) => i !== index));
   }
@@ -882,7 +907,22 @@ export default function NuevaVentaPage() {
                           {item.sku}
                         </td>
                         <td className="py-3 pr-3 text-right tabular-nums">
-                          {item.cantidad}
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="any"
+                            inputMode="decimal"
+                            value={item.cantidad}
+                            onChange={(e) => {
+                              const raw = e.target.value.replace(",", ".");
+                              const n = Number(raw);
+                              if (Number.isFinite(n) && n > 0) {
+                                handleCambiarCantidad(idx, n);
+                              }
+                            }}
+                            className="w-16 rounded border border-slate-200 bg-white px-2 py-1 text-right text-sm tabular-nums text-slate-800 focus:border-[#4FAEB2] focus:outline-none focus:ring-1 focus:ring-[#4FAEB2]"
+                            aria-label={`Cantidad de ${item.producto_nombre}`}
+                          />
                         </td>
                         <td className="py-3 pr-3 text-right tabular-nums text-gray-600 text-xs">
                           {formatGs(item.precio_venta)}
