@@ -70,6 +70,11 @@ export interface CreateVentaPgParams {
   permitirSinStock?: boolean;
   /** Si true y hay cliente, la venta emite nota de remisión (documento NO fiscal) con número NR-XXXXXX. */
   generaNotaRemision?: boolean;
+  /** Si true (default), la venta activa el puente Venta → Factura ERP: crea
+   *  `facturas` FAC-XXXXXX, `factura_items` y linkea `ventas.factura_id`.
+   *  Si false, se registra solo la venta (ideal para "solo ticket"), no se
+   *  toca `facturas` y `ventas.factura_id` queda null. */
+  emitirFactura?: boolean;
   /** Auditoría: usuario que dispara la venta. Se guarda en cada `movimientos_inventario`
    *  para que /inventario/movimientos muestre quién hizo la salida de stock. */
   createdBy?: string | null;
@@ -646,10 +651,14 @@ export async function createVentaTransaccionalPg(
     //
     // Best-effort: si algo del puente falla, la venta ya está creada y no la
     // rompemos — devolvemos facturaWarning para que la UI decida qué hacer.
+    //
+    // Opt-out: si `emitirFactura===false` (elección "solo ticket" del cajero),
+    // se salta el bloque entero. La venta queda registrada sin factura ERP.
     let facturaId: string | null = null;
     let numeroFactura: string | null = null;
     let facturaWarning: string | null = null;
-    try {
+    const emitirFactura = params.emitirFactura !== false;
+    if (emitirFactura) try {
       // 1) Snapshot de razón social / RUC — si hay cliente_id usamos su ficha
       //    (nombre_facturacion tiene prioridad sobre razón social/nombre_contacto);
       //    si no, dejamos vacío y el operador puede editar en el detalle.

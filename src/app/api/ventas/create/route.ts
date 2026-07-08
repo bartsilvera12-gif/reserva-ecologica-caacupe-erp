@@ -234,6 +234,9 @@ export async function POST(request: NextRequest) {
       pedidoCocina,
       permitirSinStock,
       generaNotaRemision: o.genera_nota_remision === true,
+      // Default true (compat) — solo se salta el puente venta→factura si el
+      // cajero explícitamente eligió "solo ticket" al confirmar la venta.
+      emitirFactura: o.emitir_factura !== false,
       createdBy: auth.usuarioCatalogId ?? null,
       usuarioNombre: auth.user?.email ?? null,
     });

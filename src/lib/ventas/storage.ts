@@ -70,7 +70,13 @@ export async function getVentas(): Promise<Venta[]> {
  * Crea una venta en base de datos (transacción servidor: ítems, stock, movimientos).
  */
 export async function saveVenta(
-  datos: Omit<Venta, "id" | "numero_control" | "fecha"> & { cliente_id?: string | null; genera_nota_remision?: boolean },
+  datos: Omit<Venta, "id" | "numero_control" | "fecha"> & {
+    cliente_id?: string | null;
+    genera_nota_remision?: boolean;
+    /** Si false (elección "solo ticket" en el UI), la venta NO dispara el puente
+     *  venta→factura ERP y no se emite factura electrónica. Default true. */
+    emitir_factura?: boolean;
+  },
   pedidoCocina?: PedidoCocinaInput,
   pagoDetalle?: PagoDetalleInput | null,
   opts?: { permitirSinStock?: boolean; pedidoId?: string | null }
@@ -99,6 +105,7 @@ export async function saveVenta(
         pago_detalle: pagoDetalle ?? null,
         permitir_sin_stock: opts?.permitirSinStock === true,
         genera_nota_remision: datos.genera_nota_remision === true,
+        emitir_factura: datos.emitir_factura !== false,
         pedido_id: opts?.pedidoId ?? null,
       }),
     });

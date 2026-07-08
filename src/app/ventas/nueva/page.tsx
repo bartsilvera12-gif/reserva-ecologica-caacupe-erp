@@ -144,6 +144,15 @@ export default function NuevaVentaPage() {
   // Contado / Crédito (campos ya existentes en `ventas`: tipo_venta + plazo_dias).
   const [tipoVenta, setTipoVenta] = useState<TipoVenta>("CONTADO");
   const [plazoDias, setPlazoDias] = useState("");
+  /**
+   * Tipo de documento a emitir:
+   *  - "factura": puente venta→factura activo → tras confirmar, redirect a
+   *    /facturas/[id]?auto=1 (arranca pipeline SIFEN).
+   *  - "ticket": NO emite factura ERP. Se registra la venta y se imprime el
+   *    ticket comanda; queda un modal post-venta con acciones opcionales.
+   * Default "factura" para no cambiar el comportamiento existente por accidente.
+   */
+  const [tipoDocumento, setTipoDocumento] = useState<"factura" | "ticket">("factura");
 
   // Cliente (opcional). Si se selecciona, se envía cliente_id al crear la venta.
   type ClienteLite = { id: string; label: string; ruc: string | null; usa_nota_remision: boolean; nivel_precio: "minorista" | "mayorista" | "distribuidor" };
@@ -433,8 +442,11 @@ export default function NuevaVentaPage() {
   const plazoDiasNum = parseInt(plazoDias) || 0;
   // Crédito exige cliente seleccionado Y plazo/vencimiento (≥1 día). Genera cuenta por cobrar.
   const creditoValido = tipoVenta === "CONTADO" || (plazoDiasNum >= 1 && !!clienteId);
-  // Cliente obligatorio: toda venta emite factura ERP para SIFEN, no dejamos pasar sin receptor.
-  const ventaValida   = items.length > 0 && creditoValido && !!clienteId;
+  // Cliente obligatorio SOLO si vamos a emitir factura electrónica (SIFEN
+  // requiere receptor) o si es crédito (necesita CxC). Para "Solo ticket" a
+  // consumidor final, la venta puede ir sin cliente.
+  const clienteObligatorio = tipoDocumento === "factura" || tipoVenta === "CREDITO";
+  const ventaValida   = items.length > 0 && creditoValido && (!clienteObligatorio || !!clienteId);
 
   // Cliente (opcional) — selección + filtrado del buscador.
   const clienteSel = clientes.find((c) => c.id === clienteId) ?? null;
@@ -614,12 +626,15 @@ export default function NuevaVentaPage() {
     // así que un segundo click/Enter casi simultáneo no puede disparar otra venta.
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
-    // Cliente obligatorio: la factura ERP necesita receptor. Si el operador quiere
-    // vender sin cliente, primero tiene que crearlo (botón "+ Cargar nuevo cliente"
-    // en el buscador arriba).
-    if (!clienteId) {
+    // Cliente obligatorio si emitimos factura ERP (SIFEN necesita receptor) o si
+    // es crédito (necesita CxC). "Solo ticket" en efectivo puede ir sin cliente.
+    if (clienteObligatorio && !clienteId) {
       isSubmittingRef.current = false;
-      setErrorVenta("Elegí un cliente antes de confirmar la venta. Podés cargarlo rápido desde el buscador de arriba.");
+      const motivo =
+        tipoDocumento === "factura"
+          ? "Para emitir factura electrónica"
+          : "Para venta a crédito";
+      setErrorVenta(`${motivo} tenés que elegir un cliente. Podés cargarlo rápido desde el buscador de arriba.`);
       return;
     }
     setGuardando(true);
@@ -637,6 +652,7 @@ export default function NuevaVentaPage() {
           metodo_pago:  metodoPago,
           cliente_id:   clienteId || null,
           genera_nota_remision: !!clienteId && generaNotaRemision,
+          emitir_factura: tipoDocumento === "factura",
         },
         undefined,
         {
@@ -667,7 +683,10 @@ export default function NuevaVentaPage() {
       // flag y auto-ejecuta el pipeline (borrador → xml → firmar → enviar)
       // apenas monta. Al aprobar SET, abre el KUDE en una pestaña nueva para
       // imprimir. Un solo click del operador dispara toda la cadena legal.
-      if (resultado.factura?.id) {
+      //
+      // Solo se dispara si el cajero eligió "Factura" en el toggle. Si eligió
+      // "Ticket", saltamos al fallback (imprime ticket + modal post-venta).
+      if (tipoDocumento === "factura" && resultado.factura?.id) {
         router.push(`/facturas/${resultado.factura.id}?auto=1`);
         return;
       }
@@ -742,10 +761,14 @@ export default function NuevaVentaPage() {
           <SectionTitle>Datos de la venta</SectionTitle>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
 
-            {/* Cliente (opcional) */}
+            {/* Cliente — obligatorio si emite factura o si es crédito; opcional para "solo ticket" en efectivo */}
             <div ref={clienteContainerRef} className="relative">
               <label className={labelClass}>
-                Cliente <span className="text-rose-600">*</span>
+                Cliente {clienteObligatorio ? (
+                  <span className="text-rose-600">*</span>
+                ) : (
+                  <span className="text-slate-400 font-normal">(opcional para ticket)</span>
+                )}
               </label>
               <div className="flex gap-2">
                 <input
@@ -800,8 +823,12 @@ export default function NuevaVentaPage() {
               <p className="mt-1 text-[11px] text-gray-400">
                 Toda venta emite factura ERP. Si el cliente no existe, cargalo con “＋ Cargar nuevo cliente”.
               </p>
-              {!clienteId && (
-                <p className="mt-1 text-[11px] text-rose-600">Seleccioná un cliente para poder confirmar la venta.</p>
+              {!clienteId && clienteObligatorio && (
+                <p className="mt-1 text-[11px] text-rose-600">
+                  {tipoDocumento === "factura"
+                    ? "Seleccioná un cliente para poder emitir la factura electrónica."
+                    : "La venta a crédito requiere un cliente seleccionado."}
+                </p>
               )}
 
               {/* Nota de remisión: solo con cliente. Si el cliente la usa, viene activada. */}
@@ -855,6 +882,28 @@ export default function NuevaVentaPage() {
                   )}
                   <p className="mt-1 text-[11px] text-slate-500">Al confirmar se genera una cuenta por cobrar por el total.</p>
                 </div>
+              )}
+            </div>
+
+            {/* Documento a emitir: Ticket (solo comanda, sin SIFEN) vs Factura (puente a SIFEN) */}
+            <div>
+              <label className={labelClass}>Documento</label>
+              <SegmentedControl<"ticket" | "factura">
+                value={tipoDocumento}
+                options={[
+                  { value: "factura", label: "Factura electrónica" },
+                  { value: "ticket", label: "Solo ticket" },
+                ]}
+                onChange={(v) => setTipoDocumento(v)}
+              />
+              {tipoDocumento === "factura" ? (
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Al confirmar, se emite la factura FAC-XXXXXX y arranca el pipeline SIFEN (firma + envío + KUDE).
+                </p>
+              ) : (
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Solo se registra la venta e imprime un ticket comanda. No genera factura ni toca SIFEN. Podés emitir la factura después desde la venta si el cliente la pide.
+                </p>
               )}
             </div>
 
