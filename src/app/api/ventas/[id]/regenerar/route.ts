@@ -37,11 +37,13 @@ export async function POST(
     const { auth, supabase: sb } = ctx;
     const empresaId = auth.empresa_id;
 
-    // Cabecera de la venta origen
+    // Cabecera de la venta origen. Incluye factura_id porque de ahí inferimos
+    // si la venta original fue "factura electrónica" (tenía factura_id) o "solo
+    // ticket" (factura_id === null). Regeneramos con el mismo tipo de documento.
     const vQ = await sb
       .from("ventas")
       .select(
-        "id, numero_control, estado, cliente_id, moneda, tipo_cambio, tipo_venta, plazo_dias, metodo_pago, subtotal, monto_iva, total, genera_nota_remision"
+        "id, numero_control, estado, cliente_id, moneda, tipo_cambio, tipo_venta, plazo_dias, metodo_pago, subtotal, monto_iva, total, genera_nota_remision, factura_id"
       )
       .eq("empresa_id", empresaId)
       .eq("id", id)
@@ -64,6 +66,7 @@ export async function POST(
       monto_iva: number | string;
       total: number | string;
       genera_nota_remision?: boolean | null;
+      factura_id: string | null;
     };
 
     if (venta.estado !== "anulada") {
@@ -129,6 +132,11 @@ export async function POST(
       return null;
     })();
 
+    // Respeta el tipo de documento de la venta original: si tenía factura_id
+    // fue "Factura electrónica" → emitirFactura=true. Si no, fue "Solo ticket"
+    // → emitirFactura=false y la nueva venta también sale como ticket.
+    const emitirFacturaRegen = venta.factura_id != null;
+
     try {
       const {
         ventaId,
@@ -151,19 +159,20 @@ export async function POST(
         montoIvaDeclarado: montoIva,
         totalDeclarado: total,
         generaNotaRemision: venta.genera_nota_remision === true,
-        emitirFactura: true,
+        emitirFactura: emitirFacturaRegen,
         createdBy: auth.usuarioCatalogId ?? null,
         usuarioNombre: auth.user?.email ?? null,
       });
 
       return NextResponse.json(
         successResponse({
-          origen: { id: venta.id, numero_control: venta.numero_control },
+          origen: { id: venta.id, numero_control: venta.numero_control, era_factura: emitirFacturaRegen },
           venta: { id: ventaId, numero_control: numeroControl },
           factura: facturaId
             ? { id: facturaId, numero_factura: numeroFactura ?? null }
             : null,
           factura_warning: facturaWarning ?? null,
+          tipo_documento: emitirFacturaRegen ? "factura" : "ticket",
         })
       );
     } catch (err) {

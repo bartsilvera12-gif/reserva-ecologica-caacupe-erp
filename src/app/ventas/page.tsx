@@ -155,7 +155,7 @@ export default function VentasPage() {
   const [filtroTipo, setFiltroTipo] = useState<TipoVenta | "">("");
   const [filtroIva,  setFiltroIva]  = useState<TipoIvaVenta | "">("");
   const [ventaAnular, setVentaAnular] = useState<{ id: string; numero: string } | null>(null);
-  const [ventaRegenerar, setVentaRegenerar] = useState<{ id: string; numero: string } | null>(null);
+  const [ventaRegenerar, setVentaRegenerar] = useState<{ id: string; numero: string; eraFactura: boolean } | null>(null);
   const [regenerandoId, setRegenerandoId] = useState<string | null>(null);
   const [errorRegenerar, setErrorRegenerar] = useState<string | null>(null);
   const [expandidas, setExpandidas] = useState<Set<string>>(() => new Set());
@@ -508,10 +508,20 @@ export default function VentasPage() {
                           {anulada && (
                             <button
                               type="button"
-                              onClick={() => setVentaRegenerar({ id: v.id, numero: v.numero_control })}
+                              onClick={() =>
+                                setVentaRegenerar({
+                                  id: v.id,
+                                  numero: v.numero_control,
+                                  eraFactura: !!v.factura_id,
+                                })
+                              }
                               disabled={regenerandoId === v.id}
                               className="inline-flex items-center justify-center rounded-md border border-[#4FAEB2] bg-[#4FAEB2]/10 px-3 py-1.5 text-xs font-semibold text-[#3F8E91] hover:bg-[#4FAEB2]/20 transition-colors disabled:opacity-50"
-                              title="Regenerar: crear una nueva venta clonando cliente, ítems y precios"
+                              title={
+                                v.factura_id
+                                  ? "Regenerar como factura electrónica (clona cliente, ítems y precios)"
+                                  : "Regenerar como ticket (clona ítems y precios, sin SIFEN)"
+                              }
                             >
                               {regenerandoId === v.id ? "Regenerando…" : "Regenerar"}
                             </button>
@@ -605,6 +615,7 @@ export default function VentasPage() {
       {ventaRegenerar && (
         <RegenerarVentaModal
           numero={ventaRegenerar.numero}
+          eraFactura={ventaRegenerar.eraFactura}
           enviando={regenerandoId === ventaRegenerar.id}
           error={errorRegenerar}
           onClose={() => {
@@ -628,9 +639,22 @@ export default function VentasPage() {
                 return;
               }
               const facturaId = body?.data?.factura?.id;
+              const nuevaVentaId = body?.data?.venta?.id;
+              // Factura → panel SIFEN con auto-pipeline (mismo criterio que
+              // la venta directa). Ticket → abrir el ticket comanda en pestaña
+              // nueva y recargar el listado.
               if (facturaId) {
                 router.push(`/facturas/${facturaId}?auto=1`);
                 return;
+              }
+              if (nuevaVentaId) {
+                try {
+                  window.open(
+                    `/api/ventas/${nuevaVentaId}/ticket?mode=comandas&auto=1`,
+                    "_blank",
+                    "noopener"
+                  );
+                } catch {}
               }
               setVentaRegenerar(null);
               void recargar();
@@ -648,12 +672,14 @@ export default function VentasPage() {
 
 function RegenerarVentaModal({
   numero,
+  eraFactura,
   enviando,
   error,
   onClose,
   onConfirmar,
 }: {
   numero: string;
+  eraFactura: boolean;
   enviando: boolean;
   error: string | null;
   onClose: () => void;
@@ -683,8 +709,14 @@ function RegenerarVentaModal({
               <RotateCw className="h-5 w-5 text-[#3F8E91]" />
             </div>
             <div>
-              <h3 className="text-base font-semibold text-slate-900">Regenerar venta</h3>
-              <p className="text-xs text-slate-500">Se crea una nueva venta con los mismos datos.</p>
+              <h3 className="text-base font-semibold text-slate-900">
+                Regenerar {eraFactura ? "factura" : "ticket"}
+              </h3>
+              <p className="text-xs text-slate-500">
+                {eraFactura
+                  ? "Se crea una nueva venta con factura electrónica."
+                  : "Se crea una nueva venta con ticket (sin SIFEN)."}
+              </p>
             </div>
           </div>
           <button
@@ -707,10 +739,17 @@ function RegenerarVentaModal({
               <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
               <span>Se copian cliente, ítems, precios, moneda y método de pago.</span>
             </li>
-            <li className="flex items-start gap-2">
-              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-              <span>Se emite una nueva factura FAC-XXXXXX y arranca el pipeline SIFEN.</span>
-            </li>
+            {eraFactura ? (
+              <li className="flex items-start gap-2">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+                <span>Se emite una nueva factura FAC-XXXXXX y arranca el pipeline SIFEN.</span>
+              </li>
+            ) : (
+              <li className="flex items-start gap-2">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+                <span>Se re-imprime el ticket comanda. No se emite factura ni toca SIFEN.</span>
+              </li>
+            )}
             <li className="flex items-start gap-2">
               <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
               <span>Se descuenta stock otra vez (se re-cobra a la caja).</span>
@@ -744,7 +783,7 @@ function RegenerarVentaModal({
             disabled={enviando}
             className="rounded-lg bg-[#4FAEB2] px-4 py-2 text-sm font-semibold text-white hover:bg-[#3F8E91] disabled:opacity-50"
           >
-            {enviando ? "Regenerando…" : "Sí, regenerar venta"}
+            {enviando ? "Regenerando…" : eraFactura ? "Sí, regenerar factura" : "Sí, regenerar ticket"}
           </button>
         </div>
       </div>
