@@ -58,6 +58,10 @@ export interface SifenBuildClienteRow {
   empresa: string | null;
   nombre_contacto: string | null;
   nombre: string | null;
+  /** Nombre para facturar cuando difiere de la Razón Social (p. ej. cooperativa,
+   *  cónyuge/hijo, etc.). Si está seteado, sobrescribe todos los demás nombres
+   *  al construir el receptor SIFEN. */
+  nombre_facturacion?: string | null;
   ruc: string | null;
   documento: string | null;
   direccion: string | null;
@@ -112,7 +116,16 @@ export type BuildSifenPayloadResult =
   | { ok: false; error: string };
 
 function nombreReceptor(c: SifenBuildClienteRow): string {
-  return trimStr(c.empresa) || trimStr(c.nombre_contacto) || trimStr(c.nombre);
+  // Prioriza nombre_facturacion cuando está seteado: cubre casos donde la
+  // razón social operativa difiere del nombre legal para facturar (ej.
+  // SUPERMERCADO FERNHEIM cuya razón social fiscal es COOPERATIVA
+  // COLONIZADORA MULTIACTIVA FERNHEIM LIMITADA).
+  return (
+    trimStr(c.nombre_facturacion ?? "") ||
+    trimStr(c.empresa) ||
+    trimStr(c.nombre_contacto) ||
+    trimStr(c.nombre)
+  );
 }
 
 function validateEmisor(config: SifenBuildConfigRow | null): { ok: true; emisor: SifenPayloadEmisor } | { ok: false; error: string } {
@@ -243,6 +256,7 @@ function validateReceptor(
   let direccion: string | null = dirRaw || null;
   if (direccion) {
     const hints = [
+      trimStr(cliente.nombre_facturacion ?? ""),
       trimStr(cliente.empresa),
       trimStr(cliente.nombre_contacto),
       trimStr(cliente.nombre),

@@ -152,7 +152,7 @@ export async function loadValidatedNotaCreditoSifenPayload(
   const [clienteRes, configRes] = await Promise.all([
     supabase
       .from("clientes")
-      .select("id, empresa, nombre_contacto, nombre, ruc, documento, direccion, telefono, email")
+      .select("id, empresa, nombre_contacto, nombre, nombre_facturacion, ruc, documento, direccion, telefono, email")
       .eq("id", clienteId)
       .eq("empresa_id", empresaId)
       .maybeSingle(),
@@ -189,10 +189,13 @@ export async function loadValidatedNotaCreditoSifenPayload(
     };
   }
 
+  // Prioriza nombre_facturacion cuando está seteado (mismo criterio que la factura
+  // vía nombreReceptor en build-payload.ts): la NC referencia al mismo receptor.
   const nombreRec =
+    String(cli.nombre_facturacion ?? "").trim() ||
+    String(cli.empresa ?? "").trim() ||
     String(cli.nombre_contacto ?? "").trim() ||
     String(cli.nombre ?? "").trim() ||
-    String(cli.empresa ?? "").trim() ||
     "Receptor";
 
   const fx = vOrigen.fiscal;
