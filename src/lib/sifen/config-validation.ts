@@ -179,6 +179,8 @@ export function validateCreateBody(raw: unknown): EmpresaSifenConfigCreateResult
     punto_expedicion,
     ambiente,
     csc: optionalNullableString(b.csc),
+    emisor_telefono: optionalNullableString(b.emisor_telefono),
+    emisor_email: optionalNullableString(b.emisor_email),
     certificado_path: optionalNullableString(b.certificado_path),
     certificado_password,
     certificado_vencimiento,
@@ -287,6 +289,12 @@ export function buildPatchUpdate(raw: unknown): EmpresaSifenConfigPatchResult {
     patch.ambiente = a;
   }
   if ("csc" in b) patch.csc = b.csc === null ? null : trimStr(b.csc) || null;
+  if ("emisor_telefono" in b) {
+    patch.emisor_telefono = b.emisor_telefono === null ? null : trimStr(b.emisor_telefono) || null;
+  }
+  if ("emisor_email" in b) {
+    patch.emisor_email = b.emisor_email === null ? null : trimStr(b.emisor_email) || null;
+  }
   if ("certificado_path" in b) {
     patch.certificado_path = b.certificado_path === null ? null : trimStr(b.certificado_path) || null;
   }
@@ -358,6 +366,8 @@ export function rowFromCreateBody(empresaId: string, body: EmpresaSifenConfigCre
     establecimiento: body.establecimiento,
     punto_expedicion: body.punto_expedicion,
     csc: body.csc ?? null,
+    emisor_telefono: body.emisor_telefono ?? null,
+    emisor_email: body.emisor_email ?? null,
     certificado_path: body.certificado_path ?? null,
     activo: body.activo ?? true,
   };

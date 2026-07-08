@@ -159,7 +159,7 @@ export async function loadValidatedNotaCreditoSifenPayload(
     supabase
       .from("empresa_sifen_config")
       .select(
-        "ruc, razon_social, direccion_fiscal, timbrado_numero, timbrado_fecha_inicio_vigencia, actividad_economica_codigo, actividad_economica_descripcion, establecimiento, punto_expedicion, csc, activo, ambiente"
+        "ruc, razon_social, direccion_fiscal, timbrado_numero, timbrado_fecha_inicio_vigencia, actividad_economica_codigo, actividad_economica_descripcion, establecimiento, punto_expedicion, csc, activo, ambiente, emisor_telefono, emisor_email"
       )
       .eq("empresa_id", empresaId)
       .maybeSingle(),
@@ -209,6 +209,15 @@ export async function loadValidatedNotaCreditoSifenPayload(
       establecimiento: fx.establecimiento,
       punto_expedicion: fx.punto_expedicion,
       csc: cfg.csc == null ? null : String(cfg.csc).trim(),
+      telefono: (() => {
+        const t = String(cfg.emisor_telefono ?? "").trim();
+        const digits = t.replace(/\D/g, "");
+        return digits.length >= 8 && digits.length <= 15 ? digits : null;
+      })(),
+      email: (() => {
+        const e = String(cfg.emisor_email ?? "").trim();
+        return e.length > 0 ? e : null;
+      })(),
     },
     receptor: {
       cliente_id: String(cli.id),

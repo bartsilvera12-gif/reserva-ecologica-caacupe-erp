@@ -89,6 +89,8 @@ export interface SifenBuildConfigRow {
   punto_expedicion: string;
   csc: string | null;
   activo: boolean;
+  emisor_telefono?: string | null;
+  emisor_email?: string | null;
 }
 
 export interface SifenBuildElectronicaRow {
@@ -185,6 +187,15 @@ function validateEmisor(config: SifenBuildConfigRow | null): { ok: true; emisor:
       establecimiento,
       punto_expedicion,
       csc: cscRaw === "" ? null : cscRaw,
+      telefono: (() => {
+        const t = trimStr(config.emisor_telefono ?? "");
+        const digits = t.replace(/\D/g, "");
+        return digits.length >= 8 && digits.length <= 15 ? digits : null;
+      })(),
+      email: (() => {
+        const e = trimStr(config.emisor_email ?? "");
+        return e.length > 0 ? e : null;
+      })(),
     },
   };
 }

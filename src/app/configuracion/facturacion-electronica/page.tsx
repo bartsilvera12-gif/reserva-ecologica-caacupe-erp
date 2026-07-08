@@ -75,6 +75,8 @@ export default function FacturacionElectronicaSifenPage() {
   const [establecimiento, setEstablecimiento] = useState("");
   const [puntoExpedicion, setPuntoExpedicion] = useState("");
   const [csc, setCsc] = useState("");
+  const [emisorTelefono, setEmisorTelefono] = useState("");
+  const [emisorEmail, setEmisorEmail] = useState("");
   const [activo, setActivo] = useState(true);
   /** Horas desde aprobación SET para permitir cancelación del DE en ERP (config por empresa). */
   const [plazoCancelacionHoras, setPlazoCancelacionHoras] = useState(48);
@@ -128,6 +130,8 @@ export default function FacturacionElectronicaSifenPage() {
         setEstablecimiento(d.establecimiento);
         setPuntoExpedicion(d.punto_expedicion);
         setCsc(d.csc ?? "");
+        setEmisorTelefono(d.emisor_telefono ?? "");
+        setEmisorEmail(d.emisor_email ?? "");
         setActivo(d.activo);
         setPlazoCancelacionHoras(
           typeof d.sifen_plazo_cancelacion_horas === "number" && Number.isFinite(d.sifen_plazo_cancelacion_horas)
@@ -208,6 +212,8 @@ export default function FacturacionElectronicaSifenPage() {
           establecimiento: establecimiento.trim(),
           punto_expedicion: puntoExpedicion.trim(),
           csc: csc.trim() || null,
+          emisor_telefono: emisorTelefono.trim() || null,
+          emisor_email: emisorEmail.trim() || null,
           activo,
           sifen_plazo_cancelacion_horas: Math.min(8760, Math.max(1, Math.floor(Number(plazoCancelacionHoras)) || 48)),
         };
@@ -241,6 +247,8 @@ export default function FacturacionElectronicaSifenPage() {
           establecimiento: establecimiento.trim(),
           punto_expedicion: puntoExpedicion.trim(),
           csc: csc.trim() || null,
+          emisor_telefono: emisorTelefono.trim() || null,
+          emisor_email: emisorEmail.trim() || null,
           activo,
           certificado_vencimiento: venc,
           sifen_plazo_cancelacion_horas: Math.min(8760, Math.max(1, Math.floor(Number(plazoCancelacionHoras)) || 48)),
@@ -701,6 +709,34 @@ export default function FacturacionElectronicaSifenPage() {
                 placeholder="Opcional"
                 autoComplete="off"
               />
+            </div>
+            <div>
+              <label className={fLabel}>Teléfono del emisor</label>
+              <input
+                className={fInput}
+                value={emisorTelefono}
+                onChange={(e) => setEmisorTelefono(e.target.value)}
+                placeholder="Ej: 0973123456"
+                inputMode="tel"
+                autoComplete="off"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Aparece en el KUDE (encabezado) y en el XML como <code>dTelEmi</code>. Solo dígitos, entre 8 y 15.
+              </p>
+            </div>
+            <div>
+              <label className={fLabel}>Email del emisor</label>
+              <input
+                className={fInput}
+                value={emisorEmail}
+                onChange={(e) => setEmisorEmail(e.target.value)}
+                placeholder="facturacion@empresa.com.py"
+                type="email"
+                autoComplete="off"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Aparece en el KUDE (encabezado) y en el XML como <code>dEmailE</code>.
+              </p>
             </div>
           </div>
         </Card>

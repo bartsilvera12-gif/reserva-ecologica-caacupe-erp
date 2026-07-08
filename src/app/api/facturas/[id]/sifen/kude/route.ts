@@ -211,6 +211,36 @@ export async function GET(
       return null;
     });
 
+    // Códigos de barras por item (mismo orden que parsed.items). Los buscamos
+    // en productos por SKU (parsed.items[i].codigo suele ser el dCodInt = SKU).
+    // Si el item no tiene match, queda null y el KUDE cae al código interno.
+    const skus = Array.from(
+      new Set(parsed.items.map((it) => it.codigo?.trim() ?? "").filter((s) => s.length > 0))
+    );
+    let codigosBarrasPorItem: (string | null)[] | undefined;
+    if (skus.length > 0) {
+      const { data: prods, error: errProds } = await supabase
+        .from("productos")
+        .select("sku, codigo_barras")
+        .eq("empresa_id", auth.empresa_id)
+        .in("sku", skus);
+      if (errProds) {
+        console.warn("[kude] no se pudieron cargar codigos_barras (se omite columna)", {
+          message: errProds.message,
+        });
+      } else {
+        const bySku = new Map<string, string>();
+        for (const p of (prods ?? []) as Array<{ sku: string; codigo_barras?: string | null }>) {
+          const cb = (p.codigo_barras ?? "").trim();
+          if (cb) bySku.set(p.sku, cb);
+        }
+        codigosBarrasPorItem = parsed.items.map((it) => {
+          const s = it.codigo?.trim() ?? "";
+          return s ? bySku.get(s) ?? null : null;
+        });
+      }
+    }
+
     const numeroFactura = fac.numero_factura == null ? "" : String(fac.numero_factura);
     let pdf: Buffer;
     try {
@@ -220,6 +250,7 @@ export async function GET(
         dProtAut,
         qrUrl,
         branding,
+        codigosBarrasPorItem,
       });
     } catch (e) {
       const m = e instanceof Error ? e.message : "Error al generar PDF";

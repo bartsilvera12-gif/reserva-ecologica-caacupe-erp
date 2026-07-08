@@ -28,6 +28,10 @@ export type BuildKudePdfInput = {
   qrUrl: string;
   /** Branding opcional. Si no viene o es inválido, se usa el diseño Neura. */
   branding?: KudeBranding | null;
+  /** Mapeo posicional item → código de barras (mismo orden que parsed.items).
+   *  Se muestra debajo del código/descripción en la columna izquierda. Si un
+   *  item no tiene código de barras, se omite. */
+  codigosBarrasPorItem?: (string | null)[];
 };
 
 const A4_W = 595.28;
@@ -191,6 +195,7 @@ function kudeTableMoneyXs(margin: number) {
 function drawTableChunk(
   page: PDFPage,
   items: KudeItemRow[],
+  codigosBarras: (string | null)[],
   parsed: KudeParsedFromXml,
   margin: number,
   innerW: number,
@@ -236,9 +241,15 @@ function drawTableChunk(
   drawH("10%", x10, true);
 
   let rowBaseline = fromTop + headH + 9;
-  for (const row of items) {
+  for (let i = 0; i < items.length; i++) {
+    const row = items[i]!;
     const yb = baselineFromTop(page, rowBaseline);
-    page.drawText(trunc(row.codigo, 10), { x: xCod, y: yb, size: fsz, font, color: BLACK });
+    // Preferimos código de barras (más útil para el cliente) sobre dCodInt
+    // (código interno / SKU). Si no hay código de barras del producto, cae al
+    // código del XML (comportamiento previo). No afecta el XML ni SIFEN.
+    const codigoBarras = codigosBarras[i]?.trim() ?? "";
+    const codigoMostrar = codigoBarras || row.codigo;
+    page.drawText(trunc(codigoMostrar, 14), { x: xCod, y: yb, size: fsz, font, color: BLACK });
     page.drawText(trunc(row.descripcion, 40), { x: xDesc, y: yb, size: fsz, font, color: BLACK });
     page.drawText(trunc(row.unidadMedida, 8), { x: xUm, y: yb, size: fsz, font, color: BLACK });
     page.drawText(formatMonto(row.precioUnit, parsed.monedaCodigo), { x: xPr, y: yb, size: fsz, font, color: BLACK });
@@ -334,8 +345,11 @@ export async function buildKudePdfBuffer(input: BuildKudePdfInput): Promise<Buff
   const leftChunks: { lines: string[]; size: number; bold: boolean; col: RGB }[] = [
     { lines: wrapByChars(parsed.emisor.dNomEmi, leftMaxChars), size: 9, bold: true, col: BLACK },
     { lines: wrapByChars(parsed.emisor.dDirEmi, leftMaxChars), size: 7.5, bold: false, col: BLACK },
-    { lines: [`Tel.: ${NEURA_KUDE_TEL}`], size: 7.5, bold: false, col: BLACK },
-    { lines: [`Email: ${NEURA_KUDE_EMAIL}`], size: 7.5, bold: false, col: BLACK },
+    // Tel/Email del emisor: preferimos lo que está en el XML firmado (gEmis.dTelEmi
+    // y dEmailE, que salen de empresa_sifen_config.emisor_telefono/emisor_email vía
+    // load-factura-payload). Fallback histórico solo si el XML no los trae.
+    { lines: [`Tel.: ${parsed.emisor.dTelEmi?.trim() || NEURA_KUDE_TEL}`], size: 7.5, bold: false, col: BLACK },
+    { lines: [`Email: ${parsed.emisor.dEmailE?.trim() || NEURA_KUDE_EMAIL}`], size: 7.5, bold: false, col: BLACK },
   ];
 
   const rightLines = 6;
@@ -491,6 +505,11 @@ export async function buildKudePdfBuffer(input: BuildKudePdfInput): Promise<Buff
   const headH = 16;
   let idx = 0;
   const items = parsed.items;
+  // Alineado posicionalmente con `items`. Si no vino el array, todos null.
+  const codigosBarras: (string | null)[] =
+    input.codigosBarrasPorItem && input.codigosBarrasPorItem.length === items.length
+      ? input.codigosBarrasPorItem
+      : items.map(() => null);
   while (idx < items.length) {
     let room = A4_H - cursorTop - footerReserve;
     if (room < headH + rowH + 20) {
@@ -505,7 +524,8 @@ export async function buildKudePdfBuffer(input: BuildKudePdfInput): Promise<Buff
       cursorTop = margin;
       continue;
     }
-    cursorTop = drawTableChunk(page, slice, parsed, margin, innerW, cursorTop, font, fontBold, primary, primaryFill);
+    const codigosSlice = codigosBarras.slice(idx, idx + slice.length);
+    cursorTop = drawTableChunk(page, slice, codigosSlice, parsed, margin, innerW, cursorTop, font, fontBold, primary, primaryFill);
     idx += slice.length;
     if (idx < items.length) {
       page = pdfDoc.addPage([A4_W, A4_H]);

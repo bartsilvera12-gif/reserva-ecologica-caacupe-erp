@@ -148,8 +148,13 @@ export async function handleSifenXmlPost(
       timbradoFechaInicio: loaded.payload.emisor.timbrado_fecha_inicio_vigencia,
       timbradoFechaFin: `${yAnio}-12-31`,
       ambiente: loaded.ambiente,
-      emisorTelefono: "021000000",
-      emisorEmail: "facturacion@configurar-empresa.com.py",
+      // Fallback histórico solo si no hay dato en empresa_sifen_config.
+      // Cuando el usuario carga su número/email desde Configuración →
+      // Facturación electrónica, esos valores aparecen en dTelEmi/dEmailE del
+      // XML y en el encabezado del KUDE. Antes iban hardcodeados con valores
+      // que no eran del emisor y aparecían en la factura del cliente.
+      emisorTelefono: loaded.payload.emisor.telefono ?? "021000000",
+      emisorEmail: loaded.payload.emisor.email ?? "facturacion@configurar-empresa.com.py",
       emisorDireccion: loaded.payload.emisor.direccion_fiscal.trim(),
       emisorNumCasa: 0,
       actividadEconomicaCodigo: loaded.payload.emisor.actividad_economica_codigo,

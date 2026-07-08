@@ -26,6 +26,10 @@ export interface EmpresaSifenConfigDTO {
   establecimiento: string;
   punto_expedicion: string;
   csc: string | null;
+  /** Teléfono del emisor mostrado en KUDE + usado en gEmis.dTelEmi. Solo dígitos (8–15). */
+  emisor_telefono: string | null;
+  /** Email del emisor mostrado en KUDE + usado en gEmis.dEmailE. */
+  emisor_email: string | null;
   certificado_path: string | null;
   certificado_vencimiento: string | null;
   activo: boolean;
@@ -62,6 +66,8 @@ export interface EmpresaSifenConfigCreateBody {
   punto_expedicion: string;
   ambiente: AmbienteSifen;
   csc?: string | null;
+  emisor_telefono?: string | null;
+  emisor_email?: string | null;
   certificado_path?: string | null;
   certificado_password?: string | null;
   certificado_vencimiento?: string | null;
@@ -85,6 +91,8 @@ export interface EmpresaSifenConfigPatchBody {
   punto_expedicion?: string;
   ambiente?: AmbienteSifen;
   csc?: string | null;
+  emisor_telefono?: string | null;
+  emisor_email?: string | null;
   certificado_path?: string | null;
   certificado_password?: string | null;
   certificado_vencimiento?: string | null;
@@ -216,6 +224,12 @@ export interface SifenPayloadEmisor {
   punto_expedicion: string;
   /** Código de seguridad del timbrado (SET); obligatorio para generar el DE oficial. */
   csc: string | null;
+  /** Teléfono del emisor mostrado en el KUDE y usado en el XML como dTelEmi.
+   *  Solo dígitos (8–15). null si no fue configurado (usa fallback histórico). */
+  telefono: string | null;
+  /** Email del emisor mostrado en el KUDE y usado en el XML como dEmailE.
+   *  null si no fue configurado (usa fallback histórico). */
+  email: string | null;
 }
 
 export interface SifenPayloadDocumento {
