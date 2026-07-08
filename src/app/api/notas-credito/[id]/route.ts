@@ -48,7 +48,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     }
 
     const row = nc as { cliente_id: string; factura_id: string };
-    const [{ data: ne }, { data: cli }, { data: fac }, { data: evs }] = await Promise.all([
+    const [{ data: ne }, { data: cli }, { data: fac }, { data: evs }, { data: ncItemsRows }] = await Promise.all([
       supabase.from("nota_credito_electronica").select("*").eq("nota_credito_id", nid).eq("empresa_id", auth.empresa_id).maybeSingle(),
       supabase.from("clientes").select("id, empresa, nombre_contacto, ruc").eq("id", row.cliente_id).eq("empresa_id", auth.empresa_id).maybeSingle(),
       supabase.from("facturas").select("id, numero_factura, fecha, monto, moneda").eq("id", row.factura_id).eq("empresa_id", auth.empresa_id).maybeSingle(),
@@ -58,7 +58,28 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         .eq("nota_credito_id", nid)
         .eq("empresa_id", auth.empresa_id)
         .order("created_at", { ascending: false }),
+      supabase
+        .from("nota_credito_items")
+        .select("id, producto_nombre_snapshot, sku_snapshot, cantidad, precio_unitario, tipo_iva, subtotal, monto_iva, total_linea, modo")
+        .eq("nota_credito_id", nid)
+        .eq("empresa_id", auth.empresa_id)
+        .order("created_at", { ascending: true }),
     ]);
+    const items = (ncItemsRows ?? []).map((r) => {
+      const row = r as Record<string, unknown>;
+      return {
+        id: String(row.id ?? ""),
+        producto_nombre: String(row.producto_nombre_snapshot ?? ""),
+        sku: row.sku_snapshot == null ? null : String(row.sku_snapshot),
+        cantidad: Number(row.cantidad) || 0,
+        precio_unitario: Number(row.precio_unitario) || 0,
+        tipo_iva: String(row.tipo_iva ?? ""),
+        subtotal: Number(row.subtotal) || 0,
+        monto_iva: Number(row.monto_iva) || 0,
+        total_linea: Number(row.total_linea) || 0,
+        modo: String(row.modo ?? "unidades"),
+      };
+    });
 
     const eventos: NotaCreditoEventoAuditoriaDTO[] = (evs ?? []).map((e) => ({
       id: String((e as { id: string }).id),
@@ -85,6 +106,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         moneda: f?.moneda == null ? null : String(f.moneda),
       },
       eventos,
+      items,
     };
 
     return NextResponse.json(successResponse(payload));

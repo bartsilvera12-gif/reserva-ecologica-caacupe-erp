@@ -134,11 +134,27 @@ export type NotaCreditoEventoAuditoriaDTO = {
   actor_user_id: string | null;
 };
 
-/** Detalle global + auditoría. */
+/** Fila de `nota_credito_items` expuesta al UI (snapshots + valores calculados). */
+export type NotaCreditoItemDTO = {
+  id: string;
+  producto_nombre: string;
+  sku: string | null;
+  cantidad: number;
+  precio_unitario: number;
+  tipo_iva: string;
+  subtotal: number;
+  monto_iva: number;
+  total_linea: number;
+  modo: string;
+};
+
+/** Detalle global + auditoría + líneas (fase B). */
 export type NotaCreditoGlobalDetailDTO = {
   nota_credito: Record<string, unknown>;
   nota_credito_electronica: Record<string, unknown> | null;
   cliente: { id: string; display: string; ruc: string | null };
   factura: { id: string; numero_factura: string | null; fecha: string | null; monto: number | null; moneda: string | null };
   eventos: NotaCreditoEventoAuditoriaDTO[];
+  /** Líneas de la NC (solo si tipo_nc='parcial'; vacío para NC total). */
+  items: NotaCreditoItemDTO[];
 };

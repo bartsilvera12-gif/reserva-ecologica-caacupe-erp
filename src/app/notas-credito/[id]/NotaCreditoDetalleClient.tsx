@@ -174,6 +174,69 @@ export default function NotaCreditoDetalleClient() {
         </dl>
       </section>
 
+      {data.items.length > 0 && (
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">
+              Detalle de ítems{" "}
+              <span className="ml-1 text-[10px] font-normal text-slate-400">
+                ({data.items.length} línea{data.items.length === 1 ? "" : "s"})
+              </span>
+            </h2>
+            <span className="text-[11px] text-slate-500">NC parcial</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-3 py-2">Producto</th>
+                  <th className="px-3 py-2">SKU</th>
+                  <th className="px-3 py-2 text-right">Cant.</th>
+                  <th className="px-3 py-2 text-right">Precio unit.</th>
+                  <th className="px-3 py-2">IVA</th>
+                  <th className="px-3 py-2">Modo</th>
+                  <th className="px-3 py-2 text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.items.map((it) => (
+                  <tr key={it.id}>
+                    <td className="px-3 py-2 text-slate-800">{it.producto_nombre}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-slate-500">{it.sku ?? "—"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{it.cantidad}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-slate-600">
+                      {moneda === "USD" ? "USD" : "Gs."}{" "}
+                      {it.precio_unitario.toLocaleString(moneda === "USD" ? "en-US" : "es-PY")}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
+                        {it.tipo_iva}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-500 capitalize">{it.modo}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-semibold text-slate-900">
+                      {moneda === "USD" ? "USD" : "Gs."}{" "}
+                      {it.total_linea.toLocaleString(moneda === "USD" ? "en-US" : "es-PY")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="bg-slate-50 border-t border-slate-200 text-sm">
+                <tr>
+                  <td colSpan={6} className="px-3 py-2 text-right font-semibold text-slate-600">
+                    Total NC
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums font-bold text-amber-900">
+                    {moneda === "USD" ? "USD" : "Gs."}{" "}
+                    {Number(nc.monto).toLocaleString(moneda === "USD" ? "en-US" : "es-PY")}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </section>
+      )}
+
       {ne && (
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-2">
           <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Documento electrónico (SIFEN)</h2>
