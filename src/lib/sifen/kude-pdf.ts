@@ -32,6 +32,12 @@ export type BuildKudePdfInput = {
    *  Se muestra debajo del código/descripción en la columna izquierda. Si un
    *  item no tiene código de barras, se omite. */
   codigosBarrasPorItem?: (string | null)[];
+  /** Contacto del emisor en vivo (desde empresa_sifen_config). Se muestra en el
+   *  encabezado del KUDE con prioridad sobre parsed.emisor.dTelEmi / dEmailE
+   *  (que en facturas viejas puede tener valores hardcodeados históricos).
+   *  El XML firmado NO se modifica; solo cambia lo visible en el PDF. */
+  emisorTelefonoOverride?: string | null;
+  emisorEmailOverride?: string | null;
 };
 
 const A4_W = 595.28;
@@ -349,11 +355,14 @@ export async function buildKudePdfBuffer(input: BuildKudePdfInput): Promise<Buff
   const leftChunks: { lines: string[]; size: number; bold: boolean; col: RGB }[] = [
     { lines: wrapByChars(parsed.emisor.dNomEmi, leftMaxChars), size: 9, bold: true, col: BLACK },
     { lines: wrapByChars(parsed.emisor.dDirEmi, leftMaxChars), size: 7.5, bold: false, col: BLACK },
-    // Tel/Email del emisor: preferimos lo que está en el XML firmado (gEmis.dTelEmi
-    // y dEmailE, que salen de empresa_sifen_config.emisor_telefono/emisor_email vía
-    // load-factura-payload). Fallback histórico solo si el XML no los trae.
-    { lines: [`Tel.: ${parsed.emisor.dTelEmi?.trim() || NEURA_KUDE_TEL}`], size: 7.5, bold: false, col: BLACK },
-    { lines: [`Email: ${parsed.emisor.dEmailE?.trim() || NEURA_KUDE_EMAIL}`], size: 7.5, bold: false, col: BLACK },
+    // Tel/Email del emisor: priorizamos el valor LIVE de empresa_sifen_config
+    // (input.emisorTelefonoOverride/EmailOverride) sobre lo que hay en el XML
+    // firmado. Esto arregla retroactivamente los KUDE de facturas viejas cuyo
+    // XML fue emitido con los valores hardcodeados históricos (021000000 /
+    // facturacion@configurar-empresa.com.py, o los defaults de Neura).
+    // Fallback: XML → constantes históricas. El XML no se modifica.
+    { lines: [`Tel.: ${input.emisorTelefonoOverride?.trim() || parsed.emisor.dTelEmi?.trim() || NEURA_KUDE_TEL}`], size: 7.5, bold: false, col: BLACK },
+    { lines: [`Email: ${input.emisorEmailOverride?.trim() || parsed.emisor.dEmailE?.trim() || NEURA_KUDE_EMAIL}`], size: 7.5, bold: false, col: BLACK },
   ];
 
   const rightLines = 6;

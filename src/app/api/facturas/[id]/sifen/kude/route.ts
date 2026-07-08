@@ -274,6 +274,28 @@ export async function GET(
       });
     }
 
+    // Cargar contacto emisor actual de empresa_sifen_config para overrides
+    // retroactivos del KUDE (fix visual de facturas viejas que llevan valores
+    // hardcodeados en el XML firmado). No modifica el XML.
+    let emisorTelefonoOverride: string | null = null;
+    let emisorEmailOverride: string | null = null;
+    try {
+      const { data: cfgRow } = await supabase
+        .from("empresa_sifen_config")
+        .select("emisor_telefono, emisor_email")
+        .eq("empresa_id", auth.empresa_id)
+        .maybeSingle();
+      const row = cfgRow as { emisor_telefono?: string | null; emisor_email?: string | null } | null;
+      const tel = (row?.emisor_telefono ?? "").trim();
+      const em = (row?.emisor_email ?? "").trim();
+      if (tel) emisorTelefonoOverride = tel;
+      if (em) emisorEmailOverride = em;
+    } catch (e) {
+      console.warn("[kude] no se pudo cargar contacto emisor override", {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+
     const numeroFactura = fac.numero_factura == null ? "" : String(fac.numero_factura);
     let pdf: Buffer;
     try {
@@ -284,6 +306,8 @@ export async function GET(
         qrUrl,
         branding,
         codigosBarrasPorItem,
+        emisorTelefonoOverride,
+        emisorEmailOverride,
       });
     } catch (e) {
       const m = e instanceof Error ? e.message : "Error al generar PDF";
