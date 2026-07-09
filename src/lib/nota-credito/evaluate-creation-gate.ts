@@ -138,13 +138,12 @@ export async function evaluateNotaCreditoCreationGate(
     nowMs: Date.now(),
   });
 
-  if (preview.puede_cancelar) {
-    return {
-      puede_crear: false,
-      motivo_bloqueo:
-        "Todavía podés cancelar el DE dentro del plazo. Usá cancelación en lugar de nota de crédito.",
-    };
-  }
+  // Nota: aunque el DE siga dentro del plazo de cancelación en SET, permitimos
+  // emitir NC. El operador elige entre cancelar (anula el DE) o NC (deja registro
+  // fiscal ajustando saldo). Antes bloqueábamos aquí para forzar cancelación;
+  // se removió a pedido del negocio (2026-07-09) porque hay casos legítimos de
+  // NC dentro del plazo (devolución parcial, ajuste de precio, cliente ya cobrado).
+  void preview;
 
   // Se admiten múltiples NC por factura mientras el acumulado (aprobadas +
   // en curso) no supere el saldo disponible. La regla de coherencia

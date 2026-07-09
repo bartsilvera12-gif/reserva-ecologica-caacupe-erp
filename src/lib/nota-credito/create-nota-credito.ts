@@ -174,14 +174,10 @@ export async function createNotaCreditoBorrador(p: CreateNotaCreditoParams): Pro
     nowMs: Date.now(),
   });
 
-  if (preview.puede_cancelar) {
-    return {
-      ok: false,
-      status: 409,
-      error:
-        "Todavía podés cancelar el documento electrónico dentro del plazo. Usá «Cancelar factura (DE)» y emití una nueva factura; no corresponde crear nota de crédito.",
-    };
-  }
+  // Guard removido (2026-07-09): permitimos NC aunque el DE siga siendo cancelable
+  // en SET. El operador decide entre cancelar el DE o emitir NC según el caso real
+  // (devolución parcial, ajuste de precio, cliente ya cobrado). Ver evaluate-creation-gate.ts.
+  void preview;
 
   // Consideramos NC previas: sumaAprobadas (ya restadas del saldo por el RPC)
   // + sumaEnCurso (compromiso pendiente). Se permiten múltiples NC hasta agotar
