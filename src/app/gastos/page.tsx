@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { getGastos, deleteGasto } from "@/lib/gastos/actions";
 import type { Gasto } from "@/lib/gastos/actions";
 
@@ -40,10 +39,46 @@ const metodoPagoBadge: Record<string, { label: string; className: string }> = {
 };
 
 export default function GastosPage() {
-  const router = useRouter();
   const [gastos, setGastos] = useState<Gasto[]>([]);
   const [cargando, setCargando] = useState(true);
   const [eliminando, setEliminando] = useState<string | null>(null);
+
+  // Filtros client-side (getGastos() ya trae todo).
+  const [busqueda, setBusqueda] = useState("");
+  const [desde, setDesde] = useState("");
+  const [hasta, setHasta] = useState("");
+  const [tipoFiltro, setTipoFiltro] = useState<"" | "fijo" | "variable">("");
+  const [metodoPagoFiltro, setMetodoPagoFiltro] = useState<
+    "" | "efectivo" | "transferencia" | "tarjeta" | "sin_especificar"
+  >("");
+
+  const filtrados = gastos.filter((g) => {
+    if (desde && g.fecha < desde) return false;
+    if (hasta && g.fecha > hasta) return false;
+    if (tipoFiltro && g.tipo !== tipoFiltro) return false;
+    if (metodoPagoFiltro === "sin_especificar") {
+      if (g.metodo_pago) return false;
+    } else if (metodoPagoFiltro && g.metodo_pago !== metodoPagoFiltro) {
+      return false;
+    }
+    if (busqueda.trim()) {
+      const q = busqueda.trim().toLowerCase();
+      const enCategoria = (g.categoria ?? "").toLowerCase().includes(q);
+      const enDescripcion = (g.descripcion ?? "").toLowerCase().includes(q);
+      const enBeneficiario = (g.beneficiario ?? "").toLowerCase().includes(q);
+      if (!enCategoria && !enDescripcion && !enBeneficiario) return false;
+    }
+    return true;
+  });
+
+  const hayFiltros =
+    busqueda.trim() !== "" ||
+    desde !== "" ||
+    hasta !== "" ||
+    tipoFiltro !== "" ||
+    metodoPagoFiltro !== "";
+
+  const totalFiltrado = filtrados.reduce((s, g) => s + Number(g.monto ?? 0), 0);
 
   useEffect(() => {
     getGastos()
@@ -91,6 +126,103 @@ export default function GastosPage() {
         </Link>
       </div>
 
+      {gastos.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="lg:col-span-2">
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                Buscar
+              </label>
+              <input
+                type="text"
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+                placeholder="Categoría, beneficiario o descripción…"
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4FAEB2] bg-white"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                Desde
+              </label>
+              <input
+                type="date"
+                value={desde}
+                onChange={(e) => setDesde(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4FAEB2] bg-white"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                Hasta
+              </label>
+              <input
+                type="date"
+                value={hasta}
+                onChange={(e) => setHasta(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4FAEB2] bg-white"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                Tipo
+              </label>
+              <select
+                value={tipoFiltro}
+                onChange={(e) => setTipoFiltro(e.target.value as "" | "fijo" | "variable")}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4FAEB2] bg-white"
+              >
+                <option value="">Todos</option>
+                <option value="variable">Variable</option>
+                <option value="fijo">Fijo</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                Método de pago
+              </label>
+              <select
+                value={metodoPagoFiltro}
+                onChange={(e) =>
+                  setMetodoPagoFiltro(
+                    e.target.value as "" | "efectivo" | "transferencia" | "tarjeta" | "sin_especificar"
+                  )
+                }
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#4FAEB2] bg-white"
+              >
+                <option value="">Todos</option>
+                <option value="efectivo">Efectivo</option>
+                <option value="transferencia">Transferencia</option>
+                <option value="tarjeta">Tarjeta</option>
+                <option value="sin_especificar">Sin especificar</option>
+              </select>
+            </div>
+          </div>
+          {hayFiltros && (
+            <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
+              <span>
+                Mostrando <span className="font-semibold text-slate-800">{filtrados.length}</span> de{" "}
+                <span className="font-semibold text-slate-800">{gastos.length}</span> gastos ·{" "}
+                <span className="font-semibold text-[#4FAEB2]">{formatGs(totalFiltrado)}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setBusqueda("");
+                  setDesde("");
+                  setHasta("");
+                  setTipoFiltro("");
+                  setMetodoPagoFiltro("");
+                }}
+                className="text-[#4FAEB2] hover:text-[#3F8E91] font-medium"
+              >
+                Limpiar filtros
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm ring-1 ring-[#4FAEB2]/15">
         {cargando ? (
           <div className="py-16 text-center text-gray-400 text-sm animate-pulse">Cargando gastos…</div>
@@ -123,7 +255,14 @@ export default function GastosPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {gastos.map((g) => (
+              {filtrados.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="py-12 text-center text-sm text-gray-400">
+                    Ningún gasto coincide con los filtros aplicados.
+                  </td>
+                </tr>
+              )}
+              {filtrados.map((g) => (
                 <tr key={g.id} className="hover:bg-[#4FAEB2]/[0.04] transition-colors">
                   <td className="px-5 py-3.5 text-sm text-gray-600">{formatFecha(g.fecha)}</td>
                   <td className="px-5 py-3.5 text-sm font-medium text-gray-800 hidden lg:table-cell">{g.categoria || "—"}</td>
@@ -180,7 +319,7 @@ export default function GastosPage() {
         )}
       </div>
 
-      {gastos.length > 0 && (
+      {gastos.length > 0 && !hayFiltros && (
         <p className="text-sm text-gray-500">
           <span className="font-semibold text-gray-800">{gastos.length}</span> gastos
         </p>
