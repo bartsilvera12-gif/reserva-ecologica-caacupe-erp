@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { FileText, Plus, Loader2, Lock, ChevronDown } from "lucide-react";
+import { FileText, Plus, Loader2, Lock, ChevronDown, Search, X } from "lucide-react";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { ESTADO_LABEL, type EstadoPresupuesto } from "@/lib/presupuestos/types";
 
@@ -13,6 +13,7 @@ type PresupuestoRow = {
   id: string;
   numero_control: string;
   cliente_nombre: string;
+  cliente_ruc: string | null;
   fecha: string;
   total: number | string;
   estado: EstadoPresupuesto;
@@ -60,6 +61,7 @@ export default function PresupuestosPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<"todos" | EstadoPresupuesto>("todos");
+  const [busqueda, setBusqueda] = useState("");
   const [toast, setToast] = useState<{ tipo: "ok" | "error"; msg: string } | null>(null);
   const [actualizando, setActualizando] = useState<Set<string>>(new Set());
 
@@ -128,10 +130,23 @@ export default function PresupuestosPage() {
     void cargar();
   }, [cargar]);
 
-  const filtradas = useMemo(
-    () => (filtro === "todos" ? rows : rows.filter((r) => r.estado === filtro)),
-    [rows, filtro]
-  );
+  const filtradas = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
+    const qDigitos = q.replace(/\D/g, "");
+    return rows.filter((r) => {
+      if (filtro !== "todos" && r.estado !== filtro) return false;
+      if (q.length === 0) return true;
+      const nombre = (r.cliente_nombre ?? "").toLowerCase();
+      const numero = (r.numero_control ?? "").toLowerCase();
+      const rucRaw = (r.cliente_ruc ?? "").toLowerCase();
+      const rucDigitos = rucRaw.replace(/\D/g, "");
+      if (nombre.includes(q)) return true;
+      if (numero.includes(q)) return true;
+      if (rucRaw.includes(q)) return true;
+      if (qDigitos.length > 0 && rucDigitos.includes(qDigitos)) return true;
+      return false;
+    });
+  }, [rows, filtro, busqueda]);
 
   return (
     <div className="space-y-6">
@@ -163,6 +178,28 @@ export default function PresupuestosPage() {
         </Link>
       </div>
 
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+        <input
+          type="text"
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          placeholder="Buscar por nombre, RUC o N° de presupuesto…"
+          className="w-full rounded-lg border border-slate-200 bg-white pl-9 pr-9 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#4FAEB2]/40 focus:border-[#4FAEB2]"
+          aria-label="Buscar presupuestos"
+        />
+        {busqueda && (
+          <button
+            type="button"
+            onClick={() => setBusqueda("")}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+            aria-label="Limpiar búsqueda"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+
       <div className="flex flex-wrap gap-2">
         {FILTROS.map((f) => (
           <button
@@ -188,7 +225,9 @@ export default function PresupuestosPage() {
           </div>
         ) : filtradas.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-500">
-            No hay presupuestos {filtro !== "todos" ? `en estado "${ESTADO_LABEL[filtro as EstadoPresupuesto]}"` : "todavía"}.
+            {busqueda.trim().length > 0
+              ? `Ningún presupuesto coincide con "${busqueda}".`
+              : `No hay presupuestos ${filtro !== "todos" ? `en estado "${ESTADO_LABEL[filtro as EstadoPresupuesto]}"` : "todavía"}.`}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -207,7 +246,12 @@ export default function PresupuestosPage() {
                 {filtradas.map((r) => (
                   <tr key={r.id} className="hover:bg-slate-50">
                     <td className="py-3 px-4 font-mono font-medium text-gray-800">{r.numero_control}</td>
-                    <td className="py-3 px-4 text-gray-700">{r.cliente_nombre}</td>
+                    <td className="py-3 px-4 text-gray-700">
+                      <div>{r.cliente_nombre}</div>
+                      {r.cliente_ruc ? (
+                        <div className="text-xs text-slate-500 font-mono">{r.cliente_ruc}</div>
+                      ) : null}
+                    </td>
                     <td className="py-3 px-4 text-gray-600">{fmtFecha(r.fecha)}</td>
                     <td className="py-3 px-4 text-right tabular-nums font-semibold text-gray-800">{fmtGs(r.total, r.moneda)}</td>
                     <td className="py-3 px-4 align-middle">
