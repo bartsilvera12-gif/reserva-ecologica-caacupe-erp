@@ -41,6 +41,92 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/**
+ * Log estructurado pre-envío a SET. Se dispara justo antes de invokeSifenEnviar
+ * y sirve para diagnosticar rechazos 0301 [1264] («RUC no habilitado») en
+ * producción: deja rastro claro de qué RUC/DV emisor y receptor se está por
+ * mandar, si el receptor va como contribuyente (iNatRec=1) o consumidor final
+ * (iNatRec=2), en qué ambiente y con qué CDC + sifen_regeneracion_seq (para ver
+ * si el retry generó un CDC nuevo). No loguea el certificado ni ninguna
+ * contraseña: solo campos "no-secreto" que el operador necesita para investigar
+ * un rechazo con el usuario final.
+ */
+async function logPreEnvioSifen(
+  supabase: AppSupabaseClient,
+  empresaId: string,
+  facturaId: string,
+  jobLabel: string
+): Promise<void> {
+  try {
+    const { data: fe } = await supabase
+      .from("factura_electronica")
+      .select("id, cdc, estado_sifen, sifen_regeneracion_seq")
+      .eq("factura_id", facturaId)
+      .eq("empresa_id", empresaId)
+      .maybeSingle();
+    const { data: fac } = await supabase
+      .from("facturas")
+      .select("id, cliente_id")
+      .eq("id", facturaId)
+      .eq("empresa_id", empresaId)
+      .maybeSingle();
+    const clienteId = fac?.cliente_id ?? null;
+    const { data: cli } = clienteId
+      ? await supabase
+          .from("clientes")
+          .select("id, ruc, documento, es_contribuyente, tipo_cliente")
+          .eq("id", clienteId)
+          .maybeSingle()
+      : { data: null };
+    const { data: cfg } = await supabase
+      .from("empresa_sifen_config")
+      .select("ambiente, ruc")
+      .eq("empresa_id", empresaId)
+      .maybeSingle();
+
+    const emisorRuc = cfg?.ruc == null ? "" : String(cfg.ruc);
+    const emisorDigits = emisorRuc.replace(/\D/g, "");
+    const emisorCuerpo = emisorDigits.length > 1 ? emisorDigits.slice(0, -1) : "";
+    const emisorDv = emisorDigits.length > 0 ? emisorDigits.slice(-1) : "";
+
+    const recRuc = cli?.ruc == null ? "" : String(cli.ruc);
+    const recDigits = recRuc.replace(/\D/g, "");
+    const recCuerpo = recDigits.length > 1 ? recDigits.slice(0, -1) : "";
+    const recDv = recDigits.length > 0 ? recDigits.slice(-1) : "";
+    const esContribuyente =
+      cli?.es_contribuyente === true ||
+      String(cli?.tipo_cliente ?? "").toLowerCase() === "empresa";
+    const iNatRec = esContribuyente && recRuc.trim() ? 1 : 2;
+    const iTiOpe = esContribuyente && recRuc.trim() ? 1 : 2;
+
+    console.log(
+      `${jobLabel} pre-envio-sifen ${JSON.stringify({
+        empresa_id: empresaId,
+        factura_id: facturaId,
+        cliente_id: clienteId,
+        emisor_ruc_cuerpo: emisorCuerpo || null,
+        emisor_dv: emisorDv || null,
+        receptor_ruc_cuerpo: recCuerpo || null,
+        receptor_dv: recDv || null,
+        receptor_documento_ci: cli?.documento ?? null,
+        receptor_es_contribuyente: esContribuyente,
+        receptor_tipo_cliente: cli?.tipo_cliente ?? null,
+        i_nat_rec: iNatRec,
+        i_ti_ope: iTiOpe,
+        cdc: fe?.cdc ?? null,
+        estado_sifen: fe?.estado_sifen ?? null,
+        sifen_regeneracion_seq: fe?.sifen_regeneracion_seq ?? null,
+        ambiente: cfg?.ambiente ?? null,
+      })}`
+    );
+  } catch (e) {
+    // Log de diagnóstico: si falla, no debe abortar el envío real.
+    console.warn(
+      `${jobLabel} pre-envio-sifen log falló (${e instanceof Error ? e.message : String(e)}) — continuando`
+    );
+  }
+}
+
 /** Clasifica un HandlerResult fallido en `tipo_error` según status y mensaje. */
 function clasificarError(status: number, mensaje: string): SifenJobTipoError {
   const msg = mensaje.toLowerCase();
@@ -342,6 +428,7 @@ export async function runSifenJob(job: SifenJobDTO): Promise<void> {
         st === "firmado" || (st === "error_envio" && !!fe?.xml_firmado_path);
       if (necesitaEnviar) {
         await setSifenJobEtapa(supabase, job.id, "enviar");
+        await logPreEnvioSifen(supabase, job.empresa_id, fid, label);
         const r = await medir(() => invokeSifenEnviar(auth, supabase, fid));
         if (!r.ok) {
           const tipo = clasificarError(r.status, r.error);

@@ -330,7 +330,7 @@ export function FacturaElectronicaPanel({
       setFlash({
         kind: "ok",
         text:
-          "XML regenerado en el servidor. Si el documento estaba rechazado, puede haberse asignado un nuevo CDC: revisá el resumen y continuá con firmar y enviar cuando corresponda. Este paso no envía datos al SET.",
+          "XML regenerado desde los datos actuales del cliente (RUC/DV/tipo de contribuyente/dirección). Si el DE estaba rechazado, se asignó un nuevo CDC. Continuá con firmar y enviar. Este paso no envía datos al SET.",
       });
       await refresh();
     } catch (e) {
@@ -844,9 +844,10 @@ export function FacturaElectronicaPanel({
                     type="button"
                     disabled={busy}
                     onClick={() => void regenerarDocumentoRechazado()}
+                    title="Vuelve a leer los datos actuales del cliente (RUC, DV, tipo de contribuyente, dirección) y arma un XML nuevo con CDC nuevo. Úsalo tras corregir datos del cliente para que el reenvío no repita el mismo XML rechazado."
                     className="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 text-sm font-semibold shadow-sm disabled:opacity-45 disabled:cursor-not-allowed hover:bg-slate-50"
                   >
-                    {action === "xml" ? "Regenerando…" : "Regenerar documento"}
+                    {action === "xml" ? "Regenerando…" : "Regenerar XML desde datos actuales del cliente"}
                   </button>
                 ) : null}
                 {resumen.sifen_job &&

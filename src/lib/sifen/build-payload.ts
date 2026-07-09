@@ -385,20 +385,46 @@ function validateReceptor(
     }
   }
 
+  // Solo tratamos al receptor como contribuyente cuando:
+  //   (a) el operador marcó explícitamente el checkbox `es_contribuyente`, o
+  //   (b) el cliente es una empresa (persona jurídica — siempre contribuyente).
+  const esContribuyentePy =
+    cliente.es_contribuyente === true ||
+    trimStr(cliente.tipo_cliente ?? "").toLowerCase() === "empresa";
+
+  // Gates de coherencia contribuyente↔RUC. SET rechaza el lote con 0301 [1264]
+  // ("RUC del receptor no habilitado para esta operación") cuando el ERP envía
+  // como B2B (iNatRec=1) un RUC que no está habilitado en el padrón: típicamente
+  // porque `clientes.ruc` quedó cargado tras destildar `es_contribuyente`, o
+  // porque una empresa (persona jurídica) no tiene RUC. Bloqueamos acá antes de
+  // gastar un envío a SET y le pedimos al operador corregir el cliente.
+  if (!esContribuyentePy && ruc) {
+    return {
+      ok: false,
+      error:
+        "El cliente tiene RUC cargado pero no está marcado como contribuyente. SIFEN rechazaría el DE con 0301 [1264] («RUC del receptor no habilitado»). Corregí el cliente: si es contribuyente, tildá «es contribuyente»; si no, borrá el RUC del cliente y volvé a intentar.",
+    };
+  }
+  if (
+    trimStr(cliente.tipo_cliente ?? "").toLowerCase() === "empresa" &&
+    !ruc
+  ) {
+    return {
+      ok: false,
+      error:
+        "El cliente está marcado como empresa (persona jurídica) pero no tiene RUC. SIFEN exige RUC + DV para operación B2B. Cargá el RUC en el cliente y volvé a intentar.",
+    };
+  }
+
   const receptor: SifenPayloadReceptor = {
     cliente_id: cliente.id,
     nombre,
     documento,
     ruc,
-    // Solo tratamos al receptor como contribuyente cuando:
-    //   (a) el operador marcó explícitamente el checkbox `es_contribuyente`, o
-    //   (b) el cliente es una empresa (persona jurídica — siempre contribuyente).
     // Personas físicas con checkbox destildado NO son contribuyentes aunque su
     // documento tenga formato de RUC (CI + DV). Ese era el bug histórico:
     // el sistema inferíа B2B solo por el guión del documento e ignoraba el flag.
-    es_contribuyente_py:
-      cliente.es_contribuyente === true ||
-      trimStr(cliente.tipo_cliente ?? "").toLowerCase() === "empresa",
+    es_contribuyente_py: esContribuyentePy,
     direccion,
     telefono: trimStr(cliente.telefono) || null,
     email: trimStr(cliente.email) || null,
