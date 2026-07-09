@@ -268,7 +268,16 @@ export async function POST(request: NextRequest) {
       nivel_precio:         nivel_precio === "mayorista" || nivel_precio === "distribuidor"
         ? nivel_precio
         : "minorista",
-      ruc:                  ruc?.trim() || null,
+      // Defensa en profundidad: para personas, si es_contribuyente no está
+      // marcado, el RUC se descarta del lado servidor. Evita que un RUC
+      // "fantasma" (mandado por un cliente desactualizado o vía API directa)
+      // quede persistido con el flag apagado — rde-xml.ts decide B2B mirando
+      // el RUC directamente, no el flag, así que un RUC guardado igual
+      // facturaría como B2B. Empresas siempre pueden tener RUC (no aplica el gate).
+      ruc:
+        tipo_cliente === "persona" && es_contribuyente !== true
+          ? null
+          : ruc?.trim() || null,
       documento:            documento?.trim() || null,
       es_contribuyente:     es_contribuyente === true,
       telefono:             telefono?.trim() || null,

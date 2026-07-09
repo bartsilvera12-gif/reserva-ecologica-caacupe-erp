@@ -590,9 +590,14 @@ function NuevoClienteForm() {
                     type="checkbox"
                     name="es_contribuyente"
                     checked={form.es_contribuyente}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, es_contribuyente: e.target.checked }))
-                    }
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setForm((prev) => ({
+                        ...prev,
+                        es_contribuyente: checked,
+                        ruc: checked ? prev.ruc : "",
+                      }));
+                    }}
                     className="mt-0.5 h-4 w-4 rounded border-slate-300 text-[#0EA5E9] focus:ring-[#0EA5E9]"
                   />
                   <span>

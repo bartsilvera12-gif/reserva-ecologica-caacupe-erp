@@ -376,6 +376,17 @@ export function construirPatchActualizacionCliente(datos: ActualizarClienteInput
   if (datos.ruc !== undefined) patch.ruc = datos.ruc ?? null;
   if (datos.documento !== undefined) patch.documento = datos.documento ?? null;
   if (datos.es_contribuyente !== undefined) patch.es_contribuyente = datos.es_contribuyente === true;
+  // Defensa en profundidad: si la persona quedó con es_contribuyente=false,
+  // el RUC no debe persistir (rde-xml.ts decide B2B mirando el RUC directo,
+  // no el flag). Solo aplica cuando el patch trae ambos campos y el tipo
+  // resultante es persona (mismo criterio que el POST de creación).
+  if (
+    datos.es_contribuyente === false &&
+    (datos.tipo_cliente === "persona" || datos.tipo_cliente === undefined) &&
+    "ruc" in patch
+  ) {
+    patch.ruc = null;
+  }
   if (datos.telefono !== undefined) patch.telefono = datos.telefono ?? null;
   if (datos.telefono_secundario !== undefined) patch.telefono_secundario = datos.telefono_secundario ?? null;
   if (datos.email !== undefined) patch.email = datos.email ?? null;

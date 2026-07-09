@@ -1589,9 +1589,19 @@ export default function ClienteDetailPage() {
                         type="checkbox"
                         name="es_contribuyente"
                         checked={form.es_contribuyente}
-                        onChange={(e) =>
-                          setForm((prev) => ({ ...prev, es_contribuyente: e.target.checked }))
-                        }
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          // Al destildar, limpiamos el RUC. Si no, queda guardado en
+                          // el state (y se manda igual al guardar) aunque el checkbox
+                          // esté apagado, y rde-xml.ts decide la rama B2B mirando
+                          // receptor.ruc directamente — no el flag — así que un RUC
+                          // "fantasma" seguiría facturando como B2B pese al checkbox.
+                          setForm((prev) => ({
+                            ...prev,
+                            es_contribuyente: checked,
+                            ruc: checked ? prev.ruc : "",
+                          }));
+                        }}
                         className="mt-0.5 h-4 w-4 rounded border-slate-300 text-[#0EA5E9] focus:ring-[#0EA5E9]"
                       />
                       <span>
