@@ -387,6 +387,11 @@ export interface RegistrarIntentoArgs {
   tipoError: SifenJobTipoError;
   mensaje: string;
   tiempoMs: number;
+  /** Override del backoff automático (ms). Si se omite, se usa la política
+   *  por defecto (5s primer intento, 20s segundo). Se usa para casos
+   *  específicos como 0301 [1264], donde SET recomienda esperar más antes
+   *  de reintentar para dar tiempo a que su padrón se propague. */
+  backoffOverrideMs?: number;
 }
 
 /**
@@ -424,7 +429,15 @@ export async function registrarIntentoYPlanificar(
 
   if (puedeReintentar) {
     // Backoff: intento 1 → 5s, intento 2 → 20s (política del usuario).
-    const backoffMs = intentoNum === 1 ? 5_000 : 20_000;
+    // El caller puede override con backoffOverrideMs para casos específicos
+    // (p.ej. 0301 [1264] usa 30s porque suele ser transitorio de SET y
+    // necesita más tiempo para que el padrón se propague).
+    const backoffMs =
+      args.backoffOverrideMs != null && args.backoffOverrideMs > 0
+        ? args.backoffOverrideMs
+        : intentoNum === 1
+          ? 5_000
+          : 20_000;
     const proximo = new Date(Date.now() + backoffMs).toISOString();
     const { error } = await supabase
       .from("sifen_jobs")

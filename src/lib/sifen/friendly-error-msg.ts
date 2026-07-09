@@ -86,12 +86,14 @@ export function friendlyErrorMsg(input: FriendlyErrorInput): FriendlyErrorOutput
     return {
       titulo: "SET rechazó el envío: el RUC del emisor o del receptor no está habilitado para esta operación.",
       detalle: [
-        "Este error suele tener dos causas:",
+        "Este error puede tener tres causas:",
         "",
-        "1) El receptor no está inscripto como contribuyente en la SET. Aunque en el ERP figure como «es contribuyente», si su RUC no existe en el padrón oficial, la SET rechaza el envío como B2B. Verificalo en https://www.set.gov.py → Consultas rápidas → Consulta de RUC.",
+        "1) TRANSITORIO DE SET (probá reintentar primero). En la práctica, este mismo error a veces se resuelve solo al reintentar — SET tiene ventanas de validación intermitente o cachés desactualizadas. El sistema ya reintenta una vez automáticamente a los 30 segundos; si el segundo intento también falla, seguí con las causas de abajo.",
+        "",
+        "2) El receptor no está inscripto como contribuyente en la SET. Aunque en el ERP figure como «es contribuyente», si su RUC no existe en el padrón oficial, la SET rechaza el envío como B2B. Verificalo en https://www.set.gov.py → Consultas rápidas → Consulta de RUC.",
         "   → Si aparece «no encontrado» o «inactivo»: destildá «Es contribuyente» en la ficha del cliente, guardá y regenerá el documento para emitirlo como consumidor final (B2C).",
         "",
-        "2) El emisor no tiene habilitada la operación B2C (consumidor final) en Marangatu. Si el receptor es realmente consumidor final, avisá al contador de la empresa emisora para que active la habilitación en el portal SET.",
+        "3) El emisor no tiene habilitada la operación B2C (consumidor final) en Marangatu. Si el receptor es realmente consumidor final, avisá al contador de la empresa emisora para que active la habilitación en el portal SET.",
         "",
         "Mientras se resuelve, podés emitir una nota de remisión desde la venta (documento no fiscal).",
       ].join("\n"),

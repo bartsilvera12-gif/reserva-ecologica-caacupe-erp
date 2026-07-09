@@ -235,7 +235,8 @@ async function fallarIntento(
   etapa: SifenJobEtapa,
   tipoError: SifenJobTipoError,
   mensaje: string,
-  tiempoMs: number
+  tiempoMs: number,
+  backoffOverrideMs?: number
 ): Promise<void> {
   const label = `${LABEL}[${job.id}]`;
   const result = await registrarIntentoYPlanificar(supabase, {
@@ -244,6 +245,7 @@ async function fallarIntento(
     tipoError,
     mensaje,
     tiempoMs,
+    backoffOverrideMs,
   });
   console.log(
     `${label} intento ${job.intentos + 1} fallido en etapa=${etapa} tipo=${tipoError} → ${result} (${tiempoMs}ms) msg="${mensaje.slice(0, 300)}"`
@@ -350,12 +352,67 @@ export async function runSifenJob(job: SifenJobDTO): Promise<void> {
         await setSifenJobEtapaTiempo(supabase, job.id, "enviar", r.ms);
         const recibe = r.data.recibe_lote;
         // Rechazo directo del lote entero (0301 típico): la factura queda en
-        // 'error_envio' pero SET ya se pronunció — cerramos como 'rechazado'.
+        // 'error_envio' pero SET ya se pronunció.
         if (recibe && recibe.loteNoEncolado === true) {
           const codigos = extraerCodigosDelEnviar(
             recibe,
             r.data.factura_electronica?.error ?? null
           );
+
+          // Reintento condicional para 0301 [1264]: sabemos por QA en
+          // producción que este código a veces es transitorio (SET
+          // intermitente / caché de padrón desactualizada). En vez de
+          // cerrar como rechazado inmediatamente, se le da UN reintento
+          // automático con espera de 30s. Si vuelve a fallar, ahí sí se
+          // cierra como rechazado definitivo.
+          //
+          // Solo se reintenta 0301 [1264] específico (no otros rechazos
+          // de negocio como XSD inválido, timbrado vencido, etc., que sí
+          // son determinísticos). Solo en el primer intento del job — si
+          // ya fue reintentado y volvió a rebotar con lo mismo, cerramos.
+          const es0301_1264 = codigos.cod === "0301" && codigos.sub === "1264";
+          const primerIntento = job.intentos === 0;
+          if (es0301_1264 && primerIntento) {
+            console.log(
+              `${label} SET rechazó 0301 [1264] en primer intento — regenerando XML y re-encolando con 30s de backoff (a veces transitorio).`
+            );
+            // Regenerar XML antes del re-encolado. Si no lo hacemos, el
+            // segundo intento reenviaría el mismo XML firmado y SET
+            // responde CDC duplicado (0362 [1001]) — porque aunque haya
+            // rechazado el primer envío con 0301, ya registró el CDC.
+            // POST /sifen/xml bumpea sifen_regeneracion_seq → nuevo CDC.
+            // El job re-encolado, al ver el estado 'generado', ejecuta
+            // el flujo firmar → enviar por su cuenta.
+            const rXml = await medir(() => invokeSifenXml(auth, supabase, fid));
+            if (!rXml.ok) {
+              console.error(
+                `${label} regenerar XML falló antes del reintento 0301: ${rXml.error}. Cerramos como rechazado.`
+              );
+              await completeSifenJobRechazado(supabase, job.id, {
+                etapa: "enviar",
+                codigoErrorSet: codigos.cod,
+                codigoSubErrorSet: codigos.sub,
+                mensajeSet:
+                  (codigos.msg ?? "SET rechazó el lote (0301).") +
+                  ` [Auto-retry abortado: falló la regeneración del XML — ${rXml.error}]`,
+                respuestaRecibeLote: recibe as unknown as Record<string, unknown>,
+                respuestaConsultaLote: null,
+                tiempoTotalMs: Date.now() - totalStart,
+              });
+              return;
+            }
+            await fallarIntento(
+              supabase,
+              job,
+              "enviar",
+              "http_5xx", // categoría reintentable existente; deja rastro del rechazo en intentos_log
+              `SET rechazó 0301 [1264] — reintento automático en 30s con XML regenerado. Mensaje original: ${codigos.msg ?? "(sin mensaje)"}`,
+              r.ms,
+              30_000 // backoff override: 30s (vs 5s del default)
+            );
+            return;
+          }
+
           await completeSifenJobRechazado(supabase, job.id, {
             etapa: "enviar",
             codigoErrorSet: codigos.cod,
