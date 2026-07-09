@@ -45,7 +45,24 @@ function asItems(body: unknown): CreateVentaItemInput[] | null {
       total_linea: Number(r.total_linea),
     });
   }
-  if (out.some((i) => !i.producto_id || !(i.cantidad > 0))) return null;
+  // NaN/Infinity bypasean el chequeo de coherencia de totales en
+  // create-venta-pg.ts (Math.abs(NaN - x) > TOL es siempre false en JS), así
+  // que se rechazan acá antes de llegar a esa validación.
+  if (
+    out.some(
+      (i) =>
+        !i.producto_id ||
+        !(i.cantidad > 0) ||
+        !Number.isFinite(i.precio_venta_original) ||
+        !Number.isFinite(i.precio_venta) ||
+        i.precio_venta < 0 ||
+        !Number.isFinite(i.subtotal) ||
+        !Number.isFinite(i.monto_iva) ||
+        !Number.isFinite(i.total_linea)
+    )
+  ) {
+    return null;
+  }
   return out;
 }
 
@@ -140,6 +157,28 @@ export async function POST(request: NextRequest) {
         ? null
         : String(o.observaciones).slice(0, 4000);
     const permitirSinStock = o.permitir_sin_stock === true;
+    const emitirFacturaFlag = o.emitir_factura !== false;
+
+    // Defensa en profundidad: estas dos reglas hoy solo viven en el frontend
+    // (ventas/nueva/page.tsx). Una llamada directa a la API podía saltarlas:
+    //  - CREDITO sin cliente: la venta se creaba igual con tipo_venta='CREDITO'
+    //    pero createVentaTransaccionalPg solo abre CxC si hay clienteId — quedaba
+    //    "fiado" sin ningún mecanismo de cobranza asociado.
+    //  - emitir_factura=true sin cliente: SIFEN exige receptor; se descontaba
+    //    stock y creaba la venta antes de que el puente venta→factura fallara
+    //    (o peor, generara una FAC-XXXXXX sin razón social/RUC).
+    if (tipoVenta === "CREDITO" && !clienteId) {
+      return NextResponse.json(
+        errorResponse("Una venta a crédito requiere un cliente seleccionado."),
+        { status: 400 }
+      );
+    }
+    if (emitirFacturaFlag && !clienteId) {
+      return NextResponse.json(
+        errorResponse("Para emitir factura electrónica se requiere un cliente seleccionado."),
+        { status: 400 }
+      );
+    }
     // Pedido (proyecto) que se está facturando desde Caja. Opcional.
     const pedidoId = typeof o.pedido_id === "string" && o.pedido_id.trim() ? o.pedido_id.trim() : null;
 
@@ -188,7 +227,7 @@ export async function POST(request: NextRequest) {
     const montoIvaDeclarado = Number(o.monto_iva);
     const totalDeclarado = Number(o.total);
 
-    if ([subtotalDeclarado, montoIvaDeclarado, totalDeclarado].some((n) => Number.isNaN(n))) {
+    if ([subtotalDeclarado, montoIvaDeclarado, totalDeclarado].some((n) => !Number.isFinite(n))) {
       return NextResponse.json(errorResponse("Totales inválidos."), { status: 400 });
     }
 
@@ -236,7 +275,7 @@ export async function POST(request: NextRequest) {
       generaNotaRemision: o.genera_nota_remision === true,
       // Default true (compat) — solo se salta el puente venta→factura si el
       // cajero explícitamente eligió "solo ticket" al confirmar la venta.
-      emitirFactura: o.emitir_factura !== false,
+      emitirFactura: emitirFacturaFlag,
       createdBy: auth.usuarioCatalogId ?? null,
       usuarioNombre: auth.user?.email ?? null,
     });

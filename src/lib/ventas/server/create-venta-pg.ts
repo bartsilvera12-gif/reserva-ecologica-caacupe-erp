@@ -359,22 +359,28 @@ export async function createVentaTransaccionalPg(
     observacionesFinal = (observacionesFinal ? `${observacionesFinal} | ${nota}` : nota).slice(0, 4000);
   }
 
-  // 4) Numero control VTA-XXXXXX (best-effort: race posible en entorno multi-usuario).
-  const maxQ = await sb
-    .from("ventas")
-    .select("numero_control")
-    .eq("empresa_id", params.empresaId)
-    .like("numero_control", "VTA-%")
-    .order("numero_control", { ascending: false })
-    .limit(1);
-  if (maxQ.error) throw new Error(maxQ.error.message);
-  let nextNum = 1;
-  const lastNum = (maxQ.data?.[0] as { numero_control?: string } | undefined)?.numero_control;
-  if (lastNum) {
-    const m = lastNum.match(/^VTA-(\d+)$/);
-    if (m) nextNum = parseInt(m[1], 10) + 1;
-  }
-  const numeroControl = `VTA-${String(nextNum).padStart(6, "0")}`;
+  // 4) Numero control VTA-XXXXXX. El cálculo (MAX + incremento en memoria) no
+  // tiene lock, así que dos requests casi simultáneos pueden calcular el mismo
+  // próximo número. El índice único (empresa_id, numero_control) convierte esa
+  // carrera en un error de INSERT explícito en vez de un duplicado silencioso;
+  // el insert de la venta (paso 5) reintenta recalculando el número si choca.
+  const calcularNumeroControl = async (): Promise<string> => {
+    const maxQ = await sb
+      .from("ventas")
+      .select("numero_control")
+      .eq("empresa_id", params.empresaId)
+      .like("numero_control", "VTA-%")
+      .order("numero_control", { ascending: false })
+      .limit(1);
+    if (maxQ.error) throw new Error(maxQ.error.message);
+    let nextNum = 1;
+    const lastNum = (maxQ.data?.[0] as { numero_control?: string } | undefined)?.numero_control;
+    if (lastNum) {
+      const m = lastNum.match(/^VTA-(\d+)$/);
+      if (m) nextNum = parseInt(m[1], 10) + 1;
+    }
+    return `VTA-${String(nextNum).padStart(6, "0")}`;
+  };
   const fechaIso = new Date().toISOString();
 
   // 4b) Nota de remisión (solo si se solicita Y hay cliente). Numeración simple por
@@ -399,34 +405,66 @@ export async function createVentaTransaccionalPg(
     notaRemisionNumero = `NR-${String(nextNr).padStart(6, "0")}`;
   }
 
-  // 5) Insertar venta
-  const insVenta = await sb
-    .from("ventas")
-    .insert({
-      empresa_id: params.empresaId,
-      cliente_id: params.clienteId,
-      numero_control: numeroControl,
-      moneda: params.moneda,
-      tipo_cambio: params.tipoCambio,
-      subtotal: calc.subtotal,
-      monto_iva: calc.montoIva,
-      total: calc.total,
-      estado: "completada",
-      tipo_venta: params.tipoVenta,
-      plazo_dias: params.plazoDias,
-      metodo_pago: params.metodoPago,
-      genera_nota_remision: generaNota,
-      nota_remision_numero: notaRemisionNumero,
-      fecha: fechaIso,
-      observaciones: observacionesFinal,
-    })
-    .select("id")
-    .single();
-  if (insVenta.error) throw new Error(insVenta.error.message);
-  const ventaId = String((insVenta.data as { id: string }).id);
+  // 5) Insertar venta. Reintenta hasta 3 veces si el numero_control choca con
+  // el índice único (carrera con otra venta calculando el mismo próximo número).
+  let numeroControl = await calcularNumeroControl();
+  let ventaId = "";
+  let intentos = 0;
+  for (;;) {
+    intentos++;
+    const insVenta = await sb
+      .from("ventas")
+      .insert({
+        empresa_id: params.empresaId,
+        cliente_id: params.clienteId,
+        numero_control: numeroControl,
+        moneda: params.moneda,
+        tipo_cambio: params.tipoCambio,
+        subtotal: calc.subtotal,
+        monto_iva: calc.montoIva,
+        total: calc.total,
+        estado: "completada",
+        tipo_venta: params.tipoVenta,
+        plazo_dias: params.plazoDias,
+        metodo_pago: params.metodoPago,
+        genera_nota_remision: generaNota,
+        nota_remision_numero: notaRemisionNumero,
+        fecha: fechaIso,
+        observaciones: observacionesFinal,
+      })
+      .select("id")
+      .single();
+    if (!insVenta.error) {
+      ventaId = String((insVenta.data as { id: string }).id);
+      break;
+    }
+    const msg = insVenta.error.message ?? "";
+    const esConflictoNumero =
+      (insVenta.error as { code?: string }).code === "23505" || /duplicate key|unique/i.test(msg);
+    if (!esConflictoNumero || intentos >= 3) throw new Error(msg);
+    numeroControl = await calcularNumeroControl();
+  }
+
+  // stock_actual previo a cada decremento (productos e insumos), para poder
+  // restaurarlo si algún paso posterior falla. Mismo patrón que
+  // anular-venta-core.ts: se guarda el valor ANTES de escribir el nuevo, así
+  // el rollback es una simple restauración, no un cálculo de delta.
+  const stockPrevio: Array<{ producto_id: string; stock_actual: number }> = [];
 
   // Helper de rollback best-effort
   const rollback = async () => {
+    // Restaurar stock ANTES de borrar movimientos/venta: si esto falla a
+    // mitad de camino, preferimos dejar rastro (movimiento + venta huérfana)
+    // antes que perder silenciosamente el stock descontado.
+    for (const s of stockPrevio) {
+      try {
+        await sb
+          .from("productos")
+          .update({ stock_actual: s.stock_actual })
+          .eq("id", s.producto_id)
+          .eq("empresa_id", params.empresaId);
+      } catch {}
+    }
     try {
       await sb.from("cuentas_por_cobrar").delete().eq("venta_id", ventaId).eq("empresa_id", params.empresaId);
     } catch {}
@@ -470,6 +508,7 @@ export async function createVentaTransaccionalPg(
       // El stock nunca baja de 0: si se vendió sin stock, queda en 0 (la cantidad real
       // vendida queda registrada en el movimiento SALIDA, así no se pierde trazabilidad).
       const nuevoStock = Math.max(0, p.stock - line.cantidad);
+      stockPrevio.push({ producto_id: line.producto_id, stock_actual: p.stock });
       const upd = await sb
         .from("productos")
         .update({ stock_actual: nuevoStock })
@@ -502,6 +541,7 @@ export async function createVentaTransaccionalPg(
       // Igual que productos: el stock de insumos nunca baja de 0 (la salida real
       // queda registrada en el movimiento SALIDA del insumo).
       const nuevoStock = Math.max(0, m.stock - need);
+      stockPrevio.push({ producto_id: insId, stock_actual: m.stock });
       const upd = await sb
         .from("productos")
         .update({ stock_actual: nuevoStock })
