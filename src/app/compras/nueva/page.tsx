@@ -102,6 +102,8 @@ export default function NuevaCompraPage() {
     plazo_dias: "",
     moneda: "PYG" as Moneda,
     tipo_cambio: "",
+    fecha_factura: "" as string,
+    metodo_pago: "" as "" | "efectivo" | "transferencia" | "tarjeta",
   });
 
   // Líneas ya agregadas
@@ -278,6 +280,8 @@ export default function NuevaCompraPage() {
           tipo_pago: cab.tipo_pago,
           plazo_dias: cab.tipo_pago === "credito" && cab.plazo_dias ? parseInt(cab.plazo_dias) : undefined,
           nro_timbrado: cab.nro_timbrado,
+          fecha_factura: cab.fecha_factura || null,
+          metodo_pago: cab.metodo_pago || null,
           comprobante_storage_path: comprobante?.comprobante_storage_path ?? null,
           comprobante_nombre: comprobante?.comprobante_nombre ?? null,
           comprobante_mime_type: comprobante?.comprobante_mime_type ?? null,
@@ -390,6 +394,15 @@ export default function NuevaCompraPage() {
                   placeholder="Ej: 001-001-0000001" className={inputClass} />
               </div>
               <div>
+                <label className={labelClass}>Fecha de la factura <span className="text-gray-400 font-normal">(opcional)</span></label>
+                <input
+                  type="date"
+                  value={cab.fecha_factura}
+                  onChange={(e) => setCab((p) => ({ ...p, fecha_factura: e.target.value }))}
+                  className={inputClass}
+                />
+              </div>
+              <div>
                 <label className={labelClass}>Proveedor <span className="text-red-500">*</span></label>
                 <SearchableSelect
                   value={cab.proveedor_id || null}
@@ -474,6 +487,31 @@ export default function NuevaCompraPage() {
                 <SegmentedControl<TipoPago> value={cab.tipo_pago}
                   options={[{ value: "contado", label: "Contado" }, { value: "credito", label: "Crédito" }]}
                   onChange={(v) => setCab((p) => ({ ...p, tipo_pago: v }))} />
+                <p className="mt-1 text-[11px] text-slate-500">Contado vs. crédito (plazo).</p>
+              </div>
+              <div>
+                <label className={labelClass}>Método de pago <span className="text-gray-400 font-normal">(opcional)</span></label>
+                <select
+                  value={cab.metodo_pago}
+                  onChange={(e) =>
+                    setCab((p) => ({
+                      ...p,
+                      metodo_pago:
+                        e.target.value === "efectivo" ||
+                        e.target.value === "transferencia" ||
+                        e.target.value === "tarjeta"
+                          ? e.target.value
+                          : "",
+                    }))
+                  }
+                  className={inputClass}
+                >
+                  <option value="">Sin especificar</option>
+                  <option value="efectivo">Efectivo</option>
+                  <option value="transferencia">Transferencia</option>
+                  <option value="tarjeta">Tarjeta</option>
+                </select>
+                <p className="mt-1 text-[11px] text-slate-500">Cómo se hizo el pago.</p>
               </div>
               <div>
                 <label className={labelClass}>Moneda</label>

@@ -53,6 +53,18 @@ export async function POST(request: NextRequest) {
     if (rawItems.length === 0)
       return NextResponse.json(errorResponse("La compra no tiene productos."), { status: 400 });
 
+    // fecha_factura: acepta 'YYYY-MM-DD' del form; ignora cualquier otro formato.
+    const fechaFacturaRaw = body.fecha_factura;
+    const fechaFactura =
+      typeof fechaFacturaRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(fechaFacturaRaw)
+        ? fechaFacturaRaw
+        : null;
+    const metodoPagoRaw = body.metodo_pago;
+    const metodoPago =
+      metodoPagoRaw === "efectivo" || metodoPagoRaw === "transferencia" || metodoPagoRaw === "tarjeta"
+        ? metodoPagoRaw
+        : null;
+
     const header: CompraHeaderInput = {
       proveedor_id: String(body.proveedor_id),
       proveedor_nombre: String(body.proveedor_nombre ?? ""),
@@ -62,6 +74,8 @@ export async function POST(request: NextRequest) {
       plazo_dias: body.plazo_dias != null && String(body.plazo_dias).trim() !== ""
         ? parseInt(String(body.plazo_dias), 10) || null : null,
       nro_timbrado: String(body.nro_timbrado).trim().toUpperCase(),
+      fecha_factura: fechaFactura,
+      metodo_pago: metodoPago,
       comprobante_url: body.comprobante_url != null && String(body.comprobante_url).trim() !== "" ? String(body.comprobante_url) : null,
       comprobante_storage_path: body.comprobante_storage_path != null && String(body.comprobante_storage_path).trim() !== "" ? String(body.comprobante_storage_path) : null,
       comprobante_nombre: body.comprobante_nombre != null && String(body.comprobante_nombre).trim() !== "" ? String(body.comprobante_nombre) : null,

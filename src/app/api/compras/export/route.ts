@@ -29,8 +29,10 @@ export async function GET(request: NextRequest) {
       { header: "PRECIO_VENTA", value: (r) => Number(r.precio_venta), width: 14 },
       { header: "MARGEN_VENTA", value: (r) => r.margen_venta != null ? Number(r.margen_venta) : "", width: 10 },
       { header: "TIPO_PAGO", value: (r) => r.tipo_pago, width: 10 },
+      { header: "METODO_PAGO", value: (r) => r.metodo_pago ?? "", width: 12 },
       { header: "PLAZO_DIAS", value: (r) => r.plazo_dias ?? "", width: 8 },
       { header: "NRO_TIMBRADO", value: (r) => r.nro_timbrado, width: 18 },
+      { header: "FECHA_FACTURA", value: (r) => r.fecha_factura ?? "", width: 14 },
       { header: "ESTADO", value: (r) => r.estado, width: 10 },
       { header: "USUARIO", value: (r) => r.usuario_nombre ?? "", width: 24 },
     ], { sheetName: "Compras" });

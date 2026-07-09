@@ -36,11 +36,26 @@ const tipoPagoBadge: Record<TipoPago, string> = {
   credito: "bg-orange-50 text-orange-700",
 };
 
+const metodoPagoBadge: Record<string, { label: string; className: string }> = {
+  efectivo: { label: "Efectivo", className: "bg-emerald-50 text-emerald-700" },
+  transferencia: { label: "Transferencia", className: "bg-indigo-50 text-indigo-700" },
+  tarjeta: { label: "Tarjeta", className: "bg-amber-50 text-amber-800" },
+};
+
+function formatFechaDate(fecha: string | null | undefined): string {
+  if (!fecha) return "—";
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(fecha);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  return fecha;
+}
+
 // ── Agrupación por numero_control: 1 compra = N filas ─────────────────────────
 type GrupoCompra = {
   numero_control: string;
   proveedor_nombre: string;
   fecha: string;
+  fecha_factura: string | null;
+  metodo_pago: string | null;
   tipo_pago: TipoPago;
   plazo_dias?: number;
   items: Compra[];
@@ -59,6 +74,8 @@ function agrupar(rows: Compra[]): GrupoCompra[] {
         numero_control: c.numero_control,
         proveedor_nombre: c.proveedor_nombre,
         fecha: c.fecha,
+        fecha_factura: c.fecha_factura ?? null,
+        metodo_pago: c.metodo_pago ?? null,
         tipo_pago: c.tipo_pago,
         plazo_dias: c.plazo_dias,
         items: [],
@@ -182,7 +199,7 @@ export default function ComprasPage() {
 
         {/* Tabla agrupada por compra */}
         <EdgeScrollArea>
-          <table className="w-full min-w-[760px] lg:min-w-0 text-left text-sm">
+          <table className="w-full min-w-[960px] lg:min-w-0 text-left text-sm">
             <thead>
               <tr className="border-b text-gray-500">
                 <th className="py-3 pr-4 font-medium">N° Control</th>
@@ -191,14 +208,16 @@ export default function ComprasPage() {
                 <th className="py-3 pr-4 font-medium text-right">Ítems</th>
                 <th className="py-3 pr-4 font-medium text-right">Total</th>
                 <th className="hidden py-3 pr-4 font-medium lg:table-cell">Pago</th>
+                <th className="hidden py-3 pr-4 font-medium lg:table-cell">Método</th>
                 <th className="py-3 pr-4 font-medium">Fecha</th>
+                <th className="hidden py-3 pr-4 font-medium lg:table-cell">Fecha factura</th>
                 <th className="py-3 font-medium text-right"></th>
               </tr>
             </thead>
             <tbody>
               {filtrados.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-gray-400">
+                  <td colSpan={10} className="py-12 text-center text-gray-400">
                     {grupos.length === 0 ? "No hay compras registradas" : "Ninguna compra coincide con los filtros"}
                   </td>
                 </tr>
@@ -247,7 +266,21 @@ export default function ComprasPage() {
                             {g.tipo_pago === "contado" ? "Contado" : g.tipo_pago === "credito" ? `Crédito ${g.plazo_dias ?? ""}d` : "—"}
                           </span>
                         </td>
+                        <td className="hidden py-4 pr-4 lg:table-cell">
+                          {g.metodo_pago && metodoPagoBadge[g.metodo_pago] ? (
+                            <span
+                              className={`px-2 py-1 rounded-full text-xs font-semibold ${metodoPagoBadge[g.metodo_pago].className}`}
+                            >
+                              {metodoPagoBadge[g.metodo_pago].label}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 text-xs">—</span>
+                          )}
+                        </td>
                         <td className="py-4 pr-4 text-gray-500 text-xs tabular-nums">{formatFecha(g.fecha)}</td>
+                        <td className="hidden py-4 pr-4 text-gray-500 text-xs tabular-nums lg:table-cell">
+                          {formatFechaDate(g.fecha_factura)}
+                        </td>
                         <td className="py-4 text-right">
                           {!g.anulada && (
                             <button
@@ -276,7 +309,9 @@ export default function ComprasPage() {
                           <td className="py-2 pr-4 text-right tabular-nums text-gray-600">{it.cantidad}</td>
                           <td className="py-2 pr-4 text-right tabular-nums text-gray-700">{formatGs(it.total)}</td>
                           <td className="hidden lg:table-cell" />
+                          <td className="hidden lg:table-cell" />
                           <td />
+                          <td className="hidden lg:table-cell" />
                           <td />
                         </tr>
                       ))}
