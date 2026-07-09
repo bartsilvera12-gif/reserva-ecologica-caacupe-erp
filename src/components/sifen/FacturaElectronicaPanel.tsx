@@ -768,7 +768,17 @@ export function FacturaElectronicaPanel({
     Boolean(resumen?.sifen_config_activa) &&
     !primaryConsultarLote &&
     (!fe || ["borrador", "generado", "firmado", "error_envio"].includes(stStr));
-  const busy = action !== null;
+  // El worker en background puede estar procesando esta misma factura
+  // (etapa xml/firmar/enviar) al mismo tiempo que el operador aprieta un botón
+  // manual — sin esto, ambos pueden disparar el mismo POST /sifen/enviar casi
+  // simultáneo (el handler no tiene compare-and-swap por estado en el UPDATE
+  // final), dos envíos reales a SET, y el que escribe último en la BD pisa el
+  // resultado del otro aunque haya sido aceptado. Bloqueamos los botones
+  // mientras el job async está activo; el panel igual se refresca solo.
+  const jobActivo =
+    resumen?.sifen_job != null &&
+    (resumen.sifen_job.estado === "pendiente" || resumen.sifen_job.estado === "procesando");
+  const busy = action !== null || jobActivo;
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-5 sm:p-6 w-full min-w-0">
