@@ -3,6 +3,8 @@ import { getEmpresaId } from "@/lib/db/empresa";
 import { ymdInicioFinMesLocal } from "@/lib/fechas/calendario";
 import { getBrowserSupabaseForEmpresaData } from "@/lib/supabase/browser-data-client";
 
+export type MetodoPagoGasto = "efectivo" | "transferencia" | "tarjeta";
+
 export type Gasto = {
   id: string;
   empresa_id: string;
@@ -14,6 +16,10 @@ export type Gasto = {
   frecuencia?: string;
   fecha: string;
   created_at: string;
+  /** Nombre del comercio o empresa a la que se le hizo el pago. */
+  beneficiario?: string | null;
+  /** Cómo se pagó. NULL para gastos históricos sin ese dato. */
+  metodo_pago?: MetodoPagoGasto | null;
 };
 
 export type GastoInput = {
@@ -24,9 +30,14 @@ export type GastoInput = {
   recurrente: boolean;
   frecuencia?: string;
   fecha: string;
+  beneficiario?: string | null;
+  metodo_pago?: MetodoPagoGasto | null;
 };
 
 function mapRow(r: Record<string, unknown>): Gasto {
+  const mp = r.metodo_pago;
+  const metodo_pago: MetodoPagoGasto | null =
+    mp === "efectivo" || mp === "transferencia" || mp === "tarjeta" ? mp : null;
   return {
     id: r.id as string,
     empresa_id: r.empresa_id as string,
@@ -38,6 +49,8 @@ function mapRow(r: Record<string, unknown>): Gasto {
     frecuencia: r.frecuencia as string | undefined,
     fecha: (r.fecha as string) ?? "",
     created_at: (r.created_at as string) ?? "",
+    beneficiario: r.beneficiario == null || String(r.beneficiario).trim() === "" ? null : String(r.beneficiario),
+    metodo_pago,
   };
 }
 
@@ -98,6 +111,8 @@ export async function createGasto(input: GastoInput): Promise<Gasto> {
       recurrente: input.recurrente,
       frecuencia: input.frecuencia?.trim() || null,
       fecha: input.fecha,
+      beneficiario: input.beneficiario?.trim() || null,
+      metodo_pago: input.metodo_pago ?? null,
     })
     .select()
     .single();
@@ -118,6 +133,8 @@ export async function updateGasto(id: string, input: Partial<GastoInput>): Promi
   if (input.recurrente !== undefined) update.recurrente = input.recurrente;
   if (input.frecuencia !== undefined) update.frecuencia = input.frecuencia?.trim() || null;
   if (input.fecha !== undefined) update.fecha = input.fecha;
+  if (input.beneficiario !== undefined) update.beneficiario = input.beneficiario?.trim() || null;
+  if (input.metodo_pago !== undefined) update.metodo_pago = input.metodo_pago ?? null;
 
   const { data, error } = await supabase
     .from("gastos")

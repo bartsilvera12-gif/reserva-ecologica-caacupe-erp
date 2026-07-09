@@ -29,14 +29,21 @@ export default function GastoForm({ gasto, onSuccess }: Props) {
     recurrente: gasto?.recurrente ?? false,
     frecuencia: gasto?.frecuencia ?? "",
     fecha: gasto?.fecha ?? hoyAsuncionYmd(),
+    beneficiario: gasto?.beneficiario ?? "",
+    metodo_pago: gasto?.metodo_pago ?? null,
   });
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) {
     const { name, value, type } = e.target;
     if (type === "checkbox") {
       setForm((prev) => ({ ...prev, recurrente: (e.target as HTMLInputElement).checked }));
+    } else if (name === "metodo_pago") {
+      const v = value === "efectivo" || value === "transferencia" || value === "tarjeta" ? value : null;
+      setForm((prev) => ({ ...prev, metodo_pago: v }));
     } else if (name !== "monto") {
-      const normalized = ["categoria", "descripcion", "frecuencia"].includes(name) ? value.toUpperCase() : value;
+      const normalized = ["categoria", "descripcion", "frecuencia", "beneficiario"].includes(name)
+        ? value.toUpperCase()
+        : value;
       setForm((prev) => ({ ...prev, [name]: normalized }));
     }
   }
@@ -103,6 +110,34 @@ export default function GastoForm({ gasto, onSuccess }: Props) {
               className={fInput}
               rows={2}
             />
+          </div>
+          <div>
+            <label className={fLabel}>Beneficiario</label>
+            <input
+              type="text"
+              name="beneficiario"
+              value={form.beneficiario ?? ""}
+              onChange={handleChange}
+              placeholder="Ej: ANDE, COPACO, SUPERMERCADO STOCK"
+              className={fInput}
+            />
+            <p className="mt-1 text-[11px] text-slate-500">
+              Nombre del comercio o empresa a la que se le hizo el pago.
+            </p>
+          </div>
+          <div>
+            <label className={fLabel}>Método de pago</label>
+            <select
+              name="metodo_pago"
+              value={form.metodo_pago ?? ""}
+              onChange={handleChange}
+              className={fInput}
+            >
+              <option value="">Sin especificar</option>
+              <option value="efectivo">Efectivo</option>
+              <option value="transferencia">Transferencia</option>
+              <option value="tarjeta">Tarjeta</option>
+            </select>
           </div>
           <div>
             <label className={fLabel}>Monto (Gs.) *</label>

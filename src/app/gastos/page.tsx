@@ -33,6 +33,12 @@ const tipoBadge: Record<string, string> = {
   variable: "bg-slate-100 text-slate-700",
 };
 
+const metodoPagoBadge: Record<string, { label: string; className: string }> = {
+  efectivo: { label: "Efectivo", className: "bg-emerald-50 text-emerald-700" },
+  transferencia: { label: "Transferencia", className: "bg-indigo-50 text-indigo-700" },
+  tarjeta: { label: "Tarjeta", className: "bg-amber-50 text-amber-800" },
+};
+
 export default function GastosPage() {
   const router = useRouter();
   const [gastos, setGastos] = useState<Gasto[]>([]);
@@ -103,13 +109,15 @@ export default function GastosPage() {
           /* overflow-x-auto + min-w fuerza scroll horizontal en mobile;
               Categoria + Tipo se ocultan en pantallas chicas. */
           <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] sm:min-w-0">
+          <table className="w-full min-w-[960px] sm:min-w-0">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
                 <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3">Fecha</th>
-                <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3 hidden md:table-cell">Categoría</th>
+                <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3 hidden lg:table-cell">Categoría</th>
+                <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3">Beneficiario</th>
                 <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3">Descripción</th>
                 <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3">Monto</th>
+                <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3">Pago</th>
                 <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3 hidden md:table-cell">Tipo</th>
                 <th className="text-left text-sm font-semibold text-slate-600 px-5 py-3">Acciones</th>
               </tr>
@@ -118,12 +126,26 @@ export default function GastosPage() {
               {gastos.map((g) => (
                 <tr key={g.id} className="hover:bg-[#4FAEB2]/[0.04] transition-colors">
                   <td className="px-5 py-3.5 text-sm text-gray-600">{formatFecha(g.fecha)}</td>
-                  <td className="px-5 py-3.5 text-sm font-medium text-gray-800 hidden md:table-cell">{g.categoria || "—"}</td>
+                  <td className="px-5 py-3.5 text-sm font-medium text-gray-800 hidden lg:table-cell">{g.categoria || "—"}</td>
+                  <td className="px-5 py-3.5 text-sm text-gray-800 max-w-[180px] truncate">
+                    {g.beneficiario || <span className="text-slate-400">—</span>}
+                  </td>
                   <td className="px-5 py-3.5 text-sm text-gray-600 max-w-[200px] truncate">
                     {g.descripcion || "—"}
                   </td>
                   <td className="px-5 py-3.5 text-sm font-semibold text-gray-800 tabular-nums">
                     {formatGs(g.monto)}
+                  </td>
+                  <td className="px-5 py-3.5">
+                    {g.metodo_pago ? (
+                      <span
+                        className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${metodoPagoBadge[g.metodo_pago]?.className ?? "bg-slate-100 text-slate-700"}`}
+                      >
+                        {metodoPagoBadge[g.metodo_pago]?.label ?? g.metodo_pago}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 text-xs">—</span>
+                    )}
                   </td>
                   <td className="px-5 py-3.5 hidden md:table-cell">
                     <span
