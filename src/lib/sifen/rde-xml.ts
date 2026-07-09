@@ -544,7 +544,12 @@ export function buildOfficialRdeFacturaElectronicaXml(
     }
     if (receptor.email?.trim()) recParts.push(textEl("dEmailRec", receptor.email.trim()));
   } else {
-    const doc = (receptor.documento ?? "").replace(/\s/g, "").trim();
+    // dNumIDRec para iTipIDRec=1 (Cédula paraguaya) es estrictamente numérico.
+    // El resto de campos numéricos del archivo (RUC, teléfono, timbrado) se
+    // limpian con /\D/g; acá solo se sacaba el espacio, así que una CI cargada
+    // como "4192083-1" (con guión, como suele anotarse a mano) mandaba el
+    // guión literal al XML — no es un número de cédula válido.
+    const doc = (receptor.documento ?? "").replace(/\D/g, "").trim();
     if (!doc) throw new Error("Receptor sin RUC: se requiere documento (CI) en cliente.");
     /** tiTiOpe (DE_Types v150): 2=B2C. Receptor no contribuyente (iNatRec=2) con
      *  documento nacional exige B2C, no B2B (mismo criterio que la rama extranjero

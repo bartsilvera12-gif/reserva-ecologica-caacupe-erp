@@ -258,6 +258,33 @@ export async function createNotaCreditoBorrador(p: CreateNotaCreditoParams): Pro
         error: "Nota de crédito parcial: máximo 200 ítems por NC.",
       };
     }
+
+    // Validación cruzada contra la factura origen: el modo "monto" del editor
+    // no tiene tope en el frontend, y el servidor no validaba antes que cada
+    // línea de NC respetara la línea real de la factura — permitía acreditar
+    // por un ítem mucho más de lo que esa línea vale, mientras la SUMA total
+    // de la NC siguiera dentro del saldo (distorsiona reportes por producto).
+    // Cargamos factura_items una sola vez y capamos cantidad/monto por línea
+    // referenciada. Ítems sin factura_item_id (ajuste libre, sin línea de
+    // origen) no tienen este tope — quedan sujetos solo al saldo total.
+    const facturaItemsQ = await p.supabase
+      .from("factura_items")
+      .select("id, cantidad, total")
+      .eq("factura_id", p.facturaId)
+      .eq("empresa_id", p.empresaId);
+    if (facturaItemsQ.error) {
+      return { ok: false, status: 400, error: facturaItemsQ.error.message };
+    }
+    const facturaItemsById = new Map(
+      (facturaItemsQ.data ?? []).map((r) => [
+        String((r as { id: string }).id),
+        {
+          cantidad: num((r as { cantidad?: unknown }).cantidad),
+          total: num((r as { total?: unknown }).total),
+        },
+      ])
+    );
+
     for (let idx = 0; idx < itemsInput.length; idx++) {
       const it = itemsInput[idx]!;
       const nombre = trimMotivo(it.producto_nombre);
@@ -293,6 +320,31 @@ export async function createNotaCreditoBorrador(p: CreateNotaCreditoParams): Pro
           status: 400,
           error: `Ítem ${idx + 1}: total_linea debe ser mayor a 0.`,
         };
+      }
+      const facturaItemIdTrim = it.factura_item_id?.trim() || null;
+      if (facturaItemIdTrim) {
+        const lineaOrigen = facturaItemsById.get(facturaItemIdTrim);
+        if (!lineaOrigen) {
+          return {
+            ok: false,
+            status: 400,
+            error: `Ítem ${idx + 1}: factura_item_id no corresponde a un ítem de esta factura.`,
+          };
+        }
+        if (cantidad > lineaOrigen.cantidad + 0.0001) {
+          return {
+            ok: false,
+            status: 400,
+            error: `Ítem ${idx + 1}: la cantidad (${cantidad}) supera la cantidad facturada originalmente (${lineaOrigen.cantidad}).`,
+          };
+        }
+        if (totalLinea > lineaOrigen.total + 0.02) {
+          return {
+            ok: false,
+            status: 400,
+            error: `Ítem ${idx + 1}: el monto (${totalLinea}) supera el total de esa línea en la factura original (${lineaOrigen.total}).`,
+          };
+        }
       }
       const montoIva = ivaIncluidoDeTotal(totalLinea, tipoIva);
       const subtotal = round2(totalLinea - montoIva);

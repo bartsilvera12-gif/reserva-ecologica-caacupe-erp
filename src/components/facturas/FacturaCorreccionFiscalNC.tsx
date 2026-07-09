@@ -38,6 +38,9 @@ type LineaNcEditor = {
   factura_item_id: string | null;
   producto_nombre: string;
   cantidad_max: number;
+  /** Total original de esta línea en la factura. En modo "monto" el input no
+   *  puede superar este valor — el servidor también lo valida (create-nota-credito.ts). */
+  total_max: number;
   precio_unitario: number;
   tipo_iva: "EXENTA" | "5%" | "10%";
   cantidad: number;
@@ -299,6 +302,7 @@ export function FacturaCorreccionFiscalNC({
         factura_item_id: it.id,
         producto_nombre: it.descripcion,
         cantidad_max: it.cantidad,
+        total_max: it.total_linea,
         precio_unitario: precioUnit,
         tipo_iva: it.tipo_iva,
         cantidad: it.cantidad,
@@ -335,9 +339,13 @@ export function FacturaCorreccionFiscalNC({
         merged.cantidad = clamped;
         merged.total_linea = totalDesdeCantidad(clamped, merged.precio_unitario);
       }
-      // Si cambia total en modo 'monto', respetá el valor libre.
+      // Si cambia total en modo 'monto', respetá el valor libre pero sin
+      // superar el total original de esa línea (el servidor también lo valida).
       if ("total_linea" in patch && merged.modo === "monto") {
-        merged.total_linea = Math.max(0, round2(Number(patch.total_linea) || 0));
+        merged.total_linea = Math.max(
+          0,
+          Math.min(merged.total_max, round2(Number(patch.total_linea) || 0))
+        );
       }
       next[idx] = merged;
       return next;
@@ -901,6 +909,7 @@ export function FacturaCorreccionFiscalNC({
                                 <input
                                   type="number"
                                   min={0}
+                                  max={l.total_max}
                                   step={1}
                                   value={l.total_linea}
                                   disabled={!l.checked}

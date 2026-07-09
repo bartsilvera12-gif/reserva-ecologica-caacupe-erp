@@ -373,11 +373,23 @@ export async function handleNcSifenConsultaLotePost(
       );
     }
 
-    await supabase
+    // Si este UPDATE falla silenciosamente, nota_credito.estado_erp queda en
+    // 'pendiente_envio_sifen' pese a que el DE ya se marcó rechazado arriba —
+    // eso hace que evaluateNotaCreditoCreationGate siga contando esta NC en
+    // sumaEnCurso, bloqueando saldo indefinidamente para NC nuevas. Se loguea
+    // en vez de fallar silencioso (la respuesta HTTP igual informa el rechazo
+    // real de SET, que es lo importante para el usuario en este momento).
+    const updNcErp = await supabase
       .from("nota_credito")
       .update({ estado_erp: "rechazada" })
       .eq("id", nid)
       .eq("empresa_id", auth.empresa_id);
+    if (updNcErp.error) {
+      console.error("[nc consulta-lote] no se pudo marcar nota_credito.estado_erp=rechazada", {
+        nota_credito_id: nid,
+        error: updNcErp.error.message,
+      });
+    }
 
     const { error: evErr } = await insertEventos([
       {
