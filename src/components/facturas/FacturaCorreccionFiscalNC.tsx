@@ -207,6 +207,10 @@ export function FacturaCorreccionFiscalNC({
   debugUi?: boolean;
 }) {
   const [loading, setLoading] = useState(true);
+  /** True una vez que reload() completó por primera vez. Evita que refetches
+   *  posteriores (poll SIFEN del panel padre, acciones que disparan reload)
+   *  colapsen la seccion a null y vuelva a aparecer -> parpadeo. */
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [items, setItems] = useState<NotaCreditoListItemDTO[]>([]);
   const [puedeCrear, setPuedeCrear] = useState(false);
   const [bloqueo, setBloqueo] = useState<string | null>(null);
@@ -279,6 +283,7 @@ export function FacturaCorreccionFiscalNC({
       setSifenPrevueloFactura(null);
     } finally {
       setLoading(false);
+      setHasLoadedOnce(true);
     }
   }, [facturaId, debugUi]);
 
@@ -472,7 +477,10 @@ export function FacturaCorreccionFiscalNC({
   /** Solo si hay NC en juego o el gate permite crear una (evita ruido por solo pre-vuelo/timbrado). */
   const correccionOperativa = items.length > 0 || puedeCrear;
 
-  if (loading) {
+  // Solo escondemos mientras carga la PRIMERA vez. En refetches posteriores
+  // (polling SIFEN del panel padre, acciones que disparan reload) mantenemos
+  // lo ultimo mostrado para evitar parpadeo aparecer/desaparecer.
+  if (loading && !hasLoadedOnce) {
     return null;
   }
   if (!correccionOperativa) {
