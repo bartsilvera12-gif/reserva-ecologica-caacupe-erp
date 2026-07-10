@@ -553,7 +553,7 @@ export function FacturaCorreccionFiscalNC({
               setFlash(null);
               abrirModalCrear();
             }}
-            className="px-4 py-2.5 text-xs font-semibold rounded-lg bg-amber-600 text-white hover:bg-amber-700 shadow-sm"
+            className="px-4 py-2.5 text-xs font-semibold rounded-lg bg-[#0EA5E9] text-white hover:bg-[#0284C7] shadow-sm"
           >
             Emitir nota de crédito
           </button>
@@ -662,7 +662,7 @@ export function FacturaCorreccionFiscalNC({
                           <button
                             type="button"
                             onClick={() => void anularBorrador(nc)}
-                            className="text-amber-800 font-semibold hover:underline text-[11px] text-left"
+                            className="text-[#0284C7] font-semibold hover:underline text-[11px] text-left"
                           >
                             Anular borrador
                           </button>
@@ -810,7 +810,7 @@ export function FacturaCorreccionFiscalNC({
                 <dt className="text-slate-400">
                   Saldo disponible {tipoNc === "total" ? "(= NC)" : ""}
                 </dt>
-                <dd className="tabular-nums font-bold text-amber-900">
+                <dd className="tabular-nums font-bold text-[#0284C7]">
                   {monedaLabel} {formatGs(saldo, moneda)}
                 </dd>
               </div>
@@ -829,7 +829,7 @@ export function FacturaCorreccionFiscalNC({
                   onClick={() => setTipoNc("total")}
                   className={`px-3 py-1.5 text-xs font-semibold ${
                     tipoNc === "total"
-                      ? "bg-amber-600 text-white"
+                      ? "bg-[#0EA5E9] text-white"
                       : "bg-white text-slate-700 hover:bg-slate-50"
                   }`}
                 >
@@ -846,7 +846,7 @@ export function FacturaCorreccionFiscalNC({
                   }
                   className={`px-3 py-1.5 text-xs font-semibold ${
                     tipoNc === "parcial"
-                      ? "bg-amber-600 text-white"
+                      ? "bg-[#0EA5E9] text-white"
                       : "bg-white text-slate-700 hover:bg-slate-50"
                   } disabled:opacity-40 disabled:cursor-not-allowed`}
                 >
@@ -952,7 +952,7 @@ export function FacturaCorreccionFiscalNC({
                         <td colSpan={4} className="px-2 py-1 text-right font-semibold text-slate-600">
                           Total NC seleccionada
                         </td>
-                        <td className="px-2 py-1 text-right tabular-nums font-bold text-amber-900">
+                        <td className="px-2 py-1 text-right tabular-nums font-bold text-[#0284C7]">
                           {monedaLabel} {formatGs(totalParcialSeleccionado, moneda)}
                         </td>
                         <td />
@@ -1009,7 +1009,7 @@ export function FacturaCorreccionFiscalNC({
                 type="button"
                 disabled={submitting}
                 onClick={() => void handleCrear()}
-                className="px-3 py-2 text-xs font-semibold rounded-lg bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50"
+                className="px-3 py-2 text-xs font-semibold rounded-lg bg-[#0EA5E9] text-white hover:bg-[#0284C7] disabled:opacity-50"
               >
                 {submitting ? "Guardando…" : "Confirmar creación"}
               </button>
