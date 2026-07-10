@@ -4,29 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
-import type { NotaCreditoGlobalDetailDTO, NotaCreditoEventoAuditoriaDTO } from "@/lib/nota-credito/types";
-
-function labelTipoEvento(t: string) {
-  const m: Record<string, string> = {
-    creacion: "Creación",
-    validacion: "Validación",
-    rechazo_negocio: "Rechazo negocio",
-    cambio_estado_erp: "Cambio estado ERP",
-    preparacion_sifen: "Preparación SIFEN",
-    error: "Error",
-    observacion_operativa: "Observación",
-    anulacion_borrador: "Anulación borrador",
-    xml_generado: "XML generado",
-    xml_firmado: "XML firmado",
-    enviado_set: "Enviado a SET",
-    respuesta_set: "Respuesta SET",
-    aprobado: "Aprobado SET",
-    rechazado: "Rechazado SET",
-    impacto_saldo_aplicado: "Impacto en saldo",
-    error_envio: "Error de envío",
-  };
-  return m[t] ?? t;
-}
+import type { NotaCreditoGlobalDetailDTO } from "@/lib/nota-credito/types";
 
 type AccionSifen = "xml" | "firmar" | "procesar" | "enviar" | "consulta-lote";
 
@@ -365,29 +343,6 @@ export default function NotaCreditoDetalleClient() {
         </p>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-        <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Auditoría / eventos</h2>
-        {data.eventos.length === 0 ? (
-          <p className="text-sm text-slate-400">Sin eventos registrados.</p>
-        ) : (
-          <ul className="space-y-4">
-            {data.eventos.map((ev: NotaCreditoEventoAuditoriaDTO) => (
-              <li key={ev.id} className="border-l-4 border-sky-400 pl-4 py-1">
-                <div className="flex flex-wrap items-baseline gap-2">
-                  <span className="text-sm font-bold text-slate-800">{labelTipoEvento(ev.tipo_evento)}</span>
-                  <span className="text-xs text-slate-400">
-                    {new Date(ev.created_at).toLocaleString("es-PY", { dateStyle: "short", timeStyle: "medium" })}
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 mt-0.5">Actor: {ev.actor_user_id ?? "—"}</p>
-                <pre className="mt-2 max-h-48 overflow-auto rounded bg-slate-50 p-2 text-[10px] text-slate-700">
-                  {JSON.stringify(ev.detalle_json, null, 2)}
-                </pre>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
     </div>
   );
 }
