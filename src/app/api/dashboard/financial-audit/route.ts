@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
+import { getTenantSupabaseFromAuthWithRol } from "@/lib/supabase/tenant-api";
 import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { enRangoCalendario, rangoMesCalendarioLocal, toCalendarDateStr } from "@/lib/fechas/calendario";
 import { esFacturaAnulada, esFacturaCorregidaNc } from "@/lib/dashboard/data";
+import { puedeVerTabFinanciero } from "@/lib/roles/erp-role-access";
 
 type Periodo = "hoy" | "7d" | "30d" | "mes" | "anio";
 
@@ -60,11 +61,20 @@ function toNum(v: unknown): number {
  */
 export async function GET(request: NextRequest) {
   try {
-    const ctx = await getTenantSupabaseFromAuth(request);
+    const ctx = await getTenantSupabaseFromAuthWithRol(request);
     if (!ctx) {
       return NextResponse.json(errorResponse(API_ERRORS.UNAUTHORIZED), { status: 401 });
     }
     const { auth, supabase } = ctx;
+    // Gate por rol: la auditoria financiera solo para admin. Supervisor y
+    // usuario ven 403 (el tab Financiero del dashboard tambien se les oculta,
+    // pero protegemos el endpoint por si acceden por URL/fetch directo).
+    if (!puedeVerTabFinanciero(auth.rol)) {
+      return NextResponse.json(
+        errorResponse("No tenés permiso para ver el resumen financiero."),
+        { status: 403 }
+      );
+    }
     const empresaId = auth.empresa_id;
 
     const raw = request.nextUrl.searchParams.get("periodo") ?? "mes";

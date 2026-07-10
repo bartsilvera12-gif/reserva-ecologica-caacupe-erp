@@ -37,6 +37,12 @@ import {
   toCalendarDateStr,
 } from "@/lib/fechas/calendario";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
+import { useRolErp } from "@/lib/auth/use-rol-erp";
+import {
+  esUsuarioLimitadoErp,
+  puedeVerTabFinanciero,
+  LANDING_ROL_USUARIO_LIMITADO,
+} from "@/lib/roles/erp-role-access";
 import { etiquetaVisibleTipoServicio } from "@/lib/clientes/tipo-servicio-catalogo";
 import { useMapNombreTipoServicioCatalogo } from "@/lib/clientes/use-map-nombre-tipo-servicio";
 import { getEtapas, getEtapaClasses, normalizeEtapaCodigo, type EtapaCrm } from "@/lib/crm/etapas";
@@ -2071,10 +2077,25 @@ export default function DashboardPage() {
   const mapNombreTipoServicio = useMapNombreTipoServicioCatalogo(clientes);
   const nivel = usuarioActivo?.nivel ?? "administrador";
 
+  // Rol ERP del usuario actual — determina si ve el tab Financiero y si puede
+  // quedarse en el dashboard, o si tiene que redirigir a la landing operativa.
+  const { rol: rolErp, loaded: rolLoaded } = useRolErp();
+
+  // Rol `usuario` (operativo): sale del dashboard y va a Caja/Ventas.
+  useEffect(() => {
+    if (!rolLoaded) return;
+    if (esUsuarioLimitadoErp(rolErp) && typeof window !== "undefined") {
+      window.location.replace(LANDING_ROL_USUARIO_LIMITADO);
+    }
+  }, [rolErp, rolLoaded]);
+
   // Instancia En lo de Mari: solo Ventas / Inventario / Financiero (sin Comercial/CRM/Pipeline).
   const MARI_ALLOWED_TABS: TabDash[] = ["ventas", "inventario", "financiero"];
   const rawTabs: TabDash[] = dashScope.kind === "scoped" ? dashScope.tabs : TAB_VALID;
-  const effectiveTabs: TabDash[] = rawTabs.filter((t) => MARI_ALLOWED_TABS.includes(t));
+  const effectiveTabs: TabDash[] = rawTabs
+    .filter((t) => MARI_ALLOWED_TABS.includes(t))
+    // Gate por rol: solo admin ve el tab Financiero.
+    .filter((t) => t !== "financiero" || puedeVerTabFinanciero(rolErp));
   const showTabNav = effectiveTabs.length > 1;
 
   // Si el tab actual no está permitido, redirigir al primero permitido.

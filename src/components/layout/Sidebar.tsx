@@ -46,6 +46,8 @@ import { getFavoritos, toggleFavorito } from "@/lib/favorites";
 import { canAccessSidebarSlug } from "@/lib/modulos/route-slug-map";
 import { useBoot } from "@/components/BootContext";
 import { getModuleAccessCached, peekModuleAccessCache } from "@/lib/modulos/module-access-cache";
+import { useRolErp } from "@/lib/auth/use-rol-erp";
+import { puedeVerSidebarSlugPorRol } from "@/lib/roles/erp-role-access";
 
 type MenuItem = {
   key: string;
@@ -382,6 +384,8 @@ export default function Sidebar() {
     !(cachedAccess && (cachedAccess.modulos?.length || cachedAccess.slugs?.length)),
   );
   const [esSuperAdmin, setEsSuperAdmin] = useState<boolean>(!!cachedAccess?.superAdmin);
+  /** Rol ERP del usuario actual — restringe visibilidad del menú además de módulos. */
+  const { rol: rolErp } = useRolErp();
   /** Filtro visual del menú (no altera permisos ni rutas). */
   const [menuSearchQuery, setMenuSearchQuery] = useState("");
   const { setSidebarReady, mobileSidebarOpen, setMobileSidebarOpen } = useBoot();
@@ -580,9 +584,10 @@ export default function Sidebar() {
       (item) =>
         favoritos.includes(idForSlug(item.slug)) &&
         access(item.slug) &&
+        puedeVerSidebarSlugPorRol(item.slug, rolErp) &&
         menuItemMatchesQuery(item, menuSearchQuery)
     );
-  }, [favoritos, menuSearchQuery, modulos, esSuperAdmin, inactiveSlugsSet, strictAllowlist]);
+  }, [favoritos, menuSearchQuery, modulos, esSuperAdmin, inactiveSlugsSet, strictAllowlist, rolErp]);
 
   const mainItemsFiltered = useMemo(() => {
     const slugs = new Set(modulos.map((m) => m.slug));
@@ -593,9 +598,10 @@ export default function Sidebar() {
       (item) =>
         !favoritos.includes(idForSlug(item.slug)) &&
         access(item.slug) &&
+        puedeVerSidebarSlugPorRol(item.slug, rolErp) &&
         menuItemMatchesQuery(item, menuSearchQuery)
     );
-  }, [favoritos, menuSearchQuery, modulos, esSuperAdmin, inactiveSlugsSet, strictAllowlist]);
+  }, [favoritos, menuSearchQuery, modulos, esSuperAdmin, inactiveSlugsSet, strictAllowlist, rolErp]);
 
   // Agrupar los ítems visibles del menú principal por familias (solo visual).
   const seccionesMenu = useMemo(() => {
