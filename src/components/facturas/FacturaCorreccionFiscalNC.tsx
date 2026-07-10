@@ -659,7 +659,17 @@ export function FacturaCorreccionFiscalNC({
                             Anular borrador
                           </button>
                         ) : null}
-                        {!pasoReal && !pasoTestOv && nc.estado_erp !== "borrador" ? (
+                        {nc.estado_sifen === "aprobado" ? (
+                          <a
+                            href={`/api/notas-credito/${nc.id}/sifen/kude`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full sm:w-auto text-center px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700"
+                          >
+                            Imprimir KUDE
+                          </a>
+                        ) : null}
+                        {!pasoReal && !pasoTestOv && nc.estado_erp !== "borrador" && nc.estado_sifen !== "aprobado" ? (
                           <span className="text-slate-400 text-[11px]">Sin acción SIFEN disponible</span>
                         ) : null}
                       </div>

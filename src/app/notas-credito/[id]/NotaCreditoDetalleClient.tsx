@@ -97,12 +97,24 @@ export default function NotaCreditoDetalleClient() {
           <h1 className="text-2xl font-bold text-slate-900 mt-1">Detalle de nota de crédito</h1>
           <p className="text-xs font-mono text-slate-500 mt-0.5">{String(nc.id)}</p>
         </div>
-        <Link
-          href={`/facturas/${data.factura.id}`}
-          className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800"
-        >
-          Ir a factura
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {ne?.estado_sifen === "aprobado" ? (
+            <a
+              href={`/api/notas-credito/${nc.id}/sifen/kude`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700"
+            >
+              Imprimir KUDE
+            </a>
+          ) : null}
+          <Link
+            href={`/facturas/${data.factura.id}`}
+            className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800"
+          >
+            Ir a factura
+          </Link>
+        </div>
       </div>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">

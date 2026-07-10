@@ -40,6 +40,24 @@ export type BuildKudePdfInput = {
   emisorEmailOverride?: string | null;
 };
 
+/** Etiqueta legible del tipo de DE segun gTimb.iTiDE del rDE. */
+function tipoDocDesdeITiDE(iTiDE: string): string {
+  switch (String(iTiDE ?? "").trim()) {
+    case "1":
+      return "Factura electrónica";
+    case "4":
+      return "Autofactura electrónica";
+    case "5":
+      return "Nota de crédito electrónica";
+    case "6":
+      return "Nota de débito electrónica";
+    case "7":
+      return "Nota de remisión electrónica";
+    default:
+      return "Documento electrónico";
+  }
+}
+
 const A4_W = 595.28;
 const A4_H = 841.89;
 /** Default Neura `#0EA5E9`. Se preserva cuando la empresa no configura branding. */
@@ -297,7 +315,7 @@ export async function buildKudePdfBuffer(input: BuildKudePdfInput): Promise<Buff
   });
 
   const pdfDoc = await PDFDocument.create();
-  pdfDoc.setTitle(`KuDE — Factura ${numeroFactura}`);
+  pdfDoc.setTitle(`KuDE — ${tipoDocDesdeITiDE(parsed.iTiDE)} ${numeroFactura}`);
   pdfDoc.setAuthor("Neura ERP");
 
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -413,7 +431,8 @@ export async function buildKudePdfBuffer(input: BuildKudePdfInput): Promise<Buff
   rightBaseline += rightLineLead;
   drawTextRight(page, `Vigencia: ${parsed.timbrado.dFeIniT}`, rightEdge, rightBaseline, 8, font, BLACK);
   rightBaseline += rightLineLead;
-  drawTextRight(page, "Tipo de documento: Factura electrónica", rightEdge, rightBaseline, 8, font, BLACK);
+  const tipoDocLabel = tipoDocDesdeITiDE(parsed.iTiDE);
+  drawTextRight(page, `Tipo de documento: ${tipoDocLabel}`, rightEdge, rightBaseline, 8, font, BLACK);
   rightBaseline += rightLineLead;
   drawTextRight(page, `Nº: ${nroTimbrado}`, rightEdge, rightBaseline, 9, fontBold, BLACK);
   rightBaseline += rightLineLead;

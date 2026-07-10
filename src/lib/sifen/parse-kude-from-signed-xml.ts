@@ -47,6 +47,8 @@ export type KudeItemRow = {
 
 export type KudeParsedFromXml = {
   cdc: string;
+  /** `gTimb.iTiDE` (1 factura, 5 nota de credito, 6 nota de debito, etc). */
+  iTiDE: string;
   dFeEmiDE: string;
   dCarQR: string | null;
   monedaCodigo: string;
@@ -289,6 +291,7 @@ export function parseKudeFromSignedRdeXml(xmlUtf8: string): KudeParsedFromXml {
 
   const gTimb = firstNs(de, "gTimb");
   if (!gTimb) throw new Error("gTimb no encontrado");
+  const iTiDE = textOf(firstNs(gTimb, "iTiDE"));
   const timbrado = {
     dNumTim: textOf(firstNs(gTimb, "dNumTim")),
     dEst: textOf(firstNs(gTimb, "dEst")),
@@ -379,6 +382,7 @@ export function parseKudeFromSignedRdeXml(xmlUtf8: string): KudeParsedFromXml {
 
   const baseParsed: KudeParsedFromXml = {
     cdc,
+    iTiDE,
     dFeEmiDE,
     dCarQR: dCarQR && dCarQR.length > 0 ? dCarQR : null,
     monedaCodigo,
