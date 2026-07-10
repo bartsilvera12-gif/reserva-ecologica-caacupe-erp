@@ -270,7 +270,12 @@ export function buildOfficialRdeNotaCreditoElectronicaXml(
     }
     if (receptor.email?.trim()) recParts.push(textEl("dEmailRec", receptor.email.trim()));
   } else {
-    const doc = (receptor.documento ?? "").replace(/\s/g, "").trim();
+    // Igual que la factura (rde-xml.ts): solo dígitos. Una cédula anotada con
+    // guión ("4370980-0") debe ir al XML como "43709800" — idéntico a como la
+    // factura origen la envió. Si acá dejáramos el guión, la SET vería un
+    // receptor distinto al del CDC asociado y rechazaría con
+    // "El CDC asociado no corresponde al receptor del documento electrónico".
+    const doc = (receptor.documento ?? "").replace(/\D/g, "").trim();
     if (!doc) throw new Error("Receptor sin RUC: se requiere documento (CI) en cliente.");
     recParts.push(textEl("iNatRec", "2"));
     /** tiTiOpe (DE_Types v150): 2=B2C. Receptor no contribuyente (iNatRec=2) con
@@ -285,6 +290,9 @@ export function buildOfficialRdeNotaCreditoElectronicaXml(
     recParts.push(textEl("dNumIDRec", doc.slice(0, 20)));
     recParts.push(textEl("dNomRec", receptor.nombre.trim()));
     if (receptor.direccion?.trim()) recParts.push(textEl("dDirRec", receptor.direccion.trim()));
+    /** SIFEN 0362 [1330]: para receptor sin RUC (B2C) es obligatorio dNumCasRec.
+     *  Mismo valor y posición que la factura (rde-xml.ts): tras dDirRec, antes de dTelRec. */
+    recParts.push(textEl("dNumCasRec", "0"));
     if (receptor.telefono?.trim()) {
       const tr = receptor.telefono.replace(/\D/g, "");
       if (tr.length >= 8) recParts.push(textEl("dTelRec", tr.slice(0, 15)));
