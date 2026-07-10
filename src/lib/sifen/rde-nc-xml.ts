@@ -273,7 +273,11 @@ export function buildOfficialRdeNotaCreditoElectronicaXml(
     const doc = (receptor.documento ?? "").replace(/\s/g, "").trim();
     if (!doc) throw new Error("Receptor sin RUC: se requiere documento (CI) en cliente.");
     recParts.push(textEl("iNatRec", "2"));
-    recParts.push(textEl("iTiOpe", "1"));
+    /** tiTiOpe (DE_Types v150): 2=B2C. Receptor no contribuyente (iNatRec=2) con
+     *  documento nacional exige B2C, no B2B. Antes se enviaba iTiOpe=1 → SET
+     *  rechazaba con "El tipo de operación no compatible con la naturaleza del
+     *  receptor" (mismo criterio ya aplicado en la factura, rde-xml.ts). */
+    recParts.push(textEl("iTiOpe", "2"));
     recParts.push(textEl("cPaisRec", "PRY"));
     recParts.push(textEl("dDesPaisRe", "Paraguay"));
     recParts.push(textEl("iTipIDRec", "1"));
