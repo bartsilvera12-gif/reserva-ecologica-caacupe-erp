@@ -45,8 +45,25 @@ type LineaNcEditor = {
   tipo_iva: "EXENTA" | "5%" | "10%";
   cantidad: number;
   total_linea: number;
-  modo: "unidades" | "monto";
+  /** "unidades": devuelve N unidades · "monto": acredita un importe fijo ·
+   *  "porcentaje": acredita un % del total de la línea (descuento comercial).
+   *  El backend solo distingue unidades/monto; "porcentaje" se envía como
+   *  "monto" con el importe ya calculado. */
+  modo: "unidades" | "monto" | "porcentaje";
+  /** Solo para modo "porcentaje": % sobre total_max (0–100). */
+  porcentaje: number;
 };
+
+/** Tipo/motivo fiscal de la NC (SIFEN acepta UN solo motivo por documento). */
+type TipoFiscalNc = "devolucion" | "descuento" | "bonificacion" | "ajuste";
+
+/** Etiqueta que además dispara el iMotEmi correcto en mapMotivoNcSifen (rde-nc-xml.ts). */
+const TIPO_FISCAL_NC: { value: TipoFiscalNc; label: string; hint: string }[] = [
+  { value: "devolucion", label: "Devolución", hint: "Devolución de mercadería (total o parcial)." },
+  { value: "descuento", label: "Descuento", hint: "Descuento comercial sin devolución física." },
+  { value: "bonificacion", label: "Bonificación", hint: "Bonificación / promoción (ej. 2x1)." },
+  { value: "ajuste", label: "Ajuste de precio", hint: "Corrección de precio facturado." },
+];
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -219,6 +236,7 @@ export function FacturaCorreccionFiscalNC({
   const [obs, setObs] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [tipoNc, setTipoNc] = useState<"total" | "parcial">("total");
+  const [tipoFiscal, setTipoFiscal] = useState<TipoFiscalNc>("devolucion");
   const [facturaItemsCache, setFacturaItemsCache] = useState<FacturaItemPrecarga[]>([]);
   const [lineasEditor, setLineasEditor] = useState<LineaNcEditor[]>([]);
   const [flash, setFlash] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -295,6 +313,7 @@ export function FacturaCorreccionFiscalNC({
     setMotivo("");
     setObs("");
     setTipoNc("total");
+    setTipoFiscal("devolucion");
     // Precarga las líneas desde factura_items. Todas empiezan desmarcadas
     // en modo 'unidades' con la cantidad y precio originales.
     const lineas: LineaNcEditor[] = facturaItemsCache.map((it) => {
@@ -313,6 +332,7 @@ export function FacturaCorreccionFiscalNC({
         cantidad: it.cantidad,
         total_linea: it.total_linea,
         modo: "unidades",
+        porcentaje: 0,
       };
     });
     setLineasEditor(lineas);
@@ -334,6 +354,11 @@ export function FacturaCorreccionFiscalNC({
         if (merged.modo === "unidades") {
           merged.cantidad = Math.min(actual.cantidad_max, actual.cantidad || 1);
           merged.total_linea = totalDesdeCantidad(merged.cantidad, merged.precio_unitario);
+        } else if (merged.modo === "porcentaje") {
+          // Arranca en 100% del total de la línea; el operador ajusta el %.
+          merged.cantidad = 1;
+          merged.porcentaje = merged.porcentaje > 0 ? merged.porcentaje : 100;
+          merged.total_linea = round2((merged.total_max * merged.porcentaje) / 100);
         } else {
           merged.cantidad = 1;
         }
@@ -343,6 +368,12 @@ export function FacturaCorreccionFiscalNC({
         const clamped = Math.max(0, Math.min(merged.cantidad_max, Number(patch.cantidad) || 0));
         merged.cantidad = clamped;
         merged.total_linea = totalDesdeCantidad(clamped, merged.precio_unitario);
+      }
+      // Si cambia el % en modo 'porcentaje', recalcula el total (0–100% del total línea).
+      if ("porcentaje" in patch && merged.modo === "porcentaje") {
+        const pct = Math.max(0, Math.min(100, round2(Number(patch.porcentaje) || 0)));
+        merged.porcentaje = pct;
+        merged.total_linea = round2((merged.total_max * pct) / 100);
       }
       // Si cambia total en modo 'monto', respetá el valor libre pero sin
       // superar el total original de esa línea (el servidor también lo valida).
@@ -359,11 +390,12 @@ export function FacturaCorreccionFiscalNC({
 
   async function handleCrear() {
     setFlash(null);
-    const m = motivo.trim();
-    if (m.length < 5) {
-      setFlash({ kind: "err", text: "El motivo debe tener al menos 5 caracteres." });
-      return;
-    }
+    // El tipo fiscal (Devolución/Descuento/Bonificación/Ajuste) define el iMotEmi
+    // SIFEN; el texto libre es un detalle opcional. Se combinan en el motivo que
+    // mapMotivoNcSifen (rde-nc-xml.ts) interpreta por palabra clave.
+    const tipoLabel = TIPO_FISCAL_NC.find((t) => t.value === tipoFiscal)?.label ?? "Devolución";
+    const detalle = motivo.trim();
+    const motivoFinal = detalle ? `${tipoLabel}: ${detalle}` : tipoLabel;
     // Validaciones cliente para NC parcial.
     const lineasElegidas = lineasEditor.filter((l) => l.checked && l.total_linea > 0);
     if (tipoNc === "parcial") {
@@ -382,11 +414,13 @@ export function FacturaCorreccionFiscalNC({
     setSubmitting(true);
     try {
       const body: Record<string, unknown> = {
-        motivo: m,
+        motivo: motivoFinal,
         observacion_interna: obs.trim() || null,
         tipo_nc: tipoNc,
       };
       if (tipoNc === "parcial") {
+        // "porcentaje" es un modo de UI: el backend solo distingue unidades/monto,
+        // así que lo enviamos como "monto" con el importe ya calculado.
         body.items = lineasElegidas.map((l) => ({
           factura_item_id: l.factura_item_id,
           producto_nombre: l.producto_nombre,
@@ -394,7 +428,7 @@ export function FacturaCorreccionFiscalNC({
           precio_unitario: l.modo === "unidades" ? l.precio_unitario : l.total_linea,
           tipo_iva: l.tipo_iva,
           total_linea: l.total_linea,
-          modo: l.modo,
+          modo: l.modo === "unidades" ? "unidades" : "monto",
         }));
       }
       const res = await fetchWithSupabaseSession(`/api/facturas/${facturaId}/notas-credito`, {
@@ -820,6 +854,34 @@ export function FacturaCorreccionFiscalNC({
               </div>
             </dl>
 
+            {/* Motivo fiscal (SIFEN acepta un solo motivo por NC) */}
+            <div>
+              <div className="text-xs font-semibold text-slate-600 mb-1">Motivo fiscal</div>
+              <div className="flex flex-wrap gap-1.5">
+                {TIPO_FISCAL_NC.map((t) => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    onClick={() => setTipoFiscal(t.value)}
+                    title={t.hint}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg border ${
+                      tipoFiscal === t.value
+                        ? "bg-[#0EA5E9] text-white border-[#0EA5E9]"
+                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500">
+                {TIPO_FISCAL_NC.find((t) => t.value === tipoFiscal)?.hint}
+                {tipoFiscal !== "devolucion"
+                  ? " No repone stock; solo ajusta el saldo/importe."
+                  : null}
+              </p>
+            </div>
+
             {/* Toggle Total / Parcial */}
             <div>
               <div className="text-xs font-semibold text-slate-600 mb-1">Tipo de nota de crédito</div>
@@ -898,12 +960,15 @@ export function FacturaCorreccionFiscalNC({
                                 value={l.modo}
                                 disabled={!l.checked}
                                 onChange={(e) =>
-                                  actualizarLinea(idx, { modo: e.target.value as "unidades" | "monto" })
+                                  actualizarLinea(idx, {
+                                    modo: e.target.value as "unidades" | "monto" | "porcentaje",
+                                  })
                                 }
                                 className="text-[11px] border border-slate-200 rounded px-1 py-0.5 disabled:opacity-40"
                               >
                                 <option value="unidades">Unidades</option>
                                 <option value="monto">Monto</option>
+                                <option value="porcentaje">Porcentaje</option>
                               </select>
                             </td>
                             <td className="px-2 py-1 align-middle text-right">
@@ -918,6 +983,20 @@ export function FacturaCorreccionFiscalNC({
                                   onChange={(e) => actualizarLinea(idx, { cantidad: Number(e.target.value) })}
                                   className="w-16 text-right border border-slate-200 rounded px-1 py-0.5 disabled:opacity-40"
                                 />
+                              ) : l.modo === "porcentaje" ? (
+                                <span className="inline-flex items-center gap-0.5">
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={100}
+                                    step={1}
+                                    value={l.porcentaje}
+                                    disabled={!l.checked}
+                                    onChange={(e) => actualizarLinea(idx, { porcentaje: Number(e.target.value) })}
+                                    className="w-14 text-right border border-slate-200 rounded px-1 py-0.5 disabled:opacity-40"
+                                  />
+                                  <span className="text-slate-400">%</span>
+                                </span>
                               ) : (
                                 <span className="text-slate-400">1</span>
                               )}
@@ -978,14 +1057,17 @@ export function FacturaCorreccionFiscalNC({
             )}
 
             <label className="block text-xs font-semibold text-slate-600">
-              Motivo (obligatorio)
+              Detalle del motivo (opcional)
               <textarea
                 value={motivo}
                 onChange={(e) => setMotivo(e.target.value)}
                 rows={3}
                 className="mt-1 w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0EA5E9]"
-                placeholder="Ej.: corrección acordada con el cliente por error de facturación"
+                placeholder="Ej.: Promoción 2x1, bonificación acordada, error de facturación…"
               />
+              <span className="mt-1 block text-[11px] font-normal text-slate-400">
+                Se combina con el motivo fiscal seleccionado arriba (ej. «Descuento: Promoción 2x1»).
+              </span>
             </label>
             <label className="block text-xs font-semibold text-slate-600">
               Observación interna (opcional)

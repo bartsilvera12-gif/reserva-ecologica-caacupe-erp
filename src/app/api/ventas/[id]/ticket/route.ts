@@ -35,6 +35,18 @@ function resolveNegocio(nombreEmpresa?: string | null): string {
   return NEGOCIO_FALLBACK;
 }
 
+/**
+ * Depura la observación para documentos que ve el cliente (ticket / nota de
+ * remisión). La nota de auditoría "Venta con stock insuficiente autorizada: …"
+ * se guarda en la venta para el back-office pero NO debe imprimirse.
+ */
+function observacionImprimible(raw?: string | null): string {
+  return String(raw ?? "")
+    .replace(/\s*\|?\s*Venta con stock insuficiente autorizada:[^|]*/gi, "")
+    .replace(/^\s*\|\s*/, "")
+    .trim();
+}
+
 // ── Clasificación PIZZERÍA / PLANCHA ───────────────────────────────────────
 // Primary: categoría hija del producto. Fallback: prefijo de SKU.
 
@@ -214,7 +226,7 @@ function renderCopia(opts: {
   if (brief?.cliente_nombre) datosPedido.push(`<div>Cliente: ${escapeHtml(brief.cliente_nombre)}</div>`);
   if (brief?.cliente_telefono) datosPedido.push(`<div>Tel: ${escapeHtml(brief.cliente_telefono)}</div>`);
   if (brief?.direccion_entrega) datosPedido.push(`<div>Dir: ${escapeHtml(brief.direccion_entrega)}</div>`);
-  const obs = brief?.observacion || venta.observaciones || "";
+  const obs = brief?.observacion || observacionImprimible(venta.observaciones);
 
   const headerCocina = sectorBadge
     ? `<div class="sector-banner">${sectorBadge}</div>`
@@ -292,7 +304,8 @@ function renderNotaRemision(opts: {
         cliente.ciudad ? `<div>Ciudad: ${escapeHtml(cliente.ciudad)}</div>` : "",
       ].filter(Boolean).join("")
     : `<div>—</div>`;
-  const obs = venta.observaciones ? `<div class="obs"><strong>Observación:</strong> ${escapeHtml(venta.observaciones)}</div>` : "";
+  const obsImprimible = observacionImprimible(venta.observaciones);
+  const obs = obsImprimible ? `<div class="obs"><strong>Observación:</strong> ${escapeHtml(obsImprimible)}</div>` : "";
 
   return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8" />

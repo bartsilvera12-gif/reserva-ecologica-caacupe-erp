@@ -4,11 +4,11 @@
  * (evita duplicar el markup del encabezado en cada documento).
  *
  * SOLO presentación: no toca datos de negocio. Los datos comerciales son fijos
- * de la empresa (Reserva Ecológica Caacupé S.A.).
+ * de la empresa (Reserva Ecológica Caacupé E.A.S.).
  */
 
 export const EMPRESA_DOC = {
-  nombre: "Reserva Ecológica Caacupé S.A.",
+  nombre: "Reserva Ecológica Caacupé E.A.S.",
   actividad: [
     "Comercio al por menor de otros productos en comercios no especializados",
     "Venta de plantas, bancos, jardinería, otros",
