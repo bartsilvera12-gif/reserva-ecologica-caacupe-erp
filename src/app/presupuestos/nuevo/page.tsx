@@ -23,6 +23,7 @@ type ClienteLite = {
   id: string;
   nombre: string;
   ruc: string | null;
+  documento: string | null;
   telefono: string | null;
   direccion: string | null;
   nivel_precio: NivelPrecio;
@@ -120,6 +121,7 @@ export default function NuevoPresupuestoPage() {
               id: String(r.id),
               nombre: s(r.empresa) || s(r.nombre_contacto) || s(r.nombre) || "Cliente",
               ruc: s(r.ruc) || null,
+              documento: s(r.documento) || null,
               telefono: s(r.telefono) || null,
               direccion: s(r.direccion) || null,
               nivel_precio: (r.nivel_precio === "mayorista" || r.nivel_precio === "distribuidor"
@@ -137,7 +139,8 @@ export default function NuevoPresupuestoPage() {
     const c = clientes.find((x) => x.id === id);
     if (c) {
       setClienteNombre(c.nombre);
-      setClienteRuc(c.ruc ?? "");
+      // Prefiere RUC; si el cliente se identifica por CI (sin RUC), usa el documento.
+      setClienteRuc(c.ruc || c.documento || "");
       setClienteTel(c.telefono ?? "");
       setClienteDir(c.direccion ?? "");
     }
@@ -276,7 +279,7 @@ export default function NuevoPresupuestoPage() {
               onChange={(id) => seleccionarCliente(id === "__manual__" ? "" : id)}
               options={[
                 { id: "__manual__", label: "— Cargar manualmente —" },
-                ...clientes.map((c) => ({ id: c.id, label: c.nombre, hint: c.ruc ?? null })),
+                ...clientes.map((c) => ({ id: c.id, label: c.nombre, hint: c.ruc || c.documento || null })),
               ]}
               placeholder="Buscar cliente por nombre o RUC…"
               emptyText="Sin clientes que coincidan"
