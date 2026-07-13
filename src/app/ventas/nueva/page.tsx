@@ -201,6 +201,7 @@ export default function NuevaVentaPage() {
       id: p.id,
       nombre: p.nombre,
       sku: p.sku,
+      tipo_iva: p.tipo_iva,
       precio_venta: p.precio_venta,
       precio_mayorista: p.precio_mayorista ?? null,
       precio_distribuidor: p.precio_distribuidor ?? null,
@@ -285,9 +286,19 @@ export default function NuevaVentaPage() {
     setPedidoId(pid);
     (async () => {
       try {
-        const res = await fetch(`/api/proyectos/${pid}`, { credentials: "include", cache: "no-store" });
+        const [res, prodList] = await Promise.all([
+          fetch(`/api/proyectos/${pid}`, { credentials: "include", cache: "no-store" }),
+          getProductos().catch(() => [] as Producto[]),
+        ]);
         const j = await res.json();
         if (cancelled || !j?.success || !j.data?.proyecto) return;
+        // El pedido en caja NO guarda el IVA por ítem (brief_data.items solo trae
+        // producto_id/cantidad/precio). Recuperamos el tipo_iva REAL de cada
+        // producto para no forzar 10% al facturar (bug: productos 5%/exenta como
+        // sésamo/girasol se facturaban al 10%).
+        const ivaPorProducto = new Map<string, TipoIvaVenta>(
+          prodList.map((prod): [string, TipoIvaVenta] => [String(prod.id), (prod.tipo_iva ?? "10%") as TipoIvaVenta])
+        );
         const p = j.data.proyecto as { brief_data?: unknown; cliente_id?: string | null; metadata?: unknown };
         const brief = (p.brief_data && typeof p.brief_data === "object" && !Array.isArray(p.brief_data))
           ? (p.brief_data as Record<string, unknown>) : {};
@@ -304,7 +315,13 @@ export default function NuevaVentaPage() {
           .map((it) => {
             const cantidad = Number(it.cantidad) || 0;
             const precio = Number(it.precio_venta) || 0;
-            const iva: TipoIvaVenta = "10%";
+            // Prioriza el IVA guardado en el ítem si existiera; si no, el del
+            // producto (fuente de verdad). Solo cae a 10% si no hay dato alguno.
+            const ivaGuardado = it.iva_tipo ?? it.tipo_iva;
+            const iva: TipoIvaVenta =
+              ivaGuardado === "EXENTA" || ivaGuardado === "5%" || ivaGuardado === "10%"
+                ? ivaGuardado
+                : ivaPorProducto.get(String(it.producto_id)) ?? "10%";
             // IVA incluido: total de línea = precio × cantidad; IVA desglosado desde adentro.
             const totalLinea = cantidad * precio;
             const montoIva = calcIva(iva, totalLinea);
@@ -488,7 +505,8 @@ export default function NuevaVentaPage() {
     setLineaTipoPrecio("minorista");
     setLineaPrecio(String(precioPorTipo(p, "minorista")));
     setLineaCant("1");
-    setLineaIva("10%");
+    // IVA real del producto (no forzar 10%: hay productos 5%/exenta).
+    setLineaIva(p.tipo_iva ?? "10%");
     setComboQuery(`${p.nombre} — ${p.sku}`);
     setComboOpen(false);
     setComboHighlight(-1);
