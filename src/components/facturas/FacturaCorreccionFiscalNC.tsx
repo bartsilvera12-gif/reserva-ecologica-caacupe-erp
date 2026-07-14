@@ -458,7 +458,7 @@ export function FacturaCorreccionFiscalNC({
       setModalOpen(false);
       setMotivo("");
       setObs("");
-      setFlash({ kind: "ok", text: "Nota de crédito creada en borrador. Usá el paso SIFEN del historial cuando corresponda." });
+      setFlash({ kind: "ok", text: "Nota de crédito creada. Usá el paso SIFEN del historial cuando corresponda." });
       await reload();
       await onAfterNcMutation?.();
     } catch (e) {
