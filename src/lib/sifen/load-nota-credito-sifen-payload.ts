@@ -228,6 +228,42 @@ export async function loadValidatedNotaCreditoSifenPayload(
         };
       });
     }
+  } else {
+    // NC TOTAL: antes se emitía un ítem genérico único ("Nota de crédito — <motivo>"),
+    // así que el KUDE no mostraba QUÉ se estaba acreditando. Ahora se desglosan los
+    // ítems reales de la factura origen, igual que hace la NC parcial.
+    //
+    // Solo se usan si su suma coincide con el monto de la NC: si hubo NC previas
+    // aprobadas, la "total" acredita el remanente y las líneas de la factura ya no
+    // cuadran. En ese caso se cae al ítem genérico (el builder valida la suma y
+    // abortaría si no cierra).
+    const montoNc = Math.round(Number((nc as { monto: unknown }).monto) || 0);
+    const { data: facItemsRows } = await supabase
+      .from("factura_items")
+      .select("descripcion, cantidad, precio_unitario, tipo_iva, total")
+      .eq("factura_id", facturaId)
+      .eq("empresa_id", empresaId)
+      .order("created_at", { ascending: true });
+    const rows = (facItemsRows ?? []) as Record<string, unknown>[];
+    if (rows.length > 0) {
+      const lineas = rows.map((r) => {
+        const tipoIvaRaw = String(r.tipo_iva ?? "").trim();
+        const tipoIva: "EXENTA" | "5%" | "10%" =
+          tipoIvaRaw === "5%" || tipoIvaRaw === "10%" ? tipoIvaRaw : "EXENTA";
+        return {
+          producto_nombre: String(r.descripcion ?? "").trim() || "Ítem",
+          sku: null,
+          cantidad: Number(r.cantidad) || 0,
+          precio_unitario: Number(r.precio_unitario) || 0,
+          tipo_iva: tipoIva,
+          total_linea: Math.round(Number(r.total) || 0),
+        };
+      });
+      const suma = lineas.reduce((s, l) => s + l.total_linea, 0);
+      if (Math.abs(suma - montoNc) <= 2) {
+        ncItems = lineas;
+      }
+    }
   }
 
   const payload: SifenNotaCreditoPayload = {
