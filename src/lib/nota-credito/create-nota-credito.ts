@@ -104,8 +104,11 @@ export async function createNotaCreditoBorrador(p: CreateNotaCreditoParams): Pro
 
   const saldo = num((factura as { saldo?: unknown }).saldo);
   const montoFactura = num((factura as { monto?: unknown }).monto);
-  if (saldo <= 0) {
-    return { ok: false, status: 409, error: "La factura no tiene saldo pendiente; no corresponde nota de crédito." };
+  // Ya NO se bloquea por `saldo <= 0`: una factura CONTADO nace con saldo 0 y
+  // igual puede necesitar NC (devolución, descuento, bonificación). El tope real
+  // se calcula más abajo sobre el monto facturado.
+  if (montoFactura <= 0) {
+    return { ok: false, status: 409, error: "La factura no tiene monto facturado; no corresponde nota de crédito." };
   }
 
   const monedaRaw = String((factura as { moneda?: string }).moneda ?? "GS").toUpperCase();
@@ -199,22 +202,26 @@ export async function createNotaCreditoBorrador(p: CreateNotaCreditoParams): Pro
     .filter((n) => n.estado_erp === "borrador" || n.estado_erp === "pendiente_envio_sifen")
     .reduce((s, n) => s + num(n.monto), 0);
 
-  const esperadoSaldo = Math.max(0, montoFactura - sumaPagos - sumaAprobadas);
-  if (Math.abs(saldo - esperadoSaldo) > 0.02) {
-    return {
-      ok: false,
-      status: 409,
-      error: `El saldo pendiente (${saldo}) no coincide con monto − pagos − NC aprobadas (${esperadoSaldo}). Revisá la factura antes de crear una nota de crédito.`,
-    };
-  }
+  // El tope de la NC es el IMPORTE ACREDITABLE = monto facturado − NC aprobadas,
+  // NO el saldo pendiente. En una factura CONTADO el saldo nace en 0 (sin filas
+  // en `pagos`), y el tope por saldo hacía imposible acreditarla. Sobre una
+  // factura ya cobrada la NC representa un reembolso/descuento al cliente.
+  // Mismo criterio que el RPC nota_credito_aplicar_aprobacion_set.
+  // (Se quitó el chequeo de coherencia saldo === monto − pagos − NC: no se
+  // cumple en contado y ya no hace falta, el tope no depende del saldo.)
+  void sumaPagos;
+  void saldo;
 
-  const saldoDisponibleParaNc = Math.max(0, saldo - sumaEnCurso);
+  const acreditable = Math.max(0, montoFactura - sumaAprobadas);
+  const saldoDisponibleParaNc = Math.max(0, acreditable - sumaEnCurso);
   if (saldoDisponibleParaNc <= 0.02) {
     return {
       ok: false,
       status: 409,
       error:
-        "No hay saldo disponible para nuevas notas de crédito (ya está comprometido por NC en curso).",
+        sumaEnCurso > 0
+          ? "El importe acreditable ya está comprometido por notas de crédito en curso."
+          : "La factura ya fue acreditada por completo con notas de crédito.",
     };
   }
 

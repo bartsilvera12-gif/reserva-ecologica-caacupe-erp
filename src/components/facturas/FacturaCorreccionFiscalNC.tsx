@@ -343,6 +343,20 @@ export function FacturaCorreccionFiscalNC({
     lineasEditor.filter((l) => l.checked).reduce((s, l) => s + l.total_linea, 0)
   );
 
+  // Tope de la NC = monto facturado − NC aprobadas − NC en curso. NO es el saldo:
+  // una factura CONTADO tiene saldo 0 y aun así puede acreditarse (devolución,
+  // descuento, bonificación). Mismo criterio que el backend y el RPC de aprobación.
+  const ncSumaAprobadas = round2(
+    items.filter((n) => n.estado_erp === "aprobada").reduce((s, n) => s + Number(n.monto || 0), 0)
+  );
+  const ncSumaEnCurso = round2(
+    items
+      .filter((n) => n.estado_erp === "borrador" || n.estado_erp === "pendiente_envio_sifen")
+      .reduce((s, n) => s + Number(n.monto || 0), 0)
+  );
+  const acreditable = Math.max(0, round2(monto - ncSumaAprobadas));
+  const disponibleParaNc = Math.max(0, round2(acreditable - ncSumaEnCurso));
+
   function actualizarLinea(idx: number, patch: Partial<LineaNcEditor>) {
     setLineasEditor((prev) => {
       const next = prev.slice();
@@ -403,10 +417,10 @@ export function FacturaCorreccionFiscalNC({
         setFlash({ kind: "err", text: "Marcá al menos una línea con total mayor a 0." });
         return;
       }
-      if (totalParcialSeleccionado > saldo + 0.02) {
+      if (totalParcialSeleccionado > disponibleParaNc + 0.02) {
         setFlash({
           kind: "err",
-          text: `La suma seleccionada (${monedaLabel} ${formatGs(totalParcialSeleccionado, moneda)}) supera el saldo (${monedaLabel} ${formatGs(saldo, moneda)}).`,
+          text: `La suma seleccionada (${monedaLabel} ${formatGs(totalParcialSeleccionado, moneda)}) supera el importe acreditable (${monedaLabel} ${formatGs(disponibleParaNc, moneda)}).`,
         });
         return;
       }
@@ -835,17 +849,23 @@ export function FacturaCorreccionFiscalNC({
                 </dd>
               </div>
               <div>
-                <dt className="text-slate-400">Pagos registrados (suma)</dt>
+                <dt className="text-slate-400">
+                  {ncSumaAprobadas > 0 ? "Ya acreditado (NC aprobadas)" : "Cobrado"}
+                </dt>
                 <dd className="tabular-nums font-medium">
-                  {monedaLabel} {formatGs(Math.max(0, monto - saldo), moneda)}
+                  {monedaLabel}{" "}
+                  {formatGs(
+                    ncSumaAprobadas > 0 ? ncSumaAprobadas : Math.max(0, monto - saldo),
+                    moneda
+                  )}
                 </dd>
               </div>
               <div>
                 <dt className="text-slate-400">
-                  Saldo disponible {tipoNc === "total" ? "(= NC)" : ""}
+                  Disponible para NC {tipoNc === "total" ? "(= NC)" : ""}
                 </dt>
                 <dd className="tabular-nums font-bold text-[#0284C7]">
-                  {monedaLabel} {formatGs(saldo, moneda)}
+                  {monedaLabel} {formatGs(disponibleParaNc, moneda)}
                 </dd>
               </div>
               <div className="col-span-2 text-[11px] text-slate-500">
@@ -917,8 +937,8 @@ export function FacturaCorreccionFiscalNC({
               </div>
               <p className="mt-1 text-[11px] text-slate-500">
                 {tipoNc === "total"
-                  ? "Acredita todo el saldo pendiente en un solo tramo."
-                  : "Elegí líneas y modo por cada ítem. Podés emitir varias NC parciales hasta agotar el saldo."}
+                  ? "Acredita todo el importe disponible en un solo tramo."
+                  : "Elegí líneas y modo por cada ítem. Podés emitir varias NC parciales hasta agotar el importe acreditable."}
               </p>
             </div>
 
@@ -1038,9 +1058,9 @@ export function FacturaCorreccionFiscalNC({
                       </tr>
                       <tr>
                         <td colSpan={6} className="px-2 py-1 text-right text-[10px] text-slate-500">
-                          Saldo disponible: {monedaLabel} {formatGs(saldo, moneda)}.
-                          {totalParcialSeleccionado > saldo + 0.02 && (
-                            <span className="text-red-600 ml-1">Supera el saldo.</span>
+                          Disponible para NC: {monedaLabel} {formatGs(disponibleParaNc, moneda)}.
+                          {totalParcialSeleccionado > disponibleParaNc + 0.02 && (
+                            <span className="text-red-600 ml-1">Supera el importe acreditable.</span>
                           )}
                         </td>
                       </tr>

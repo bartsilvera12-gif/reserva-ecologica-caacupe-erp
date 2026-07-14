@@ -34,8 +34,13 @@ export async function evaluateNotaCreditoCreationGate(
 
   const saldo = num((factura as { saldo?: unknown }).saldo);
   const monto = num((factura as { monto?: unknown }).monto);
-  if (saldo <= 0) {
-    return { puede_crear: false, motivo_bloqueo: "No hay saldo pendiente en la factura." };
+  // Antes se bloqueaba con `saldo <= 0`, lo que hacía imposible emitir NC sobre
+  // una factura CONTADO (nace con saldo 0 y sin filas en `pagos`). El tope real
+  // de una NC no es el saldo sino el importe facturado menos lo ya acreditado
+  // (ver más abajo): sobre una factura cobrada la NC es un reembolso/descuento.
+  void saldo;
+  if (monto <= 0) {
+    return { puede_crear: false, motivo_bloqueo: "La factura no tiene monto facturado." };
   }
 
   const { data: feRow, error: errFe } = await supabase
@@ -146,9 +151,9 @@ export async function evaluateNotaCreditoCreationGate(
   void preview;
 
   // Se admiten múltiples NC por factura mientras el acumulado (aprobadas +
-  // en curso) no supere el saldo disponible. La regla de coherencia
-  // saldo === monto − pagos ahora considera lo ya acreditado (RPC
-  // nota_credito_aplicar_aprobacion_set restó del saldo al aprobar).
+  // en curso) no supere el IMPORTE ACREDITABLE = monto facturado − NC aprobadas.
+  // El tope ya no es el saldo: en contado el saldo nace en 0 y bloqueaba todo.
+  // Mismo criterio que el RPC nota_credito_aplicar_aprobacion_set.
   const { data: ncsRows, error: errNcs } = await supabase
     .from("nota_credito")
     .select("monto, estado_erp")
@@ -166,22 +171,20 @@ export async function evaluateNotaCreditoCreationGate(
     .filter((n) => n.estado_erp === "borrador" || n.estado_erp === "pendiente_envio_sifen")
     .reduce((s, n) => s + num(n.monto), 0);
 
-  const esperadoSaldo = Math.max(0, monto - sumaPagos - sumaAprobadas);
-  if (Math.abs(saldo - esperadoSaldo) > 0.02) {
-    return {
-      puede_crear: false,
-      motivo_bloqueo: "El saldo no coincide con monto − pagos − NC aprobadas; corregí la factura antes de continuar.",
-    };
-  }
+  // Se eliminó el chequeo de coherencia `saldo === monto − pagos − NC aprobadas`:
+  // no se cumple en facturas CONTADO (saldo nace en 0 sin filas en `pagos`) y ya
+  // no es necesario, porque el tope de la NC no depende del saldo.
+  void sumaPagos;
 
-  const saldoDisponibleParaNc = Math.max(0, saldo - sumaEnCurso);
-  if (saldoDisponibleParaNc <= 0.02) {
+  const acreditable = Math.max(0, monto - sumaAprobadas);
+  const disponibleParaNc = Math.max(0, acreditable - sumaEnCurso);
+  if (disponibleParaNc <= 0.02) {
     return {
       puede_crear: false,
       motivo_bloqueo:
         sumaEnCurso > 0
-          ? "El saldo ya está totalmente comprometido por notas de crédito en curso. Anulá alguna borrador o esperá su resolución en SET."
-          : "No hay saldo disponible para nuevas notas de crédito en esta factura.",
+          ? "El importe acreditable ya está comprometido por notas de crédito en curso. Anulá alguna borrador o esperá su resolución en SET."
+          : "La factura ya fue acreditada por completo con notas de crédito.",
     };
   }
 
