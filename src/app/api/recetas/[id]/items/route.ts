@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
-import { API_ERRORS } from "@/lib/api/errors";
 import { insertRecetaItem } from "@/lib/recetas/recetas-pg";
+import { requireEdicionRecetas } from "@/lib/recetas/require-edicion-recetas";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function POST(request: NextRequest, { params }: RouteCtx) {
   try {
     const { id: recetaId } = await params;
-    const ctx = await getTenantSupabaseFromAuth(request);
-    if (!ctx) return NextResponse.json(errorResponse(API_ERRORS.UNAUTHORIZED), { status: 401 });
+    // Agregar insumo a la receta: solo admin/supervisor.
+    const guard = await requireEdicionRecetas(request);
+    if (!guard.ok) return guard.response;
+    const ctx = guard.ctx;
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const insumo_producto_id =
       typeof body.insumo_producto_id === "string" ? body.insumo_producto_id : null;

@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
-import { API_ERRORS } from "@/lib/api/errors";
 import { deleteRecetaItem, updateRecetaItem } from "@/lib/recetas/recetas-pg";
+import { requireEdicionRecetas } from "@/lib/recetas/require-edicion-recetas";
 
 type RouteCtx = { params: Promise<{ id: string; itemId: string }> };
 
 export async function PATCH(request: NextRequest, { params }: RouteCtx) {
   try {
     const { itemId } = await params;
-    const ctx = await getTenantSupabaseFromAuth(request);
-    if (!ctx) return NextResponse.json(errorResponse(API_ERRORS.UNAUTHORIZED), { status: 401 });
+    // Editar insumo de la receta: solo admin/supervisor.
+    const guard = await requireEdicionRecetas(request);
+    if (!guard.ok) return guard.response;
+    const ctx = guard.ctx;
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const patch: Record<string, unknown> = {};
     if (typeof body.cantidad === "number" && body.cantidad > 0) patch.cantidad = body.cantidad;
@@ -30,8 +31,10 @@ export async function PATCH(request: NextRequest, { params }: RouteCtx) {
 export async function DELETE(request: NextRequest, { params }: RouteCtx) {
   try {
     const { itemId } = await params;
-    const ctx = await getTenantSupabaseFromAuth(request);
-    if (!ctx) return NextResponse.json(errorResponse(API_ERRORS.UNAUTHORIZED), { status: 401 });
+    // Eliminar insumo de la receta: solo admin/supervisor.
+    const guard = await requireEdicionRecetas(request);
+    if (!guard.ok) return guard.response;
+    const ctx = guard.ctx;
     await deleteRecetaItem(ctx.supabase, itemId);
     return NextResponse.json(successResponse({ ok: true }));
   } catch (err) {

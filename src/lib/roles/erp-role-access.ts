@@ -25,6 +25,10 @@ export const SLUGS_PERMITIDOS_ROL_USUARIO_LIMITADO: ReadonlySet<string> = new Se
   "presupuestos",
   // Alta y consulta de clientes.
   "clientes",
+  // Recetario: TODOS los roles pueden FABRICAR desde una receta. La edición del
+  // recetario (crear/editar/eliminar) queda restringida a admin/supervisor —
+  // ver `puedeEditarRecetas` y los guards de /api/recetas/*.
+  "recetas",
 ]);
 
 /** Ruta a la que se redirige un `usuario` que entra a "/". */
@@ -50,6 +54,16 @@ export function esUsuarioLimitadoErp(rol: string | null | undefined): boolean {
 /** El tab "Financiero" del dashboard solo lo ve el admin. */
 export function puedeVerTabFinanciero(rol: string | null | undefined): boolean {
   return esAdminErp(rol);
+}
+
+/**
+ * Editar el recetario (crear / editar / eliminar recetas e insumos): solo
+ * admin y supervisor. FABRICAR desde una receta lo puede hacer cualquier rol
+ * (es una operación de planta, no de configuración) — no usar este helper para
+ * gatear `POST /api/producciones`.
+ */
+export function puedeEditarRecetas(rol: string | null | undefined): boolean {
+  return esAdminErp(rol) || esSupervisorErp(rol);
 }
 
 /**

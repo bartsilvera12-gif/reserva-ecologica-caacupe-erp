@@ -3,6 +3,7 @@ import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { insertReceta, listRecetas } from "@/lib/recetas/recetas-pg";
+import { requireEdicionRecetas } from "@/lib/recetas/require-edicion-recetas";
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,8 +19,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const ctx = await getTenantSupabaseFromAuth(request);
-    if (!ctx) return NextResponse.json(errorResponse(API_ERRORS.UNAUTHORIZED), { status: 401 });
+    // Crear receta: solo admin/supervisor (fabricar sí es para todos los roles).
+    const guard = await requireEdicionRecetas(request);
+    if (!guard.ok) return guard.response;
+    const ctx = guard.ctx;
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const producto_id = typeof body.producto_id === "string" ? body.producto_id : null;
     if (!producto_id) {

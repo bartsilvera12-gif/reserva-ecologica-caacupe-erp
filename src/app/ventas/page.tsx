@@ -476,7 +476,7 @@ export default function VentasPage() {
                               - Factura ERP en borrador/generado/firmado/error_envio/
                                 rechazado/cancelado → link a la factura + botón Anular:
                                 el DE nunca llegó a SET, se puede descartar localmente. */}
-                          {v.factura_id && (
+                          {v.factura_id ? (
                             <Link
                               href={`/facturas/${v.factura_id}`}
                               className="inline-flex items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition-colors"
@@ -484,6 +484,18 @@ export default function VentasPage() {
                             >
                               {v.numero_factura ? `Factura ${v.numero_factura}` : "Factura"}
                             </Link>
+                          ) : (
+                            /* Venta sin factura electrónica (solo ticket): antes no había
+                               forma de volver a verla/reimprimirla desde Caja. */
+                            <a
+                              href={`/api/ventas/${v.id}/ticket`}
+                              target="_blank"
+                              rel="noopener"
+                              className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
+                              title="Ver / reimprimir el ticket de esta venta"
+                            >
+                              Ticket
+                            </a>
                           )}
                           {!anulada && (() => {
                             const est = v.factura_estado_sifen;

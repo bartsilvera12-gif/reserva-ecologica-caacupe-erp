@@ -9,6 +9,8 @@ import { NEURA_CLIENT_SCHEMA } from "@/lib/supabase/schema";
 import { formatUnidad } from "@/lib/unidades/format";
 import { unidadesCompatibles, familiaUnidad } from "@/lib/unidades/convert";
 import SearchableSelect from "@/components/ui/SearchableSelect";
+import { useRolErp } from "@/lib/auth/use-rol-erp";
+import { puedeEditarRecetas } from "@/lib/roles/erp-role-access";
 
 /** Reserva monocliente: receta pertenece al producto; nombre interno oculto (autogenera). */
 const RECETA_SIMPLE = NEURA_CLIENT_SCHEMA === "reservacaacupe";
@@ -101,6 +103,11 @@ export default function EditarRecetaPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const id = params.id;
+  // Editar el recetario: solo admin/supervisor. FABRICAR: todos los roles.
+  // Los guards reales viven en /api/recetas/* (requireEdicionRecetas); acá solo
+  // ocultamos los controles de edición para que el operador no choque con un 403.
+  const { rol, loaded: rolLoaded } = useRolErp();
+  const puedeEditar = puedeEditarRecetas(rol);
 
   const [receta, setReceta] = useState<Receta | null>(null);
   const [items, setItems] = useState<Item[]>([]);
@@ -307,6 +314,23 @@ export default function EditarRecetaPage() {
     setFabOpen(true);
   }
 
+  // Entrada directa a fabricar desde el listado (`?fabricar=1`): abre el modal
+  // apenas la receta está cargada, sin pasar por la pantalla de edición.
+  const [fabAutoAbierto, setFabAutoAbierto] = useState(false);
+  useEffect(() => {
+    if (fabAutoAbierto || !receta) return;
+    let quiereFabricar = false;
+    try {
+      quiereFabricar = new URLSearchParams(window.location.search).get("fabricar") === "1";
+    } catch {
+      quiereFabricar = false;
+    }
+    if (!quiereFabricar) return;
+    setFabAutoAbierto(true);
+    openFabricar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [receta, fabAutoAbierto]);
+
   async function submitFabricar(permitirSinStock: boolean) {
     if (fabSubmitting || !(fabCantidad > 0)) return;
     setFabSubmitting(true);
@@ -387,12 +411,14 @@ export default function EditarRecetaPage() {
           >
             <Factory className="h-4 w-4" /> Fabricar
           </button>
-          <button
-            onClick={deleteReceta}
-            className="inline-flex items-center gap-1 text-sm text-red-600 hover:text-red-700"
-          >
-            <Trash2 className="h-4 w-4" /> Eliminar receta
-          </button>
+          {puedeEditar && (
+            <button
+              onClick={deleteReceta}
+              className="inline-flex items-center gap-1 text-sm text-red-600 hover:text-red-700"
+            >
+              <Trash2 className="h-4 w-4" /> Eliminar receta
+            </button>
+          )}
         </div>
       </div>
 
@@ -580,13 +606,15 @@ export default function EditarRecetaPage() {
                     {row.unidades_aporte == null ? "—" : `${Math.floor(row.unidades_aporte * (receta.rendimiento_cantidad || 1)).toLocaleString("es-PY")} u.`}
                   </td>
                   <td className="py-2 text-right">
-                    <button
-                      onClick={() => removeItem(row.item_id)}
-                      className="inline-flex items-center justify-center min-w-[40px] min-h-[40px] text-red-600 hover:text-red-700 hover:bg-red-50 rounded"
-                      aria-label="Eliminar"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    {puedeEditar && (
+                      <button
+                        onClick={() => removeItem(row.item_id)}
+                        className="inline-flex items-center justify-center min-w-[40px] min-h-[40px] text-red-600 hover:text-red-700 hover:bg-red-50 rounded"
+                        aria-label="Eliminar"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -595,7 +623,14 @@ export default function EditarRecetaPage() {
           </div>
         )}
 
-        {/* Add item */}
+        {/* Add item — solo admin/supervisor */}
+        {!puedeEditar && rolLoaded && (
+          <div className="border-t border-gray-200 pt-4 text-xs text-slate-500">
+            Solo un administrador o supervisor puede modificar el recetario. Podés{" "}
+            <b>Fabricar</b> desde esta receta.
+          </div>
+        )}
+        {puedeEditar && (
         <div className="border-t border-gray-200 pt-4">
           <div className="text-xs font-medium text-gray-600 mb-2">Agregar insumo</div>
           {insumosDisponibles.length === 0 ? (
@@ -679,6 +714,7 @@ export default function EditarRecetaPage() {
             </div>
           )}
         </div>
+        )}
       </div>
 
       {/* Barra de acción final */}
@@ -690,6 +726,7 @@ export default function EditarRecetaPage() {
         >
           Volver a recetas
         </Link>
+        {puedeEditar && (
         <button
           onClick={saveHeader}
           disabled={savingHeader}
@@ -697,6 +734,7 @@ export default function EditarRecetaPage() {
         >
           <Save className="h-4 w-4" /> {savingHeader ? "Guardando…" : "Guardar receta"}
         </button>
+        )}
       </div>
 
       {/* Modal Fabricar */}

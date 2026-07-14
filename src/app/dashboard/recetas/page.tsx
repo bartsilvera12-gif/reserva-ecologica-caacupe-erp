@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
-import { ChefHat, Plus, Loader2, Search, X, Trash2 } from "lucide-react";
+import { ChefHat, Plus, Loader2, Search, X, Trash2, Factory } from "lucide-react";
 import { formatUnidad } from "@/lib/unidades/format";
+import { useRolErp } from "@/lib/auth/use-rol-erp";
+import { puedeEditarRecetas } from "@/lib/roles/erp-role-access";
 
 type RecetaRow = {
   id: string;
@@ -35,6 +37,9 @@ function normalizar(s: string): string {
 }
 
 export default function RecetasListPage() {
+  // Editar el recetario es solo para admin/supervisor; FABRICAR es para todos.
+  const { rol } = useRolErp();
+  const puedeEditar = puedeEditarRecetas(rol);
   const [recetas, setRecetas] = useState<RecetaRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -122,13 +127,15 @@ export default function RecetasListPage() {
           </div>
           <p className="mt-0.5 text-xs text-slate-500">Recetario de productos preparados por el local.</p>
         </div>
-        <Link
-          href="/dashboard/recetas/nueva"
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[#4FAEB2] px-3 py-1.5 text-xs font-semibold text-white shadow-sm shadow-[#4FAEB2]/25 transition-colors hover:bg-[#3F8E91] active:scale-95"
-        >
-          <Plus className="h-4 w-4" />
-          Nueva receta
-        </Link>
+        {puedeEditar && (
+          <Link
+            href="/dashboard/recetas/nueva"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[#4FAEB2] px-3 py-1.5 text-xs font-semibold text-white shadow-sm shadow-[#4FAEB2]/25 transition-colors hover:bg-[#3F8E91] active:scale-95"
+          >
+            <Plus className="h-4 w-4" />
+            Nueva receta
+          </Link>
+        )}
       </div>
 
       {/* Buscador inteligente */}
@@ -255,24 +262,38 @@ export default function RecetasListPage() {
                       </div>
                     ) : (
                       <div className="flex items-center justify-end gap-3">
+                        {/* Fabricar: habilitado para TODOS los roles. Abre la receta
+                            con el modal de fabricación ya desplegado. */}
                         <Link
-                          href={`/dashboard/recetas/${r.id}`}
-                          className="text-amber-600 hover:text-amber-700"
+                          href={`/dashboard/recetas/${r.id}?fabricar=1`}
+                          className="inline-flex items-center gap-1.5 rounded-md bg-[#4FAEB2] px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-[#3F8E91]"
+                          title={`Fabricar ${nombreReceta(r)}`}
                         >
-                          Editar
+                          <Factory className="h-3.5 w-3.5" />
+                          Fabricar
                         </Link>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDeleteError(null);
-                            setConfirmId(r.id);
-                          }}
-                          aria-label={`Eliminar ${nombreReceta(r)}`}
-                          title="Eliminar receta"
-                          className="rounded-md p-1 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {puedeEditar && (
+                          <>
+                            <Link
+                              href={`/dashboard/recetas/${r.id}`}
+                              className="text-[#0284C7] hover:underline"
+                            >
+                              Editar
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDeleteError(null);
+                                setConfirmId(r.id);
+                              }}
+                              aria-label={`Eliminar ${nombreReceta(r)}`}
+                              title="Eliminar receta"
+                              className="rounded-md p-1 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
                   </td>
