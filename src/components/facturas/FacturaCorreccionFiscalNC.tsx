@@ -52,6 +52,16 @@ type LineaNcEditor = {
   modo: "unidades" | "monto" | "porcentaje";
   /** Solo para modo "porcentaje": % sobre total_max (0–100). */
   porcentaje: number;
+  /**
+   * Línea cargada a mano (concepto libre + monto), sin línea de origen en la
+   * factura. Se envía con `factura_item_id: null`: el backend no le aplica el
+   * tope por línea, solo el tope total de la NC (create-nota-credito.ts).
+   *
+   * SIFEN lo admite: los ítems de la NC no se validan contra la factura origen
+   * —el vínculo es por CDC (gCamDEAsoc)—, pero cada línea SÍ debe declarar su
+   * tipo de IVA.
+   */
+  manual: boolean;
 };
 
 /** Tipo/motivo fiscal de la NC (SIFEN acepta UN solo motivo por documento). */
@@ -338,6 +348,7 @@ export function FacturaCorreccionFiscalNC({
         total_linea: it.total_linea,
         modo: "unidades",
         porcentaje: 0,
+        manual: false,
       };
     });
     setLineasEditor(lineas);
@@ -361,6 +372,36 @@ export function FacturaCorreccionFiscalNC({
   );
   const acreditable = Math.max(0, round2(monto - ncSumaAprobadas));
   const disponibleParaNc = Math.max(0, round2(acreditable - ncSumaEnCurso));
+
+  /**
+   * Concepto libre: para acreditar algo que NO figura como línea de esta factura
+   * (ej. devolución de productos vencidos comprados en otra oportunidad).
+   * Va con `factura_item_id: null`, así el backend no le aplica tope por línea.
+   */
+  function agregarLineaManual() {
+    setLineasEditor((prev) => [
+      ...prev,
+      {
+        checked: true,
+        factura_item_id: null,
+        producto_nombre: "",
+        // Sin línea de origen no hay tope propio: el techo es lo acreditable de la factura.
+        cantidad_max: 1,
+        total_max: disponibleParaNc,
+        precio_unitario: 0,
+        tipo_iva: "10%",
+        cantidad: 1,
+        total_linea: 0,
+        modo: "monto",
+        porcentaje: 0,
+        manual: true,
+      },
+    ]);
+  }
+
+  function quitarLineaManual(idx: number) {
+    setLineasEditor((prev) => prev.filter((_, i) => i !== idx));
+  }
 
   function actualizarLinea(idx: number, patch: Partial<LineaNcEditor>) {
     setLineasEditor((prev) => {
@@ -422,6 +463,11 @@ export function FacturaCorreccionFiscalNC({
         setFlash({ kind: "err", text: "Marcá al menos una línea con total mayor a 0." });
         return;
       }
+      // SIFEN exige descripción en cada ítem (dDesProSer).
+      if (lineasElegidas.some((l) => l.manual && !l.producto_nombre.trim())) {
+        setFlash({ kind: "err", text: "Escribí el concepto de las líneas cargadas a mano." });
+        return;
+      }
       if (totalParcialSeleccionado > disponibleParaNc + 0.02) {
         setFlash({
           kind: "err",
@@ -440,9 +486,11 @@ export function FacturaCorreccionFiscalNC({
       if (tipoNc === "parcial") {
         // "porcentaje" es un modo de UI: el backend solo distingue unidades/monto,
         // así que lo enviamos como "monto" con el importe ya calculado.
+        // Las líneas manuales van con factura_item_id: null → el backend las trata
+        // como ajuste libre (sin tope por línea, solo el tope total de la NC).
         body.items = lineasElegidas.map((l) => ({
           factura_item_id: l.factura_item_id,
-          producto_nombre: l.producto_nombre,
+          producto_nombre: l.producto_nombre.trim(),
           cantidad: l.modo === "unidades" ? l.cantidad : 1,
           precio_unitario: l.modo === "unidades" ? l.precio_unitario : l.total_linea,
           tipo_iva: l.tipo_iva,
@@ -1002,17 +1050,12 @@ export function FacturaCorreccionFiscalNC({
                 <button
                   type="button"
                   onClick={() => setTipoNc("parcial")}
-                  disabled={facturaItemsCache.length === 0}
-                  title={
-                    facturaItemsCache.length === 0
-                      ? "No hay ítems de factura para seleccionar."
-                      : undefined
-                  }
+                  title="Elegí líneas de la factura y/o cargá conceptos a mano."
                   className={`px-3 py-1.5 text-xs font-semibold ${
                     tipoNc === "parcial"
                       ? "bg-[#0EA5E9] text-white"
                       : "bg-white text-slate-700 hover:bg-slate-50"
-                  } disabled:opacity-40 disabled:cursor-not-allowed`}
+                  }`}
                 >
                   Parcial (por ítem)
                 </button>
@@ -1025,7 +1068,7 @@ export function FacturaCorreccionFiscalNC({
             </div>
 
             {/* Editor de líneas cuando es parcial */}
-            {tipoNc === "parcial" && lineasEditor.length > 0 && (
+            {tipoNc === "parcial" && (
               <div className="rounded-lg border border-slate-200 overflow-hidden">
                 <div className="max-h-64 overflow-auto">
                   <table className="w-full text-[11px]">
@@ -1052,26 +1095,74 @@ export function FacturaCorreccionFiscalNC({
                               />
                             </td>
                             <td className="px-2 py-1 align-middle">
-                              <div className="text-slate-800">{l.producto_nombre}</div>
-                              <div className="text-[10px] text-slate-400">
-                                Máx {l.cantidad_max} × {monedaLabel} {formatGs(l.precio_unitario, moneda)} ({l.tipo_iva})
-                              </div>
+                              {l.manual ? (
+                                <div className="space-y-1">
+                                  <input
+                                    type="text"
+                                    value={l.producto_nombre}
+                                    disabled={!l.checked}
+                                    maxLength={120}
+                                    onChange={(e) =>
+                                      actualizarLinea(idx, { producto_nombre: e.target.value })
+                                    }
+                                    placeholder="Concepto (ej.: Devolución de productos vencidos)"
+                                    className="w-full border border-slate-200 rounded px-1.5 py-1 text-[11px] disabled:opacity-40"
+                                  />
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] text-slate-400">IVA</span>
+                                    <select
+                                      value={l.tipo_iva}
+                                      disabled={!l.checked}
+                                      onChange={(e) =>
+                                        actualizarLinea(idx, {
+                                          tipo_iva: e.target.value as "EXENTA" | "5%" | "10%",
+                                        })
+                                      }
+                                      className="text-[10px] border border-slate-200 rounded px-1 py-0.5 disabled:opacity-40"
+                                    >
+                                      <option value="10%">10%</option>
+                                      <option value="5%">5%</option>
+                                      <option value="EXENTA">Exenta</option>
+                                    </select>
+                                    <button
+                                      type="button"
+                                      onClick={() => quitarLineaManual(idx)}
+                                      className="text-[10px] font-semibold text-red-600 hover:underline"
+                                    >
+                                      Quitar
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="text-slate-800">{l.producto_nombre}</div>
+                                  <div className="text-[10px] text-slate-400">
+                                    Máx {l.cantidad_max} × {monedaLabel} {formatGs(l.precio_unitario, moneda)} ({l.tipo_iva})
+                                  </div>
+                                </>
+                              )}
                             </td>
                             <td className="px-2 py-1 align-middle">
-                              <select
-                                value={l.modo}
-                                disabled={!l.checked}
-                                onChange={(e) =>
-                                  actualizarLinea(idx, {
-                                    modo: e.target.value as "unidades" | "monto" | "porcentaje",
-                                  })
-                                }
-                                className="text-[11px] border border-slate-200 rounded px-1 py-0.5 disabled:opacity-40"
-                              >
-                                <option value="unidades">Unidades</option>
-                                <option value="monto">Monto</option>
-                                <option value="porcentaje">Porcentaje</option>
-                              </select>
+                              {l.manual ? (
+                                // Sin línea de origen no hay unidades ni % contra qué calcular:
+                                // el concepto libre se acredita siempre por monto.
+                                <span className="text-[11px] text-slate-400">Monto</span>
+                              ) : (
+                                <select
+                                  value={l.modo}
+                                  disabled={!l.checked}
+                                  onChange={(e) =>
+                                    actualizarLinea(idx, {
+                                      modo: e.target.value as "unidades" | "monto" | "porcentaje",
+                                    })
+                                  }
+                                  className="text-[11px] border border-slate-200 rounded px-1 py-0.5 disabled:opacity-40"
+                                >
+                                  <option value="unidades">Unidades</option>
+                                  <option value="monto">Monto</option>
+                                  <option value="porcentaje">Porcentaje</option>
+                                </select>
+                              )}
                             </td>
                             <td className="px-2 py-1 align-middle text-right">
                               {l.modo === "unidades" ? (
@@ -1149,12 +1240,30 @@ export function FacturaCorreccionFiscalNC({
                     </tfoot>
                   </table>
                 </div>
+                {/* Concepto libre: para acreditar algo que no figura como línea de esta
+                    factura (ej. devolución de productos vencidos de otra compra).
+                    SIFEN no valida los ítems de la NC contra la factura origen — el
+                    vínculo es por CDC — pero cada línea debe declarar su IVA. */}
+                <div className="border-t border-slate-200 bg-slate-50/60 px-2 py-2">
+                  <button
+                    type="button"
+                    onClick={agregarLineaManual}
+                    className="text-[11px] font-semibold text-[#0284C7] hover:underline"
+                  >
+                    + Agregar concepto manual
+                  </button>
+                  <p className="mt-0.5 text-[10px] text-slate-500">
+                    Para acreditar algo que no está en el listado (escribís el concepto, el
+                    monto y el IVA).
+                  </p>
+                </div>
               </div>
             )}
 
-            {tipoNc === "parcial" && lineasEditor.length === 0 && (
+            {tipoNc === "parcial" && facturaItemsCache.length === 0 && (
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
-                Esta factura no tiene ítems desglosados (ej. factura de suscripción). Usá el modo Total.
+                Esta factura no tiene ítems desglosados (ej. factura de suscripción). Podés usar el
+                modo Total, o cargar el concepto a mano con <b>+ Agregar concepto manual</b>.
               </div>
             )}
 
