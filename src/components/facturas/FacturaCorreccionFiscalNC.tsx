@@ -500,9 +500,9 @@ export function FacturaCorreccionFiscalNC({
    */
   async function cancelarNcEnSet(nc: NotaCreditoListItemDTO) {
     const motivo = prompt(
-      "Motivo de la cancelación ante la SET (mínimo 5 caracteres).\n\n" +
-        "Se envía el evento de cancelación a la SET. Si lo registra, la nota de crédito " +
-        "queda anulada y el saldo vuelve a la factura."
+      "Motivo de la anulación (mínimo 5 caracteres).\n\n" +
+        "La nota de crédito se anula ante la SET. Si la SET registra la anulación, " +
+        "el saldo vuelve a la factura."
     );
     if (motivo == null) return;
     if (motivo.trim().length < 5) {
@@ -521,11 +521,11 @@ export function FacturaCorreccionFiscalNC({
       if (!res.ok || !j.success) {
         setFlash({
           kind: "err",
-          text: `La SET no canceló la nota de crédito: ${mensajeErrorPlano(j.error) || j.error || `Error ${res.status}`}`,
+          text: `La SET no anuló la nota de crédito: ${mensajeErrorPlano(j.error) || j.error || `Error ${res.status}`}`,
         });
         return;
       }
-      setFlash({ kind: "ok", text: "Nota de crédito cancelada en la SET. El saldo volvió a la factura." });
+      setFlash({ kind: "ok", text: "Nota de crédito anulada ante la SET. El saldo volvió a la factura." });
       await reload();
       await onAfterNcMutation?.();
     } catch (e) {
@@ -792,9 +792,9 @@ export function FacturaCorreccionFiscalNC({
                             disabled={sifenNcId === nc.id}
                             onClick={() => void cancelarNcEnSet(nc)}
                             className="w-full sm:w-auto text-center px-3 py-2 rounded-lg border border-red-300 bg-white text-red-700 text-xs font-semibold hover:bg-red-50 disabled:opacity-50"
-                            title="Envía a la SET el evento de cancelación. Si la SET lo registra, se anula la NC y se devuelve el saldo a la factura."
+                            title="Anula la nota de crédito ante la SET. Si la SET registra la anulación, se devuelve el saldo a la factura."
                           >
-                            {sifenNcId === nc.id ? "Cancelando…" : "Cancelar en SET"}
+                            {sifenNcId === nc.id ? "Anulando…" : "Anular nota de crédito"}
                           </button>
                         ) : null}
                         {nc.estado_sifen === "aprobado" ? (
