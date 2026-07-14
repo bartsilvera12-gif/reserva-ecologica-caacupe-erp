@@ -256,6 +256,10 @@ export function FacturaCorreccionFiscalNC({
   const [lineasEditor, setLineasEditor] = useState<LineaNcEditor[]>([]);
   const [flash, setFlash] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [sifenNcId, setSifenNcId] = useState<string | null>(null);
+  /** NC elegida para anular ante la SET + motivo (modal propio, no prompt()). */
+  const [anularNc, setAnularNc] = useState<NotaCreditoListItemDTO | null>(null);
+  const [anularMotivo, setAnularMotivo] = useState("");
+  const [anularError, setAnularError] = useState<string | null>(null);
   /** Config SIFEN empresa + flag servidor (solo para herramientas *-test opcionales). */
   const [sifenCfg, setSifenCfg] = useState<{
     empresaAmbiente: "produccion" | "test";
@@ -546,38 +550,44 @@ export function FacturaCorreccionFiscalNC({
    * lo registra, el ERP marca la NC cancelada y devuelve el saldo a la factura.
    * Si la SET rechaza, no se toca nada local (el documento sigue vigente para el fisco).
    */
-  async function cancelarNcEnSet(nc: NotaCreditoListItemDTO) {
-    const motivo = prompt(
-      "Motivo de la anulación (mínimo 5 caracteres).\n\n" +
-        "La nota de crédito se anula ante la SET. Si la SET registra la anulación, " +
-        "el saldo vuelve a la factura."
-    );
-    if (motivo == null) return;
-    if (motivo.trim().length < 5) {
-      setFlash({ kind: "err", text: "El motivo debe tener al menos 5 caracteres." });
+  function abrirModalAnular(nc: NotaCreditoListItemDTO) {
+    setAnularNc(nc);
+    setAnularMotivo("");
+    setAnularError(null);
+    setFlash(null);
+  }
+
+  async function confirmarAnularNc() {
+    const nc = anularNc;
+    if (!nc) return;
+    const m = anularMotivo.trim();
+    if (m.length < 5) {
+      setAnularError("El motivo debe tener al menos 5 caracteres.");
       return;
     }
+    setAnularError(null);
     setSifenNcId(nc.id);
-    setFlash(null);
     try {
       const res = await fetchWithSupabaseSession(`${NC_SIFEN_BASE(nc.id)}/cancelar`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ motivo: motivo.trim() }),
+        body: JSON.stringify({ motivo: m }),
       });
       const j = (await res.json()) as { success?: boolean; error?: string };
       if (!res.ok || !j.success) {
-        setFlash({
-          kind: "err",
-          text: `La SET no anuló la nota de crédito: ${mensajeErrorPlano(j.error) || j.error || `Error ${res.status}`}`,
-        });
+        // El error se muestra DENTRO del modal: el operador puede corregir el
+        // motivo y reintentar sin volver a abrirlo.
+        setAnularError(
+          `La SET no anuló la nota de crédito: ${mensajeErrorPlano(j.error) || j.error || `Error ${res.status}`}`
+        );
         return;
       }
+      setAnularNc(null);
       setFlash({ kind: "ok", text: "Nota de crédito anulada ante la SET. El saldo volvió a la factura." });
       await reload();
       await onAfterNcMutation?.();
     } catch (e) {
-      setFlash({ kind: "err", text: e instanceof Error ? e.message : "Error de red" });
+      setAnularError(e instanceof Error ? e.message : "Error de red");
     } finally {
       setSifenNcId(null);
     }
@@ -838,7 +848,7 @@ export function FacturaCorreccionFiscalNC({
                           <button
                             type="button"
                             disabled={sifenNcId === nc.id}
-                            onClick={() => void cancelarNcEnSet(nc)}
+                            onClick={() => abrirModalAnular(nc)}
                             className="w-full sm:w-auto text-center px-3 py-2 rounded-lg border border-red-300 bg-white text-red-700 text-xs font-semibold hover:bg-red-50 disabled:opacity-50"
                             title="Anula la nota de crédito ante la SET. Si la SET registra la anulación, se devuelve el saldo a la factura."
                           >
@@ -1305,6 +1315,87 @@ export function FacturaCorreccionFiscalNC({
                 className="px-3 py-2 text-xs font-semibold rounded-lg bg-[#0EA5E9] text-white hover:bg-[#0284C7] disabled:opacity-50"
               >
                 {submitting ? "Guardando…" : "Confirmar creación"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: anular NC ante la SET */}
+      {anularNc && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="nc-anular-title"
+        >
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-5 space-y-3 border border-slate-200">
+            <h4 id="nc-anular-title" className="text-sm font-bold text-slate-900">
+              Anular nota de crédito
+              {anularNc.numero != null ? ` N° ${formatNumeroNc(anularNc.numero)}` : ""}
+            </h4>
+
+            <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-[11px] text-slate-600 space-y-0.5">
+              <p>
+                <span className="text-slate-400">Monto:</span>{" "}
+                <span className="font-semibold text-slate-800 tabular-nums">
+                  {monedaLabel} {formatGs(anularNc.monto, moneda)}
+                </span>
+              </p>
+              {anularNc.motivo ? (
+                <p className="line-clamp-1" title={anularNc.motivo}>
+                  <span className="text-slate-400">Motivo original:</span> {anularNc.motivo}
+                </p>
+              ) : null}
+            </div>
+
+            <p className="text-[11px] text-slate-500 leading-snug">
+              Se envía la anulación a la SET. Si la SET la registra, la nota de crédito queda
+              anulada y el <span className="font-semibold text-slate-700">saldo vuelve a la
+              factura</span>. Si la SET la rechaza, no se modifica nada.
+            </p>
+
+            <label className="block text-xs font-semibold text-slate-600">
+              Motivo de la anulación
+              <textarea
+                value={anularMotivo}
+                onChange={(e) => {
+                  setAnularMotivo(e.target.value);
+                  if (anularError) setAnularError(null);
+                }}
+                rows={3}
+                autoFocus
+                disabled={sifenNcId === anularNc.id}
+                className="mt-1 w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0EA5E9] disabled:opacity-50"
+                placeholder="Ej.: Nota de crédito duplicada por error"
+              />
+              <span className="mt-1 block text-[11px] font-normal text-slate-400">
+                Mínimo 5 caracteres. Queda registrado en la SET.
+              </span>
+            </label>
+
+            {anularError && (
+              <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-[11px] text-red-900">
+                {anularError}
+              </div>
+            )}
+
+            <div className="flex flex-wrap justify-end gap-2 pt-1">
+              <button
+                type="button"
+                disabled={sifenNcId === anularNc.id}
+                onClick={() => setAnularNc(null)}
+                className="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cerrar
+              </button>
+              <button
+                type="button"
+                disabled={sifenNcId === anularNc.id || anularMotivo.trim().length < 5}
+                onClick={() => void confirmarAnularNc()}
+                className="px-3 py-2 text-xs font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {sifenNcId === anularNc.id ? "Anulando…" : "Anular nota de crédito"}
               </button>
             </div>
           </div>
