@@ -827,7 +827,7 @@ export function FacturaCorreccionFiscalNC({
         >
           <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-5 space-y-3 border border-slate-200 max-h-[90vh] overflow-y-auto">
             <h4 id="nc-modal-title" className="text-sm font-bold text-slate-900">
-              Crear nota de crédito (borrador)
+              Crear nota de crédito
             </h4>
             <dl className="grid grid-cols-2 gap-2 text-xs text-slate-700">
               <div className="col-span-2">
