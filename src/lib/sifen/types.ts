@@ -328,6 +328,10 @@ export interface SifenNotaCreditoPayload {
   receptor: SifenPayloadReceptor;
   notaCredito: {
     id: string;
+    /** Correlativo por empresa (`nota_credito.numero`). Es el dNumDoc del CDC.
+     *  NULL solo en notas de legado, emitidas cuando el número se derivaba de un
+     *  hash del UUID; el XML aborta antes que inventar un número. */
+    numero: number | null;
     monto: number;
     motivo: string;
     /** Fecha calendario YYYY-MM-DD alineada al CDC (emisión NC = misma lógica que FE). */

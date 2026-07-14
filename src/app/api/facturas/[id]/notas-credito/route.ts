@@ -20,8 +20,23 @@ function compactSetResponses(ne: Record<string, unknown> | null | undefined): Re
 
 function mapListRow(r: Record<string, unknown>): NotaCreditoListItemDTO {
   const ne = r.nota_credito_electronica as Record<string, unknown> | null | undefined;
+  const lineasRaw = Array.isArray(r.nota_credito_items)
+    ? (r.nota_credito_items as Record<string, unknown>[])
+    : [];
   return {
     id: String(r.id),
+    numero: r.numero == null || !Number.isFinite(Number(r.numero)) ? null : Number(r.numero),
+    items: lineasRaw.map((l) => ({
+      producto_nombre: String(l.producto_nombre_snapshot ?? "").trim() || "Ítem",
+      sku: l.sku_snapshot == null ? null : String(l.sku_snapshot),
+      cantidad: Number(l.cantidad) || 0,
+      precio_unitario: Number(l.precio_unitario) || 0,
+      tipo_iva: (l.tipo_iva === "5%" || l.tipo_iva === "10%" ? l.tipo_iva : "EXENTA") as
+        | "EXENTA"
+        | "5%"
+        | "10%",
+      total_linea: Number(l.total_linea) || 0,
+    })),
     monto: Number(r.monto),
     motivo: String(r.motivo),
     observacion_interna: r.observacion_interna == null ? null : String(r.observacion_interna),
@@ -84,7 +99,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const { data: rows, error: errL } = await supabase
       .from("nota_credito")
       .select(
-        "id, monto, motivo, observacion_interna, estado_erp, created_at, created_by_user_id, created_by_email_snapshot, created_by_nombre_snapshot, saldo_previo_snapshot, monto_factura_snapshot, suma_pagos_snapshot, moneda_snapshot, nota_credito_electronica(estado_sifen, cdc, cdc_factura_origen, last_error, xml_path, xml_firmado_path, sifen_ultima_respuesta_recibe_lote, sifen_ultima_respuesta_consulta_lote)"
+        "id, numero, monto, motivo, observacion_interna, estado_erp, created_at, created_by_user_id, created_by_email_snapshot, created_by_nombre_snapshot, saldo_previo_snapshot, monto_factura_snapshot, suma_pagos_snapshot, moneda_snapshot, nota_credito_items(producto_nombre_snapshot, sku_snapshot, cantidad, precio_unitario, tipo_iva, total_linea), nota_credito_electronica(estado_sifen, cdc, cdc_factura_origen, last_error, xml_path, xml_firmado_path, sifen_ultima_respuesta_recibe_lote, sifen_ultima_respuesta_consulta_lote)"
       )
       .eq("factura_id", fid)
       .eq("empresa_id", auth.empresa_id)

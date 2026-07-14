@@ -194,6 +194,11 @@ function formatGs(n: number, moneda: string) {
   return moneda === "USD" ? n.toLocaleString("en-US") : n.toLocaleString("es-PY");
 }
 
+/** Correlativo de la NC con el mismo formato de 7 dígitos que el dNumDoc del CDC. */
+function formatNumeroNc(n: number): string {
+  return String(Math.floor(n)).padStart(7, "0");
+}
+
 export function FacturaCorreccionFiscalNC({
   facturaId,
   clienteId,
@@ -665,7 +670,9 @@ export function FacturaCorreccionFiscalNC({
                   <div className="px-3 sm:px-4 py-3 border-b border-slate-100 bg-slate-50/80 space-y-2">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="min-w-0 space-y-1">
-                        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Nota de crédito</p>
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                          Nota de crédito{nc.numero != null ? ` N° ${formatNumeroNc(nc.numero)}` : ""}
+                        </p>
                         <p className="text-xs text-slate-800">
                           <span className="text-slate-500">Creada</span>{" "}
                           {new Date(nc.created_at).toLocaleString("es-PY", {
@@ -683,6 +690,26 @@ export function FacturaCorreccionFiscalNC({
                           <p className="text-[11px] text-slate-600 line-clamp-2" title={nc.motivo}>
                             <span className="font-semibold text-slate-700">Motivo:</span> {nc.motivo}
                           </p>
+                        ) : null}
+                        {/* Detalle de la NC parcial: qué líneas se acreditaron. */}
+                        {nc.items.length > 0 ? (
+                          <div className="pt-1">
+                            <p className="text-[11px] font-semibold text-slate-700">Detalle</p>
+                            <ul className="mt-0.5 space-y-0.5 list-none p-0 m-0">
+                              {nc.items.map((l, i) => (
+                                <li key={i} className="text-[11px] text-slate-600 flex gap-2">
+                                  <span className="min-w-0 flex-1 truncate" title={l.producto_nombre}>
+                                    {l.cantidad > 0 ? `${formatGs(l.cantidad, moneda)}× ` : ""}
+                                    {l.producto_nombre}
+                                    {l.sku ? <span className="text-slate-400"> ({l.sku})</span> : null}
+                                  </span>
+                                  <span className="shrink-0 tabular-nums text-slate-700">
+                                    {monedaLabel} {formatGs(l.total_linea, moneda)}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
                         ) : null}
                       </div>
                       <div className="flex flex-col gap-1.5 shrink-0 w-full sm:w-auto sm:min-w-[11rem]">

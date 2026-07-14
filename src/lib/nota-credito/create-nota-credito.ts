@@ -424,7 +424,7 @@ export async function createNotaCreditoBorrador(p: CreateNotaCreditoParams): Pro
 
   const clienteId = String((factura as { cliente_id: string }).cliente_id);
 
-  const insertNc = {
+  const insertNcBase = {
     empresa_id: p.empresaId,
     cliente_id: clienteId,
     factura_id: p.facturaId,
@@ -443,21 +443,64 @@ export async function createNotaCreditoBorrador(p: CreateNotaCreditoParams): Pro
     factura_electronica_origen_id: feId,
   };
 
-  const { data: ncRow, error: errNc } = await p.supabase.from("nota_credito").insert(insertNc).select("id").single();
+  /**
+   * Correlativo por empresa. Es el `dNumDoc` del CDC SIFEN, así que tiene que ser
+   * secuencial (antes se derivaba de un hash del UUID → número aleatorio).
+   *
+   * MAX+1 no toma lock, así que dos requests casi simultáneos pueden calcular el
+   * mismo número; el índice único (empresa_id, numero) convierte esa carrera en un
+   * error de INSERT y reintentamos. Mismo patrón que `numero_control` de ventas.
+   *
+   * Las NC de legado tienen numero = NULL, por lo que no arrastran su numeración
+   * aleatoria: la secuencia arranca en 1.
+   */
+  const proximoNumero = async (): Promise<number> => {
+    const { data } = await p.supabase
+      .from("nota_credito")
+      .select("numero")
+      .eq("empresa_id", p.empresaId)
+      .not("numero", "is", null)
+      .order("numero", { ascending: false })
+      .limit(1);
+    const max = num((data?.[0] as { numero?: unknown } | undefined)?.numero);
+    return (Number.isFinite(max) && max > 0 ? Math.floor(max) : 0) + 1;
+  };
 
-  if (errNc || !ncRow) {
-    const msg = errNc?.message ?? "No se pudo crear la nota de crédito.";
-    if (msg.includes("uq_nota_credito_factura_estado_activo") || msg.includes("duplicate key")) {
+  let ncId = "";
+  let lastErr = "";
+  for (let intento = 0; intento < 3; intento++) {
+    const numero = await proximoNumero();
+    const { data: ncRow, error: errNc } = await p.supabase
+      .from("nota_credito")
+      .insert({ ...insertNcBase, numero })
+      .select("id")
+      .single();
+
+    if (!errNc && ncRow) {
+      ncId = String((ncRow as { id: string }).id);
+      break;
+    }
+
+    lastErr = errNc?.message ?? "No se pudo crear la nota de crédito.";
+    if (lastErr.includes("uq_nota_credito_factura_estado_activo")) {
       return {
         ok: false,
         status: 409,
         error: "Ya existe una nota de crédito en curso para esta factura (borrador o pendiente).",
       };
     }
-    return { ok: false, status: 500, error: msg };
+    // Choque de correlativo: recalcular y reintentar. Cualquier otro error, cortar.
+    const choqueNumero =
+      lastErr.includes("nota_credito_numero_empresa_uq") ||
+      ((errNc as { code?: string } | null)?.code === "23505" && /numero/i.test(lastErr));
+    if (!choqueNumero) {
+      return { ok: false, status: 500, error: lastErr };
+    }
   }
 
-  const ncId = String((ncRow as { id: string }).id);
+  if (!ncId) {
+    return { ok: false, status: 500, error: lastErr || "No se pudo asignar número a la nota de crédito." };
+  }
 
   try {
     // Ítems (solo si tipo_nc='parcial'). Best-effort agrupado: si el insert

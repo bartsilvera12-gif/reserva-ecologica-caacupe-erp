@@ -38,7 +38,7 @@ export async function loadValidatedNotaCreditoSifenPayload(
   const { data: nc, error: errNc } = await supabase
     .from("nota_credito")
     .select(
-      "id, empresa_id, factura_id, cliente_id, monto, motivo, estado_erp, factura_electronica_origen_id, created_at"
+      "id, numero, empresa_id, factura_id, cliente_id, monto, motivo, estado_erp, factura_electronica_origen_id, created_at"
     )
     .eq("id", nid)
     .eq("empresa_id", empresaId)
@@ -263,6 +263,13 @@ export async function loadValidatedNotaCreditoSifenPayload(
     },
     notaCredito: {
       id: String((nc as { id: string }).id),
+      // Correlativo real (dNumDoc del CDC). Si es null (nota de legado, numerada
+      // con el hash del UUID), el builder aborta en vez de inventar un número.
+      numero: (() => {
+        const n = (nc as { numero?: unknown }).numero;
+        const v = Number(n);
+        return n == null || !Number.isFinite(v) ? null : Math.floor(v);
+      })(),
       monto: Number((nc as { monto: unknown }).monto),
       motivo: String((nc as { motivo: string }).motivo ?? "").trim(),
       fecha_emision: String((factura as { fecha: string }).fecha).trim(),

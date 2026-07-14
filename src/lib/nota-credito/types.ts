@@ -40,6 +40,18 @@ export type NotaCreditoEventoTipo =
 
 export type NotaCreditoListItemDTO = {
   id: string;
+  /** Correlativo por empresa (= dNumDoc del CDC). NULL en notas de legado,
+   *  emitidas cuando el número se derivaba de un hash del UUID. */
+  numero: number | null;
+  /** Líneas de la NC (solo en NC parcial). Vacío en NC total. */
+  items: {
+    producto_nombre: string;
+    sku: string | null;
+    cantidad: number;
+    precio_unitario: number;
+    tipo_iva: "EXENTA" | "5%" | "10%";
+    total_linea: number;
+  }[];
   monto: number;
   motivo: string;
   observacion_interna: string | null;

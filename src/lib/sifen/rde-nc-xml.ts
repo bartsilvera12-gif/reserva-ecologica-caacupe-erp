@@ -66,11 +66,22 @@ function vigenciaIso(dateYmd: string): string {
 }
 
 /** Número de documento NC (7 dígitos) derivado del UUID para unicidad estable por fila. */
-export function numeroDocumentoNcDesdeId(ncId: string): string {
-  const hex = ncId.replace(/-/g, "").slice(0, 12);
-  const n = parseInt(hex, 16);
-  const mod = Number.isFinite(n) ? (n % 9000000) + 1000000 : 1000000;
-  return normalizarNumeroDocumentoSifen(String(mod));
+/**
+ * dNumDoc de la NC: correlativo real de `nota_credito.numero`.
+ *
+ * Antes se derivaba de un HASH del UUID —(uuid % 9000000) + 1000000—, lo que
+ * producía un número pseudo-aleatorio: no correlativo (la SET exige numeración
+ * secuencial por establecimiento/punto dentro del timbrado) y con riesgo de
+ * colisión entre dos NC. Si la nota no tiene número asignado se aborta: es
+ * preferible fallar a mandar a la SET un documento fiscal mal numerado.
+ */
+export function numeroDocumentoNcSifen(numero: number | null | undefined): string {
+  if (numero == null || !Number.isFinite(Number(numero)) || Number(numero) <= 0) {
+    throw new Error(
+      "La nota de crédito no tiene número correlativo asignado; no se puede generar el XML SIFEN."
+    );
+  }
+  return normalizarNumeroDocumentoSifen(String(Math.floor(Number(numero))));
 }
 
 /**
@@ -180,7 +191,7 @@ export function buildOfficialRdeNotaCreditoElectronicaXml(
   const dNumTim = normalizarNumeroTimbrado(emisor.timbrado_numero);
   const dEst = normalizarCodigoTres(emisor.establecimiento);
   const dPunExp = normalizarCodigoTres(emisor.punto_expedicion);
-  const dNumDoc = numeroDocumentoNcDesdeId(notaCredito.id);
+  const dNumDoc = numeroDocumentoNcSifen(notaCredito.numero);
   const fechaCdc = fechaEmisionCdc(notaCredito.fecha_emision);
   const iTipContEmi = sifenEmisorITipContCodigo(emisor.razon_social);
   const semillaSeg = base.sifen.nota_credito_electronica_id;
