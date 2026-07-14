@@ -264,6 +264,11 @@ export function buildOfficialRdeNotaCreditoElectronicaXml(
     recParts.push(textEl("dDVRec", dDVRec));
     recParts.push(textEl("dNomRec", receptor.nombre.trim()));
     if (receptor.direccion?.trim()) recParts.push(textEl("dDirRec", receptor.direccion.trim()));
+    /** SIFEN 0362 [1330]: dNumCasRec es obligatorio también para receptor con RUC
+     *  (B2B), no solo para B2C. Mismo valor y posición que la factura
+     *  (rde-xml.ts): tras dDirRec, antes de dTelRec. Sin esto la SET rechaza con
+     *  "Es obligatorio informar el número de casa del receptor". */
+    recParts.push(textEl("dNumCasRec", "0"));
     if (receptor.telefono?.trim()) {
       const tr = receptor.telefono.replace(/\D/g, "");
       if (tr.length >= 8) recParts.push(textEl("dTelRec", tr.slice(0, 15)));
