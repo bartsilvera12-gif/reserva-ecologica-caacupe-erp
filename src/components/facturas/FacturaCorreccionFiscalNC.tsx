@@ -493,6 +493,48 @@ export function FacturaCorreccionFiscalNC({
     }
   }
 
+  /**
+   * Cancelación REAL ante la SET: manda el evento siRecepEvento. Solo si la SET
+   * lo registra, el ERP marca la NC cancelada y devuelve el saldo a la factura.
+   * Si la SET rechaza, no se toca nada local (el documento sigue vigente para el fisco).
+   */
+  async function cancelarNcEnSet(nc: NotaCreditoListItemDTO) {
+    const motivo = prompt(
+      "Motivo de la cancelación ante la SET (mínimo 5 caracteres).\n\n" +
+        "Se envía el evento de cancelación a la SET. Si lo registra, la nota de crédito " +
+        "queda anulada y el saldo vuelve a la factura."
+    );
+    if (motivo == null) return;
+    if (motivo.trim().length < 5) {
+      setFlash({ kind: "err", text: "El motivo debe tener al menos 5 caracteres." });
+      return;
+    }
+    setSifenNcId(nc.id);
+    setFlash(null);
+    try {
+      const res = await fetchWithSupabaseSession(`${NC_SIFEN_BASE(nc.id)}/cancelar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ motivo: motivo.trim() }),
+      });
+      const j = (await res.json()) as { success?: boolean; error?: string };
+      if (!res.ok || !j.success) {
+        setFlash({
+          kind: "err",
+          text: `La SET no canceló la nota de crédito: ${mensajeErrorPlano(j.error) || j.error || `Error ${res.status}`}`,
+        });
+        return;
+      }
+      setFlash({ kind: "ok", text: "Nota de crédito cancelada en la SET. El saldo volvió a la factura." });
+      await reload();
+      await onAfterNcMutation?.();
+    } catch (e) {
+      setFlash({ kind: "err", text: e instanceof Error ? e.message : "Error de red" });
+    } finally {
+      setSifenNcId(null);
+    }
+  }
+
   async function anularBorrador(nc: NotaCreditoListItemDTO) {
     if (!confirm("¿Anular esta nota de crédito en borrador? Podrás crear otra después.")) return;
     setFlash(null);
@@ -740,6 +782,19 @@ export function FacturaCorreccionFiscalNC({
                             className="text-[#0284C7] font-semibold hover:underline text-[11px] text-left"
                           >
                             Anular borrador
+                          </button>
+                        ) : null}
+                        {/* Cancelación REAL ante la SET (evento siRecepEvento). Solo
+                            para NC ya aprobadas; hay plazo desde la aprobación. */}
+                        {nc.estado_erp === "aprobada" && nc.estado_sifen === "aprobado" ? (
+                          <button
+                            type="button"
+                            disabled={sifenNcId === nc.id}
+                            onClick={() => void cancelarNcEnSet(nc)}
+                            className="w-full sm:w-auto text-center px-3 py-2 rounded-lg border border-red-300 bg-white text-red-700 text-xs font-semibold hover:bg-red-50 disabled:opacity-50"
+                            title="Envía a la SET el evento de cancelación. Si la SET lo registra, se anula la NC y se devuelve el saldo a la factura."
+                          >
+                            {sifenNcId === nc.id ? "Cancelando…" : "Cancelar en SET"}
                           </button>
                         ) : null}
                         {nc.estado_sifen === "aprobado" ? (
