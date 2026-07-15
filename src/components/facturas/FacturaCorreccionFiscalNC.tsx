@@ -623,7 +623,19 @@ export function FacturaCorreccionFiscalNC({
   const bloqueoTimbradoOrigen = Boolean(sifenPrevueloFactura && !sifenPrevueloFactura.ok);
   const sifenPasoOpts = { deAprobado, puedeCancelarDe, bloqueoTimbradoOrigen };
 
-  const ncRechazoMasReciente = items.find((x) => x.estado_sifen === "rechazado");
+  // El banner de rechazo solo alarma si la NC MÁS RECIENTE es la rechazada. Si
+  // después se emitió otra NC (aprobada, en curso o anulada), ese rechazo ya
+  // quedó superado y no debe seguir mostrándose como un error vigente — igual
+  // queda en el historial de abajo. Antes se mostraba cualquier NC rechazada
+  // aunque hubiera una exitosa posterior.
+  const ncMasReciente =
+    items.length > 0
+      ? items.reduce((a, b) =>
+          new Date(b.created_at).getTime() > new Date(a.created_at).getTime() ? b : a
+        )
+      : null;
+  const ncRechazoMasReciente =
+    ncMasReciente?.estado_sifen === "rechazado" ? ncMasReciente : undefined;
   const pasoReenviarBanner =
     ncRechazoMasReciente && nextNcSifenPasoReal(ncRechazoMasReciente, sifenPasoOpts);
 
