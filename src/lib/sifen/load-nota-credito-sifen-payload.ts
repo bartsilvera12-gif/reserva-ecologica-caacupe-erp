@@ -38,7 +38,7 @@ export async function loadValidatedNotaCreditoSifenPayload(
   const { data: nc, error: errNc } = await supabase
     .from("nota_credito")
     .select(
-      "id, numero, empresa_id, factura_id, cliente_id, monto, motivo, estado_erp, factura_electronica_origen_id, created_at"
+      "id, numero, empresa_id, factura_id, cliente_id, monto, motivo, tipo_nc, estado_erp, factura_electronica_origen_id, created_at"
     )
     .eq("id", nid)
     .eq("empresa_id", empresaId)
