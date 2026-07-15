@@ -33,6 +33,9 @@ import type { AmbienteSifen } from "./types";
 
 const SIFEN_NS = SIFEN_EKUATIA_TARGET_NS;
 const SOAP_ENV = "http://www.w3.org/2003/05/soap-envelope";
+const XMLNS_XSI = "http://www.w3.org/2001/XMLSchema-instance";
+/** SET rechaza con 0160 ("XML mal formado") si falta este schemaLocation. */
+const EVENTO_SCHEMA_LOCATION = `${SIFEN_NS} siRecepEvento_v150.xsd`;
 
 /** Mismo perfil de firma que el DE (ver sign-xml.ts). */
 const XPATH_REVE = "//*[local-name(.)='rEve']";
@@ -73,8 +76,11 @@ export type BuildEventoCancelacionOptions = {
 };
 
 /**
- * XML del evento de cancelación, SIN firmar. El nodo `rEve` lleva `Id` porque es
- * el que se referencia en la firma.
+ * `rEnviEventoDe` SIN firmar, con la MISMA estructura que la librería de
+ * referencia (facturacionelectronicapy-xmlgen): el default namespace va en
+ * `rEnviEventoDe` (heredado hacia abajo, NO se redeclara en rGesEve) y
+ * `gGroupGesEve` lleva `xsi:schemaLocation` — sin eso la SET responde 0160
+ * "XML mal formado". El `rEve` lleva `Id` porque es lo que referencia la firma.
  */
 export function buildEventoCancelacionXml(opts: BuildEventoCancelacionOptions): string {
   const cdc = String(opts.cdc ?? "").replace(/\D/g, "");
@@ -88,7 +94,11 @@ export function buildEventoCancelacionXml(opts: BuildEventoCancelacionOptions): 
   const dFecFirma = fechaFirmaSifen(opts.fechaFirma ?? new Date());
 
   return (
-    `<rGesEve xmlns="${SIFEN_NS}">` +
+    `<rEnviEventoDe xmlns="${SIFEN_NS}">` +
+    `<dId>${idEvento}</dId>` +
+    `<dEvReg>` +
+    `<gGroupGesEve xmlns:xsi="${XMLNS_XSI}" xsi:schemaLocation="${escapeXml(EVENTO_SCHEMA_LOCATION)}">` +
+    `<rGesEve>` +
     `<rEve Id="${idEvento}">` +
     `<dFecFirma>${dFecFirma}</dFecFirma>` +
     `<dVerFor>150</dVerFor>` +
@@ -99,18 +109,23 @@ export function buildEventoCancelacionXml(opts: BuildEventoCancelacionOptions): 
     `</rGeVeCan>` +
     `</gGroupTiEvt>` +
     `</rEve>` +
-    `</rGesEve>`
+    `</rGesEve>` +
+    `</gGroupGesEve>` +
+    `</dEvReg>` +
+    `</rEnviEventoDe>`
   );
 }
 
 /**
- * Firma el `rEve`: la `Signature` queda como hermana posterior de `rEve`, dentro
- * de `rGesEve` (mismo criterio que la firma del `DE` bajo `rDE`).
+ * Firma el `rEve` dentro del `rEnviEventoDe`: la `Signature` queda como hermana
+ * posterior de `rEve`, dentro de `rGesEve` (mismo criterio que la firma del `DE`
+ * bajo `rDE`). Se firma con el contexto de namespaces final para que el digest
+ * coincida cuando SET recanonicaliza el `rEve`.
  */
 export function signEventoCancelacionXml(xmlUtf8: string, material: P12KeyMaterial): string {
   const trimmed = xmlUtf8.trim();
-  if (!/<\s*rEve\b/i.test(trimmed) || !/<\s*rGesEve\b/i.test(trimmed)) {
-    throw new Error("Se esperaba un XML con raíz rGesEve que contenga un elemento rEve para firmar.");
+  if (!/<\s*rEve\b/i.test(trimmed) || !/<\s*rEnviEventoDe\b/i.test(trimmed)) {
+    throw new Error("Se esperaba un XML con raíz rEnviEventoDe que contenga un rEve para firmar.");
   }
 
   const privateKey = createPrivateKey({ key: material.privateKeyPem, format: "pem" });
@@ -139,21 +154,14 @@ function stripXmlDeclaration(xml: string): string {
   return xml.replace(/^\s*<\?xml[^?]*\?>\s*/i, "");
 }
 
-/** Envelope SOAP 1.2, mismo estilo que recibe-lote. */
-function construirSoapEvento(dId: number, rGesEveFirmado: string): string {
+/** Envelope SOAP 1.2. El `rEnviEventoDe` firmado ya trae dId/dEvReg/gGroupGesEve. */
+function construirSoapEvento(rEnviEventoDeFirmado: string): string {
   return (
     `<?xml version="1.0" encoding="UTF-8"?>` +
     `<env:Envelope xmlns:env="${SOAP_ENV}">` +
     `<env:Header/>` +
     `<env:Body>` +
-    `<rEnviEventoDe xmlns="${SIFEN_NS}">` +
-    `<dId>${dId}</dId>` +
-    `<dEvReg>` +
-    `<gGroupGesEve>` +
-    stripXmlDeclaration(rGesEveFirmado) +
-    `</gGroupGesEve>` +
-    `</dEvReg>` +
-    `</rEnviEventoDe>` +
+    stripXmlDeclaration(rEnviEventoDeFirmado) +
     `</env:Body>` +
     `</env:Envelope>`
   );
@@ -271,7 +279,7 @@ export async function enviarEventoCancelacionSifen(
     fechaFirma: params.fechaFirma,
   });
   const firmado = signEventoCancelacionXml(xml, material);
-  const soap = construirSoapEvento(dId, firmado);
+  const soap = construirSoapEvento(firmado);
 
   const res = await postHttpsMtls(
     urlEventos(params.ambiente),
