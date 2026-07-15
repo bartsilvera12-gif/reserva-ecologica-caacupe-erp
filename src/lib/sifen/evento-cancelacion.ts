@@ -175,12 +175,18 @@ export type EventoCancelacionRespuesta = {
   cancelado: boolean;
   soapFault: boolean;
   cuerpoSoapCrudo: string;
+  /** SOAP enviado a la SET (diagnóstico ante rechazos como "XML mal formado"). */
+  requestSoap: string;
 };
 
 /** La SET responde 0600 cuando el evento de cancelación queda registrado. */
 const COD_EVENTO_REGISTRADO = "0600";
 
-function parsearRespuestaEvento(httpStatus: number, xml: string): EventoCancelacionRespuesta {
+function parsearRespuestaEvento(
+  httpStatus: number,
+  xml: string,
+  requestSoap: string
+): EventoCancelacionRespuesta {
   const soapFault = /<(?:\w+:)?Fault\b/i.test(xml);
   const dCodRes = extraerTexto(xml, "dCodRes");
   const dMsgRes = extraerTexto(xml, "dMsgRes");
@@ -193,6 +199,7 @@ function parsearRespuestaEvento(httpStatus: number, xml: string): EventoCancelac
     cancelado: !soapFault && dCodRes === COD_EVENTO_REGISTRADO,
     soapFault,
     cuerpoSoapCrudo: xml,
+    requestSoap,
   };
 }
 
@@ -273,5 +280,5 @@ export async function enviarEventoCancelacionSifen(
     material.privateKeyPem
   );
 
-  return parsearRespuestaEvento(res.status, res.body);
+  return parsearRespuestaEvento(res.status, res.body, soap);
 }

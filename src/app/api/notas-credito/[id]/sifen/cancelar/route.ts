@@ -143,6 +143,26 @@ export async function POST(request: NextRequest, { params }: RouteCtx) {
       certificadoPassword: p12Password,
     });
 
+    // Diagnóstico: se guarda el XML enviado y la respuesta cruda de la SET en la
+    // NC electrónica (last_response_json). Útil para depurar rechazos como
+    // "XML mal formado" sin exponer el blob en la UI.
+    await supabase
+      .from("nota_credito_electronica")
+      .update({
+        last_response_json: {
+          evento_cancelacion: {
+            at: new Date().toISOString(),
+            dCodRes: resp.dCodRes,
+            dMsgRes: resp.dMsgRes,
+            httpStatus: resp.httpStatus,
+            request_soap: resp.requestSoap,
+            response_soap: resp.cuerpoSoapCrudo,
+          },
+        },
+      })
+      .eq("id", String((ne as { id: string }).id))
+      .eq("empresa_id", auth.empresa_id);
+
     if (!resp.cancelado) {
       // La SET NO registró la cancelación: no se toca nada local. El documento
       // sigue vigente para el fisco.
