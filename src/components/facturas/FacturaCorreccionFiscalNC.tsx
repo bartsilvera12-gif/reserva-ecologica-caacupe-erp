@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import type { NotaCreditoListItemDTO, SifenPrevueloFacturaNcDTO } from "@/lib/nota-credito/types";
 
@@ -255,6 +255,9 @@ export function FacturaCorreccionFiscalNC({
   const [facturaItemsCache, setFacturaItemsCache] = useState<FacturaItemPrecarga[]>([]);
   const [lineasEditor, setLineasEditor] = useState<LineaNcEditor[]>([]);
   const [flash, setFlash] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  /** El aviso se renderiza arriba de la lista de NC; si el operador está mirando
+   *  una tarjeta más abajo, no lo ve y parece que el botón "no hizo nada". */
+  const flashRef = useRef<HTMLDivElement | null>(null);
   const [sifenNcId, setSifenNcId] = useState<string | null>(null);
   /** NC elegida para anular ante la SET + motivo (modal propio, no prompt()). */
   const [anularNc, setAnularNc] = useState<NotaCreditoListItemDTO | null>(null);
@@ -327,6 +330,13 @@ export function FacturaCorreccionFiscalNC({
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // Trae el aviso a la vista: sin esto, un resultado de SIFEN podía quedar fuera
+  // de pantalla y el operador creía que el botón no había hecho nada.
+  useEffect(() => {
+    if (!flash) return;
+    flashRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [flash]);
 
   function abrirModalCrear() {
     setMotivo("");
@@ -530,12 +540,41 @@ export function FacturaCorreccionFiscalNC({
     setFlash(null);
     try {
       const res = await fetchWithSupabaseSession(step.url, { method: "POST" });
-      const j = (await res.json()) as { success?: boolean; error?: string };
+      const j = (await res.json()) as {
+        success?: boolean;
+        error?: string;
+        data?: {
+          consulta_lote?: {
+            dCodResLot?: string | null;
+            dMsgResLot?: string | null;
+            estado_sifen_anterior?: string | null;
+            estado_sifen_nuevo?: string | null;
+          };
+        };
+      };
       if (!res.ok || !j.success) {
         setFlash({ kind: "err", text: j.error ?? `Error ${res.status}` });
         return;
       }
-      setFlash({ kind: "ok", text: `${step.label}: OK.` });
+      // Antes se mostraba siempre "<paso>: OK." aunque la SET no hubiera resuelto
+      // nada: el operador apretaba "Consultar estado" y parecía que no pasaba nada.
+      // Ahora se informa lo que la SET realmente respondió.
+      const cl = j.data?.consulta_lote;
+      let texto = `${step.label}: OK.`;
+      if (cl) {
+        const anterior = String(cl.estado_sifen_anterior ?? "");
+        const nuevo = String(cl.estado_sifen_nuevo ?? "");
+        const msgSet = String(cl.dMsgResLot ?? "").trim();
+        if (nuevo && nuevo !== anterior) {
+          texto = `SIFEN: ${labelEstadoSifen(nuevo)}.`;
+        } else {
+          // Sin cambio de estado: casi siempre lote 0361 (SET sigue procesando).
+          texto = msgSet
+            ? `La SET todavía está procesando el lote. Volvé a consultar en unos minutos. (${msgSet})`
+            : "La SET todavía no resolvió el lote. Volvé a consultar en unos minutos.";
+        }
+      }
+      setFlash({ kind: "ok", text: texto });
       await reload();
       await onAfterNcMutation?.();
     } catch (e) {
@@ -753,6 +792,8 @@ export function FacturaCorreccionFiscalNC({
 
       {flash && (
         <div
+          ref={flashRef}
+          role="status"
           className={`rounded-lg text-sm px-3 py-2 ${
             flash.kind === "ok"
               ? "bg-emerald-50 border border-emerald-200 text-emerald-900"
