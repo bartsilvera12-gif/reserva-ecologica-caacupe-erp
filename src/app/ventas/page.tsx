@@ -154,6 +154,9 @@ export default function VentasPage() {
   const [busqueda,   setBusqueda]   = useState("");
   const [filtroTipo, setFiltroTipo] = useState<TipoVenta | "">("");
   const [filtroIva,  setFiltroIva]  = useState<TipoIvaVenta | "">("");
+  /** Paginación en pantalla. "todas" = sin límite. */
+  const [porPagina,  setPorPagina]  = useState<number | "todas">(25);
+  const [pagina,     setPagina]     = useState(1);
   const [ventaAnular, setVentaAnular] = useState<{ id: string; numero: string } | null>(null);
   const [ventaRegenerar, setVentaRegenerar] = useState<{ id: string; numero: string; eraFactura: boolean } | null>(null);
   const [regenerandoId, setRegenerandoId] = useState<string | null>(null);
@@ -210,6 +213,21 @@ export default function VentasPage() {
   });
 
   const hayFiltros = busqueda || filtroTipo || filtroIva;
+
+  // Paginación en pantalla (sobre el resultado ya filtrado).
+  const totalPaginas =
+    porPagina === "todas" ? 1 : Math.max(1, Math.ceil(filtradas.length / porPagina));
+  const paginaSegura = Math.min(pagina, totalPaginas);
+  const visibles =
+    porPagina === "todas"
+      ? filtradas
+      : filtradas.slice((paginaSegura - 1) * porPagina, paginaSegura * porPagina);
+
+  // Si cambia el filtro (o el tamaño de página) y la página actual queda fuera
+  // de rango, volvemos a la primera. Evita quedar en una página vacía.
+  useEffect(() => {
+    setPagina(1);
+  }, [busqueda, filtroTipo, filtroIva, porPagina]);
 
   return (
     <div className="space-y-8">
@@ -324,9 +342,27 @@ export default function VentasPage() {
               Limpiar filtros
             </button>
           )}
-          <span className="ml-auto text-sm text-gray-400">
-            {filtradas.length} de {todas.length} ventas
-          </span>
+          <div className="ml-auto flex items-center gap-3">
+            <label className="flex items-center gap-1.5 text-sm text-gray-500">
+              <span className="hidden sm:inline">Mostrar</span>
+              <FancySelect
+                value={String(porPagina)}
+                onChange={(v) => setPorPagina(v === "todas" ? "todas" : Number(v))}
+                ariaLabel="Cantidad por página"
+                className="w-24"
+                size="sm"
+                options={[
+                  { value: "25", label: "25" },
+                  { value: "50", label: "50" },
+                  { value: "100", label: "100" },
+                  { value: "todas", label: "Todas" },
+                ]}
+              />
+            </label>
+            <span className="text-sm text-gray-400">
+              {filtradas.length} de {todas.length} ventas
+            </span>
+          </div>
         </div>
 
         {/* Tabla — min-w fuerza scroll horizontal en mobile; columnas secundarias
@@ -359,7 +395,7 @@ export default function VentasPage() {
                   </td>
                 </tr>
               ) : (
-                filtradas.map((v) => {
+                visibles.map((v) => {
                   const cantTotal = v.items.reduce((s, i) => s + i.cantidad, 0);
                   const anulada = v.estado === "anulada";
                   const abierta = expandidas.has(v.id);
@@ -606,6 +642,33 @@ export default function VentasPage() {
             </tbody>
           </table>
         </EdgeScrollArea>
+
+        {/* Controles de página (solo si hay más de una) */}
+        {porPagina !== "todas" && totalPaginas > 1 && (
+          <div className="mt-4 flex items-center justify-between gap-3">
+            <span className="text-sm text-gray-500">
+              Página {paginaSegura} de {totalPaginas}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPagina((p) => Math.max(1, p - 1))}
+                disabled={paginaSegura <= 1}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Anterior
+              </button>
+              <button
+                type="button"
+                onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
+                disabled={paginaSegura >= totalPaginas}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Siguiente
+              </button>
+            </div>
+          </div>
+        )}
 
       </div>
 
