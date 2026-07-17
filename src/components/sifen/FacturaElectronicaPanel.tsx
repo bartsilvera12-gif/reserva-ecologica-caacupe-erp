@@ -223,6 +223,7 @@ export function FacturaElectronicaPanel({
     | "firmar"
     | "enviar"
     | "consulta-lote"
+    | "consulta-de"
     | "cancelar-de"
     | "pipeline"
     | "reintentar-job"
@@ -278,6 +279,55 @@ export function FacturaElectronicaPanel({
       if (reemitirTrasOk && clienteId.trim()) {
         router.push(`/clientes/${encodeURIComponent(clienteId.trim())}`);
       }
+    } catch (e) {
+      setFlash({ kind: "err", text: e instanceof Error ? e.message : "Error de red" });
+    } finally {
+      setAction(null);
+    }
+  };
+
+  /**
+   * Pregunta a SET por el CDC (siConsDE) en vez de por el lote. Es la salida
+   * cuando el lote quedó colgado en 0361 y `consulta-lote` nunca resuelve: el DE
+   * puede estar ya aprobado del lado de SET aunque el lote siga trabado.
+   */
+  const consultarPorCdc = async () => {
+    setFlash(null);
+    setAction("consulta-de");
+    try {
+      const res = await fetchWithSupabaseSession(
+        `/api/facturas/${facturaId}/sifen/consulta-de`,
+        { method: "POST" }
+      );
+      if (!res.ok) {
+        setFlash({ kind: "err", text: await readApiError(res) });
+        return;
+      }
+      const j = (await res.json()) as {
+        data?: {
+          cambio?: boolean;
+          estado_sifen?: string;
+          set?: { dEstRes?: string | null; dMsgRes?: string | null; noEncontrado?: boolean };
+        };
+      };
+      const d = j.data;
+      if (d?.cambio) {
+        setFlash({
+          kind: "ok",
+          text: `SET confirmó el documento: ${d.set?.dEstRes ?? d.estado_sifen}. Estado actualizado.`,
+        });
+      } else if (d?.set?.noEncontrado) {
+        setFlash({
+          kind: "err",
+          text: "SET todavía no tiene registrado este CDC. El lote sigue en su cola; reintentá más tarde.",
+        });
+      } else {
+        setFlash({
+          kind: "ok",
+          text: `SET no dio un veredicto todavía${d?.set?.dMsgRes ? `: ${d.set.dMsgRes}` : "."} El estado no cambió.`,
+        });
+      }
+      await refresh();
     } catch (e) {
       setFlash({ kind: "err", text: e instanceof Error ? e.message : "Error de red" });
     } finally {
@@ -874,6 +924,19 @@ export function FacturaElectronicaPanel({
                     className="inline-flex items-center justify-center px-5 py-2.5 rounded-lg bg-slate-900 text-white text-sm font-semibold shadow-sm disabled:opacity-45 disabled:cursor-not-allowed hover:bg-slate-800"
                   >
                     {action === "consulta-lote" ? "Consultando…" : "Consultar lote"}
+                  </button>
+                ) : null}
+                {/* Salida cuando el lote queda colgado en 0361: pregunta a SET por el
+                    CDC del documento, sin depender del lote. */}
+                {(stStr === "enviado" || stStr === "en_proceso") && fe?.cdc?.trim() ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void consultarPorCdc()}
+                    title="Pregunta a la SET por el documento (CDC) en vez de por el lote. Útil cuando el lote queda trabado en «en procesamiento»."
+                    className="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm font-semibold shadow-sm disabled:opacity-45 disabled:cursor-not-allowed hover:bg-slate-50"
+                  >
+                    {action === "consulta-de" ? "Consultando…" : "Consultar por CDC"}
                   </button>
                 ) : null}
                 {primaryGenerarYEnviar ? (
