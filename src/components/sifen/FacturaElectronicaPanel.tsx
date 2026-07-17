@@ -318,22 +318,29 @@ export function FacturaElectronicaPanel({
       const d = j.data;
       if (d?.cambio) {
         setFlash({
-          kind: "ok",
-          text: `SET confirmó el documento: ${d.set?.dEstRes ?? d.estado_sifen}. Estado actualizado.`,
+          kind: d.estado_sifen === "aprobado" ? "ok" : "err",
+          text:
+            d.estado_sifen === "aprobado"
+              ? "La SET aprobó esta factura. Ya podés imprimir el KUDE."
+              : "La SET rechazó esta factura. Revisá el detalle para corregirla y volver a emitirla.",
         });
       } else if (d?.set?.noEncontrado) {
         // SET junta "no llegó todavía" y "lo rechacé" en el mismo código 0420.
-        // No inventamos cuál es: se muestra su texto literal.
+        // Pero nosotros SÍ podemos desambiguar: si el lote sigue "en proceso",
+        // no fue rechazado (un rechazo llega como 0365 / dEstRes=Rechazado).
+        // Sin esto el operador leía "…o ha sido Rechazado" y se asustaba de gusto.
+        const estActual = String(resumen?.factura_electronica?.estado_sifen ?? "");
+        const loteEnCola = estActual === "enviado" || estActual === "en_proceso";
         setFlash({
-          kind: "err",
-          text:
-            `SET responde: «${d.set?.dMsgRes ?? "Documento No Existe en SIFEN o ha sido Rechazado"}» (código ${d.set?.dCodRes ?? "0420"}). ` +
-            "La SET no distingue entre «aún no procesado» y «rechazado». Si el lote sigue en «en procesamiento», lo más probable es que continúe en su cola.",
+          kind: "ok",
+          text: loteEnCola
+            ? "La SET todavía no terminó de procesar esta factura. No fue rechazada: sigue en su cola. Volvé a consultar más tarde."
+            : "La SET aún no tiene resultado para esta factura. Volvé a consultar más tarde.",
         });
       } else {
         setFlash({
           kind: "ok",
-          text: `SET no dio un veredicto todavía${d?.set?.dMsgRes ? `: ${d.set.dMsgRes}` : "."} El estado no cambió.`,
+          text: "La SET todavía no terminó de procesar esta factura. Volvé a consultar más tarde.",
         });
       }
       await refresh();
