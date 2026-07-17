@@ -223,7 +223,6 @@ export function FacturaElectronicaPanel({
     | "firmar"
     | "enviar"
     | "consulta-lote"
-    | "consulta-de"
     | "cancelar-de"
     | "pipeline"
     | "reintentar-job"
@@ -279,71 +278,6 @@ export function FacturaElectronicaPanel({
       if (reemitirTrasOk && clienteId.trim()) {
         router.push(`/clientes/${encodeURIComponent(clienteId.trim())}`);
       }
-    } catch (e) {
-      setFlash({ kind: "err", text: e instanceof Error ? e.message : "Error de red" });
-    } finally {
-      setAction(null);
-    }
-  };
-
-  /**
-   * Pregunta a SET por el CDC (siConsDE) en vez de por el lote. Es la salida
-   * cuando el lote quedó colgado en 0361 y `consulta-lote` nunca resuelve: el DE
-   * puede estar ya aprobado del lado de SET aunque el lote siga trabado.
-   */
-  const consultarPorCdc = async () => {
-    setFlash(null);
-    setAction("consulta-de");
-    try {
-      const res = await fetchWithSupabaseSession(
-        `/api/facturas/${facturaId}/sifen/consulta-de`,
-        { method: "POST" }
-      );
-      if (!res.ok) {
-        setFlash({ kind: "err", text: await readApiError(res) });
-        return;
-      }
-      const j = (await res.json()) as {
-        data?: {
-          cambio?: boolean;
-          estado_sifen?: string;
-          set?: {
-            dCodRes?: string | null;
-            dEstRes?: string | null;
-            dMsgRes?: string | null;
-            noEncontrado?: boolean;
-          };
-        };
-      };
-      const d = j.data;
-      if (d?.cambio) {
-        setFlash({
-          kind: d.estado_sifen === "aprobado" ? "ok" : "err",
-          text:
-            d.estado_sifen === "aprobado"
-              ? "La SET aprobó esta factura. Ya podés imprimir el KUDE."
-              : "La SET rechazó esta factura. Revisá el detalle para corregirla y volver a emitirla.",
-        });
-      } else if (d?.set?.noEncontrado) {
-        // SET junta "no llegó todavía" y "lo rechacé" en el mismo código 0420.
-        // Pero nosotros SÍ podemos desambiguar: si el lote sigue "en proceso",
-        // no fue rechazado (un rechazo llega como 0365 / dEstRes=Rechazado).
-        // Sin esto el operador leía "…o ha sido Rechazado" y se asustaba de gusto.
-        const estActual = String(resumen?.factura_electronica?.estado_sifen ?? "");
-        const loteEnCola = estActual === "enviado" || estActual === "en_proceso";
-        setFlash({
-          kind: "ok",
-          text: loteEnCola
-            ? "La SET todavía no terminó de procesar esta factura. No fue rechazada: sigue en su cola. Volvé a consultar más tarde."
-            : "La SET aún no tiene resultado para esta factura. Volvé a consultar más tarde.",
-        });
-      } else {
-        setFlash({
-          kind: "ok",
-          text: "La SET todavía no terminó de procesar esta factura. Volvé a consultar más tarde.",
-        });
-      }
-      await refresh();
     } catch (e) {
       setFlash({ kind: "err", text: e instanceof Error ? e.message : "Error de red" });
     } finally {
@@ -940,19 +874,6 @@ export function FacturaElectronicaPanel({
                     className="inline-flex items-center justify-center px-5 py-2.5 rounded-lg bg-slate-900 text-white text-sm font-semibold shadow-sm disabled:opacity-45 disabled:cursor-not-allowed hover:bg-slate-800"
                   >
                     {action === "consulta-lote" ? "Consultando…" : "Consultar lote"}
-                  </button>
-                ) : null}
-                {/* Salida cuando el lote queda colgado en 0361: pregunta a SET por el
-                    CDC del documento, sin depender del lote. */}
-                {(stStr === "enviado" || stStr === "en_proceso") && fe?.cdc?.trim() ? (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void consultarPorCdc()}
-                    title="Pregunta a la SET por el documento (CDC) en vez de por el lote. Útil cuando el lote queda trabado en «en procesamiento»."
-                    className="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm font-semibold shadow-sm disabled:opacity-45 disabled:cursor-not-allowed hover:bg-slate-50"
-                  >
-                    {action === "consulta-de" ? "Consultando…" : "Consultar por CDC"}
                   </button>
                 ) : null}
                 {primaryGenerarYEnviar ? (
