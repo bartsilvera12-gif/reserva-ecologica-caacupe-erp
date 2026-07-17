@@ -560,6 +560,22 @@ export async function runSifenJob(job: SifenJobDTO): Promise<void> {
         const r = await medir(() => invokeSifenConsultaLote(auth, supabase, fid));
         if (!r.ok) {
           const tipo = clasificarError(r.status, r.error);
+          // En consulta_lote el DE YA está en SET (tenemos protocolo). Un fallo
+          // transitorio de transporte (ECONNRESET, timeout) NO dice nada del
+          // documento: solo que no pudimos preguntar. Antes contaba como intento
+          // fatal y a los 2 mataba el Job, dejando la factura clavada en
+          // 'enviado' para siempre aunque SET la aprobara después. Ahora se
+          // re-encola con el mismo backoff que "SET sigue procesando".
+          const transitorio = tipo === "red" || tipo === "set_timeout";
+          if (transitorio && job.veces_re_encolado_consulta < MAX_RE_ENCOLADOS_CONSULTA) {
+            await setSifenJobEtapaTiempo(supabase, job.id, "consulta_lote", Date.now() - consultaStart);
+            const delayMs = backoffConsultaMs(job.veces_re_encolado_consulta);
+            const nuevoContador = await reencolarConsultaEnCurso(supabase, job, delayMs);
+            console.warn(
+              `${label} fallo transitorio consultando SET (${tipo}): ${r.error.slice(0, 120)}. Re-encolado +${Math.round(delayMs / 1000)}s (${nuevoContador}/${MAX_RE_ENCOLADOS_CONSULTA}).`
+            );
+            return;
+          }
           await fallarIntento(supabase, job, "consulta_lote", tipo, r.error, Date.now() - consultaStart);
           return;
         }
