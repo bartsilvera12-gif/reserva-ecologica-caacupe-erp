@@ -28,7 +28,7 @@ export async function POST(request: NextRequest, { params }: RouteCtx) {
 
     const { data: fe, error: errFe } = await supabase
       .from("factura_electronica")
-      .select("id, factura_id, estado_sifen, cdc, sifen_aprobado_at")
+      .select("id, factura_id, estado_sifen, cdc, sifen_aprobado_at, sifen_ultima_respuesta_consulta_lote")
       .eq("factura_id", id)
       .eq("empresa_id", auth.empresa_id)
       .maybeSingle();
@@ -97,8 +97,16 @@ export async function POST(request: NextRequest, { params }: RouteCtx) {
     if (resp.aprobado) estadoNuevo = "aprobado";
     else if (resp.rechazado) estadoNuevo = "rechazado";
 
-    // Diagnóstico: guardar siempre lo que SET contestó.
+    // Diagnóstico: guardar lo que SET contestó SIN pisar la respuesta del lote
+    // (la UI la usa para mostrar el estado del lote). Se agrega como una clave más.
+    const consultaLotePrevia =
+      (fe as { sifen_ultima_respuesta_consulta_lote?: unknown }).sifen_ultima_respuesta_consulta_lote;
+    const base =
+      consultaLotePrevia && typeof consultaLotePrevia === "object" && !Array.isArray(consultaLotePrevia)
+        ? (consultaLotePrevia as Record<string, unknown>)
+        : {};
     const diagnostico = {
+      ...base,
       consulta_de: {
         at: new Date().toISOString(),
         dCodRes: resp.dCodRes,
@@ -126,6 +134,7 @@ export async function POST(request: NextRequest, { params }: RouteCtx) {
             dCodRes: resp.dCodRes,
             dMsgRes: resp.dMsgRes,
             dEstRes: resp.dEstRes,
+            dProtAut: resp.dProtAut,
             noEncontrado: resp.noEncontrado,
           },
         })

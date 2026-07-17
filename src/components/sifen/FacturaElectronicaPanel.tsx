@@ -307,7 +307,12 @@ export function FacturaElectronicaPanel({
         data?: {
           cambio?: boolean;
           estado_sifen?: string;
-          set?: { dEstRes?: string | null; dMsgRes?: string | null; noEncontrado?: boolean };
+          set?: {
+            dCodRes?: string | null;
+            dEstRes?: string | null;
+            dMsgRes?: string | null;
+            noEncontrado?: boolean;
+          };
         };
       };
       const d = j.data;
@@ -317,9 +322,13 @@ export function FacturaElectronicaPanel({
           text: `SET confirmó el documento: ${d.set?.dEstRes ?? d.estado_sifen}. Estado actualizado.`,
         });
       } else if (d?.set?.noEncontrado) {
+        // SET junta "no llegó todavía" y "lo rechacé" en el mismo código 0420.
+        // No inventamos cuál es: se muestra su texto literal.
         setFlash({
           kind: "err",
-          text: "SET todavía no tiene registrado este CDC. El lote sigue en su cola; reintentá más tarde.",
+          text:
+            `SET responde: «${d.set?.dMsgRes ?? "Documento No Existe en SIFEN o ha sido Rechazado"}» (código ${d.set?.dCodRes ?? "0420"}). ` +
+            "La SET no distingue entre «aún no procesado» y «rechazado». Si el lote sigue en «en procesamiento», lo más probable es que continúe en su cola.",
         });
       } else {
         setFlash({
