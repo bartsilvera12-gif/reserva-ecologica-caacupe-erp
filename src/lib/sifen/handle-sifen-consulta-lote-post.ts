@@ -237,7 +237,14 @@ export async function handleSifenConsultaLotePost(
     nuevoError = null;
   } else if (infer.nuevoEstado === "rechazado") {
     const gr = infer.filaRelevante?.grupo_res[0];
-    nuevoError = gr?.dMsgRes ?? infer.filaRelevante?.dEstRes ?? "Documento rechazado por SET.";
+    // Sin `filaRelevante` (lote cerrado en rechazo sin detalle por CDC, p. ej.
+    // dCodResLot=0365) el motivo real está en el mensaje del lote.
+    nuevoError =
+      gr?.dMsgRes ??
+      infer.filaRelevante?.dEstRes ??
+      (resp.dMsgResLot == null || String(resp.dMsgResLot).trim() === ""
+        ? "Documento rechazado por SET."
+        : `SET rechazó el lote: ${String(resp.dMsgResLot).trim()}`);
   }
 
   const marcaAprobacion =

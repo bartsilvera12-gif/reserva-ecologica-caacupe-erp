@@ -30,12 +30,40 @@ const CONSULTA_INTENTOS_INLINE = 4;
 const CONSULTA_DELAYS_MS = [1_000, 2_000, 4_000, 8_000]; // ~15s total
 /**
  * Cuántas veces se puede re-encolar el Job por "SET sigue en proceso" antes
- * de rendirse. 10 re-encolados × 30s = ~5 min de espera total (más los 15s
- * de polling inline por ciclo). Suficiente para mantenimientos cortos de SET.
- * Después el Job se cierra con tipo_error='set_timeout' y el operador puede
- * consultar manualmente cuando quiera.
+ * de rendirse.
+ *
+ * Antes eran 10 × 30s = ~5 min y se cerraba con tipo_error='set_timeout',
+ * dejando el DE clavado en 'enviado' hasta que un humano apretara
+ * "Consultar lote". Pero un lote en 0361 ("en procesamiento") NO es un error:
+ * SET normalmente tarda mucho más que 5 min. El resultado era que cualquier
+ * demora del fisco congelaba la factura, y con ella la venta (que no se puede
+ * anular si el DE no está 'aprobado').
+ *
+ * Ahora el backoff crece (ver BACKOFF_CONSULTA_MS) y cubre ~48h de demora de
+ * SET antes de rendirse. El job sigue vivo y resuelve solo.
+ *
+ * 60 re-encolados = ~48h acumuladas (los primeros 15 suman ~3h; el resto va de
+ * a 1h). Verificado numéricamente, no estimado.
  */
-const MAX_RE_ENCOLADOS_CONSULTA = 10;
+const MAX_RE_ENCOLADOS_CONSULTA = 60;
+
+/**
+ * Backoff creciente para re-encolar la consulta de lote. Se indexa por
+ * `veces_re_encolado_consulta`; a partir del último valor se mantiene el tope.
+ * Acumulado ≈ 48h: rápido al principio (la mayoría resuelve en segundos) y
+ * espaciado después, para no golpear a SET.
+ */
+const BACKOFF_CONSULTA_MS = [
+  30_000, 30_000, 60_000, 60_000, 120_000, 120_000, 300_000, 300_000, // ~20 min
+  600_000, 600_000, 900_000, 900_000, 1_800_000, 1_800_000, // ~1h50 acumulado
+  3_600_000, // 1h — de acá en más se mantiene
+];
+
+/** Delay del próximo re-encolado según cuántas veces ya se re-encoló. */
+function backoffConsultaMs(vecesPrevias: number): number {
+  const i = Math.max(0, Math.min(vecesPrevias, BACKOFF_CONSULTA_MS.length - 1));
+  return BACKOFF_CONSULTA_MS[i]!;
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -598,9 +626,10 @@ export async function runSifenJob(job: SifenJobDTO): Promise<void> {
         );
         return;
       }
-      const nuevoContador = await reencolarConsultaEnCurso(supabase, job, 30_000);
+      const delayMs = backoffConsultaMs(job.veces_re_encolado_consulta);
+      const nuevoContador = await reencolarConsultaEnCurso(supabase, job, delayMs);
       console.log(
-        `${label} SET sigue en proceso (${ultimoEstado}, resumen="${ultimoResumen ?? "-"}"). Re-encolado +30s (${nuevoContador}/${MAX_RE_ENCOLADOS_CONSULTA}).`
+        `${label} SET sigue en proceso (${ultimoEstado}, resumen="${ultimoResumen ?? "-"}"). Re-encolado +${Math.round(delayMs / 1000)}s (${nuevoContador}/${MAX_RE_ENCOLADOS_CONSULTA}).`
       );
       return;
     }

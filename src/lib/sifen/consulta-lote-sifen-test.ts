@@ -229,8 +229,21 @@ function postHttpsMtls(
  * Consulta el estado de procesamiento de un lote ya enviado (protocolo dProtConsLote).
  */
 /**
+ * Códigos `dCodResLot` que cierran el lote SIN devolver detalle por CDC.
+ *
+ * `0365` = "Lote Cancelado [Se rechazaron todos los DE del lote]". SET responde
+ * con `detallePorCdc: []`, así que la inferencia por `dEstRes` no aplica: hay que
+ * leer el código del lote. Sin esto el DE quedaba en `enviado` PARA SIEMPRE
+ * aunque SET ya lo hubiera rechazado — el ERP mostraba "Enviado / en proceso"
+ * sobre un documento que el fisco ya había descartado, y no se podía ni anular
+ * ni corregir (evidencia: FAC-000024 y FAC-000057, 8-9 días en ese estado).
+ */
+const COD_LOTE_RECHAZADO_SIN_DETALLE = new Set(["0365"]);
+
+/**
  * Si el lote ya devolvió filas `gResProcLote`, infiere aprobado/rechazado desde `dEstRes`
- * (solo cuando el DE actual sigue en `enviado`).
+ * (solo cuando el DE actual sigue en `enviado`). Si el lote cerró en rechazo sin detalle
+ * (ver `COD_LOTE_RECHAZADO_SIN_DETALLE`), se infiere desde `dCodResLot`.
  */
 export function inferirEstadoSifenTrasConsultaLote(
   estadoActual: string,
@@ -241,7 +254,15 @@ export function inferirEstadoSifenTrasConsultaLote(
   if (estadoActual !== "enviado" && estadoActual !== "en_proceso") return { nuevoEstado: null, filaRelevante: null };
 
   const rows = parsed.detalle_por_cdc;
-  if (rows.length === 0) return { nuevoEstado: null, filaRelevante: null };
+  if (rows.length === 0) {
+    // Lote cerrado en rechazo sin detalle por CDC: el veredicto viene en dCodResLot.
+    const cod = String(parsed.dCodResLot ?? "").trim();
+    if (COD_LOTE_RECHAZADO_SIN_DETALLE.has(cod)) {
+      return { nuevoEstado: "rechazado", filaRelevante: null };
+    }
+    // Cualquier otro caso sin detalle (p. ej. 0361 "en procesamiento"): no decidir.
+    return { nuevoEstado: null, filaRelevante: null };
+  }
 
   const row =
     cdcFactura && rows.some((r) => r.cdc === cdcFactura)
