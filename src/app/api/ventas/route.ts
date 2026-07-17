@@ -141,29 +141,30 @@ export async function GET(request: NextRequest) {
 
     const ventasRows = (ventasQ.data ?? []) as VentaRow[];
 
-    // Ítems SOLO de las ventas cargadas, y PAGINADO. Antes se traían todos los
-    // ventas_items de la empresa sin límite: PostgREST corta en 1000 filas por
-    // defecto, así que al superar las 1000 líneas (histórico creciente) las
-    // ventas más nuevas aparecían "sin líneas cargadas" aunque sus ítems
-    // existieran. El `.range()` en bucle trae todo sin depender de ese tope.
-    const ventaIds = ventasRows.map((v) => v.id);
+    // Ítems de la empresa, PAGINADO. Antes se traían sin límite: PostgREST corta
+    // en 1000 filas por defecto, así que al superar las 1000 líneas (histórico
+    // creciente) las ventas más nuevas aparecían "sin líneas cargadas" aunque sus
+    // ítems existieran. El `.range()` en bucle trae todo sin depender de ese tope.
+    //
+    // Nota: NO se filtra con `.in("venta_id", [ids])` — con cientos de UUIDs la
+    // URL de PostgREST se dispara (~7 KB con 171 ventas) y el gateway la rechaza,
+    // rompiendo TODO el listado. Se filtran en memoria contra las ventas cargadas.
+    const idsCargadas = new Set(ventasRows.map((v) => v.id));
     const itemsRows: VentaItemRow[] = [];
-    if (ventaIds.length > 0) {
-      const PAGE = 1000;
-      for (let desde = 0; ; desde += PAGE) {
-        const pageQ = await ctx.supabase
-          .from("ventas_items")
-          .select(
-            "venta_id, producto_id, producto_nombre, sku, cantidad, precio_venta_original, precio_venta, tipo_iva, tipo_precio, subtotal, monto_iva, total_linea"
-          )
-          .eq("empresa_id", empresaId)
-          .in("venta_id", ventaIds)
-          .range(desde, desde + PAGE - 1);
-        if (pageQ.error) throw new Error(pageQ.error.message);
-        const rows = (pageQ.data ?? []) as VentaItemRow[];
-        itemsRows.push(...rows);
-        if (rows.length < PAGE) break;
-      }
+    const PAGE = 1000;
+    for (let desde = 0; ; desde += PAGE) {
+      const pageQ = await ctx.supabase
+        .from("ventas_items")
+        .select(
+          "venta_id, producto_id, producto_nombre, sku, cantidad, precio_venta_original, precio_venta, tipo_iva, tipo_precio, subtotal, monto_iva, total_linea"
+        )
+        .eq("empresa_id", empresaId)
+        .order("venta_id", { ascending: true })
+        .range(desde, desde + PAGE - 1);
+      if (pageQ.error) throw new Error(pageQ.error.message);
+      const rows = (pageQ.data ?? []) as VentaItemRow[];
+      for (const r of rows) if (idsCargadas.has(r.venta_id)) itemsRows.push(r);
+      if (rows.length < PAGE) break;
     }
 
     const byVenta = new Map<string, VentaItemRow[]>();
