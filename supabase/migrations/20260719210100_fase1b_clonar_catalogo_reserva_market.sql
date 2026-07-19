@@ -2,16 +2,13 @@
 -- FASE 1b — Clonar el catálogo de Casa Matriz a Reserva Market
 -- ============================================================================
 --
--- ⚠️ NO EJECUTAR TODAVÍA. Requiere que la Fase 2 (filtrado por sucursal en las
--- APIs) esté desplegada primero.
+-- HISTORIA: se intentó correr el 2026-07-19 justo después de la Fase 1 y hubo
+-- que revertirlo. Como ninguna API filtraba por `sucursal_id` todavía,
+-- `/api/productos` devolvía las 998 filas y la pantalla mostraba cada producto
+-- DUPLICADO. La Fase 1 (estructura) es inocua; este clon NO lo es hasta que las
+-- consultas filtren por sucursal.
 --
--- Se intentó correr el 2026-07-19 justo después de la Fase 1 y hubo que
--- revertirlo: como ninguna API filtra por `sucursal_id` aún, `/api/productos`
--- solo filtra por `empresa_id` + `activo`, así que devolvía las 998 filas y la
--- pantalla mostraba cada producto DUPLICADO. La Fase 1 (estructura) es inocua;
--- este clon NO lo es hasta que las consultas filtren por sucursal.
---
--- Orden correcto: Fase 1 (hecha) -> Fase 2 (filtrado + deploy verificado) -> este script.
+-- Orden correcto, ya cumplido: Fase 1 -> Fase 2 (filtrado, desplegado) -> este script.
 --
 -- Se ejecuta DESPUÉS de 20260719210000_fase1_sucursales_estructura_base.sql.
 --
