@@ -1,3 +1,4 @@
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
@@ -9,7 +10,7 @@ export async function GET(request: NextRequest) {
   try {
     const ctx = await getTenantSupabaseFromAuth(request);
     if (!ctx) return NextResponse.json(errorResponse(API_ERRORS.UNAUTHORIZED), { status: 401 });
-    const rows = await listRecetas(ctx.supabase, ctx.auth.empresa_id);
+    const rows = await listRecetas(ctx.supabase, ctx.auth.empresa_id, exigirSucursal(ctx.auth.sucursal_id));
     return NextResponse.json(successResponse({ recetas: rows }));
   } catch (err) {
     console.error("[/api/recetas GET]", err instanceof Error ? err.message : err);
@@ -28,7 +29,7 @@ export async function POST(request: NextRequest) {
     if (!producto_id) {
       return NextResponse.json(errorResponse("producto_id es obligatorio."), { status: 400 });
     }
-    const row = await insertReceta(ctx.supabase, ctx.auth.empresa_id, {
+    const row = await insertReceta(ctx.supabase, ctx.auth.empresa_id, exigirSucursal(ctx.auth.sucursal_id), {
       producto_id,
       nombre: typeof body.nombre === "string" ? body.nombre : null,
       rendimiento_cantidad:

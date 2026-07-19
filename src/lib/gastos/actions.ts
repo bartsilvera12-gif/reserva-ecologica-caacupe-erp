@@ -1,5 +1,5 @@
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
-import { getEmpresaId } from "@/lib/db/empresa";
+import { getEmpresaId, getSucursalId } from "@/lib/db/empresa";
 import { ymdInicioFinMesLocal } from "@/lib/fechas/calendario";
 import { getBrowserSupabaseForEmpresaData } from "@/lib/supabase/browser-data-client";
 
@@ -99,11 +99,13 @@ export async function createGasto(input: GastoInput): Promise<Gasto> {
 
   const supabase = await getBrowserSupabaseForEmpresaData();
   const empresa_id = await getEmpresaId();
+  const sucursal_id = await getSucursalId();
 
   const { data, error } = await supabase
     .from("gastos")
     .insert({
       empresa_id,
+      sucursal_id,
       categoria: input.categoria.trim() || null,
       descripcion: input.descripcion.trim() || null,
       monto: input.monto,

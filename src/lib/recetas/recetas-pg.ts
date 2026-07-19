@@ -49,11 +49,12 @@ export type RecetaCosteo = {
   error?: string;
 };
 
-export async function listRecetas(sb: AppSupabaseClient, empresaId: string) {
+export async function listRecetas(sb: AppSupabaseClient, empresaId: string, sucursalId: string) {
   const { data, error } = await sb
     .from("recetas")
     .select("id, producto_id, nombre, rendimiento_cantidad, rendimiento_unidad, activa, updated_at, productos(nombre, sku)")
     .eq("empresa_id", empresaId)
+    .eq("sucursal_id", sucursalId)
     .order("updated_at", { ascending: false });
   if (error) throw new Error(error.message);
   // Aplanar nombre y SKU del producto para búsqueda y fallback de nombre.
@@ -104,6 +105,7 @@ export async function getRecetaCosteo(
 export async function insertReceta(
   sb: AppSupabaseClient,
   empresaId: string,
+  sucursalId: string,
   input: {
     producto_id: string;
     nombre?: string | null;
@@ -117,6 +119,7 @@ export async function insertReceta(
     .from("recetas")
     .insert({
       empresa_id: empresaId,
+      sucursal_id: sucursalId,
       producto_id: input.producto_id,
       nombre: input.nombre ?? null,
       rendimiento_cantidad: input.rendimiento_cantidad ?? 1,

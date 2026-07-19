@@ -36,6 +36,8 @@ function num(v: unknown): number {
 export type CreateNotaCreditoParams = {
   supabase: AppSupabaseClient;
   empresaId: string;
+  /** Sucursal emisora. El correlativo de NC es una serie independiente por sucursal. */
+  sucursalId: string;
   facturaId: string;
   authUserId: string;
   authEmail: string | null;
@@ -426,6 +428,7 @@ export async function createNotaCreditoBorrador(p: CreateNotaCreditoParams): Pro
 
   const insertNcBase = {
     empresa_id: p.empresaId,
+    sucursal_id: p.sucursalId,
     cliente_id: clienteId,
     factura_id: p.facturaId,
     monto: montoNc,
@@ -459,6 +462,7 @@ export async function createNotaCreditoBorrador(p: CreateNotaCreditoParams): Pro
       .from("nota_credito")
       .select("numero")
       .eq("empresa_id", p.empresaId)
+      .eq("sucursal_id", p.sucursalId)
       .not("numero", "is", null)
       .order("numero", { ascending: false })
       .limit(1);

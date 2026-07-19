@@ -3,6 +3,7 @@ import { getTenantSupabaseFromAuthWithRol } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { createNotaCreditoBorrador } from "@/lib/nota-credito/create-nota-credito";
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 import { evaluateNotaCreditoCreationGate } from "@/lib/nota-credito/evaluate-creation-gate";
 import type { NotaCreditoCreateBody, NotaCreditoListItemDTO } from "@/lib/nota-credito/types";
 import { obtenerSifenPrevueloFacturaParaNcs } from "@/lib/nota-credito/pre-vuelo-nc-sifen";
@@ -202,6 +203,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const result = await createNotaCreditoBorrador({
       supabase,
       empresaId: auth.empresa_id,
+      sucursalId: exigirSucursal(auth.sucursal_id),
       facturaId: fid,
       authUserId: auth.user.id,
       authEmail: auth.user.email ?? null,

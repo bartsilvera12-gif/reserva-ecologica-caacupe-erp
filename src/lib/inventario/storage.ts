@@ -1,5 +1,6 @@
 import { getCurrentUser } from "@/lib/auth";
 import { getBrowserSupabaseForEmpresaData } from "@/lib/supabase/browser-data-client";
+import { getSucursalId } from "@/lib/db/empresa";
 import type {
   Producto,
   MovimientoInventario,
@@ -366,6 +367,7 @@ export async function saveMovimiento(
   // 2. Insertar movimiento
   const insert = {
     empresa_id: usuario.empresa_id,
+    sucursal_id: await getSucursalId(),
     producto_id: mov.producto_id,
     producto_nombre: mov.producto_nombre,
     producto_sku: mov.producto_sku,

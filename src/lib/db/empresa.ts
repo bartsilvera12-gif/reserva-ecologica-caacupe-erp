@@ -31,3 +31,21 @@ export async function queryEmpresa(tabla: string) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (sb.from(tabla as any) as any).eq("empresa_id", empresaId);
 }
+
+/**
+ * Sucursal del usuario actual, para las capas que resuelven la empresa con
+ * `getEmpresaId()` en vez de pasar por el contexto de auth de las rutas API.
+ * Lanza si falta, igual que `exigirSucursal`: sin sucursal el registro quedaría
+ * huérfano y no lo vería ninguna pantalla.
+ */
+export async function getSucursalId(): Promise<string> {
+  const usuario = await getCurrentUser();
+  const id = (usuario as { sucursal_predeterminada_id?: string | null } | null)
+    ?.sucursal_predeterminada_id?.trim();
+  if (!id) {
+    throw new Error(
+      "Tu usuario no tiene una sucursal asignada. Pedile a un administrador que te asigne una desde Usuarios."
+    );
+  }
+  return id;
+}
