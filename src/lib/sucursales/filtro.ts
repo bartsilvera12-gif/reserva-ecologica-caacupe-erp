@@ -1,26 +1,49 @@
 /**
  * Filtro por sucursal para consultas PostgREST.
  *
- * REGLA CENTRAL: `sucursal_id === null` significa "no filtrar", NO "filtrar por
- * nulo". Un usuario sin sucursal asignada tiene que seguir viendo todo, igual
- * que antes de multi-sucursal. Si se tradujera un `null` a `.eq("sucursal_id",
- * null)` el usuario se quedaría con la pantalla vacía, que es exactamente el
- * modo de falla que hay que evitar en un sistema en producción.
+ * MODELO (definido por el cliente): cada usuario pertenece a UNA sucursal y ve
+ * únicamente lo de esa sucursal. Aplica a todos los roles, admin incluido — el
+ * admin de Reserva Market no ve nada de Casa Matriz y viceversa. No hay
+ * selector de sucursal ni vista consolidada.
  *
- * Usar SIEMPRE este helper en vez de un `.eq("sucursal_id", ...)` suelto, para
- * que el fallback quede en un solo lugar.
+ * Por eso un usuario SIN sucursal asignada es una MISCONFIGURACIÓN, no un caso
+ * válido. Antes esto devolvía "no filtrar" para no dejar a nadie con la pantalla
+ * vacía, pero bajo este modelo eso significa que un usuario mal configurado ve
+ * los datos de TODAS las sucursales — una fuga es peor que una pantalla vacía.
+ *
+ * Ahora `exigirSucursal` falla de forma explícita y con un mensaje accionable,
+ * en vez de degradar en silencio hacia cualquiera de los dos extremos.
  */
 
+/** Error de configuración: el usuario no tiene sucursal asignada. */
+export class SucursalNoAsignadaError extends Error {
+  constructor() {
+    super(
+      "Tu usuario no tiene una sucursal asignada. Pedile a un administrador que te asigne una desde Usuarios."
+    );
+    this.name = "SucursalNoAsignadaError";
+  }
+}
+
 /**
- * Aplica el filtro de sucursal si hay una definida; si no, devuelve la query intacta.
+ * Devuelve la sucursal del usuario o lanza si no tiene.
+ * Usar en todo endpoint que lea o escriba datos de una sucursal.
+ */
+export function exigirSucursal(sucursalId: string | null | undefined): string {
+  if (!sucursalId) throw new SucursalNoAsignadaError();
+  return sucursalId;
+}
+
+/**
+ * Aplica el filtro de sucursal. Requiere una sucursal válida: pasá el resultado
+ * de `exigirSucursal`.
  *
  * `T` va sin restricción estructural a propósito: atarlo a `{ eq(...): T }` hace
  * que TypeScript intente expandir los tipos encadenados de PostgREST y falle con
  * "Type instantiation is excessively deep". El cast interno es seguro porque
  * todos los builders de PostgREST exponen `.eq()`.
  */
-export function aplicarFiltroSucursal<T>(query: T, sucursalId: string | null | undefined): T {
-  if (!sucursalId) return query;
+export function aplicarFiltroSucursal<T>(query: T, sucursalId: string): T {
   return (query as unknown as { eq(column: string, value: string): T }).eq(
     "sucursal_id",
     sucursalId
@@ -28,9 +51,13 @@ export function aplicarFiltroSucursal<T>(query: T, sucursalId: string | null | u
 }
 
 /**
- * Sucursal a estampar al CREAR un registro. Puede ser `null` mientras haya
- * usuarios sin sucursal asignada: la columna es nullable justamente para eso.
+ * Traduce `SucursalNoAsignadaError` a una respuesta HTTP clara.
+ * Devuelve `null` si el error es otro, para que el caller siga con su manejo normal.
+ *
+ * 409 y no 500: no es una falla del servidor sino un dato faltante que un
+ * administrador puede corregir, y el mensaje se le muestra tal cual al usuario.
  */
-export function sucursalParaInsert(sucursalId: string | null | undefined): string | null {
-  return sucursalId ?? null;
+export function respuestaSucursalNoAsignada(err: unknown): Response | null {
+  if (!(err instanceof SucursalNoAsignadaError)) return null;
+  return Response.json({ ok: false, error: err.message }, { status: 409 });
 }

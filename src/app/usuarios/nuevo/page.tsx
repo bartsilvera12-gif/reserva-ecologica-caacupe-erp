@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import {
@@ -19,6 +19,30 @@ export default function NuevoUsuarioPage() {
   const [showPwd2, setShowPwd2] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
+
+  // Sucursal del usuario. Cada usuario pertenece a una sola y ve únicamente lo
+  // de esa sucursal, admin incluido. No se preselecciona ninguna a propósito:
+  // el admin de otra sucursal se crea desde acá, y un default silencioso lo
+  // dejaría en la sucursal equivocada.
+  const [sucursales, setSucursales] = useState<Array<{ id: string; nombre: string }>>([]);
+  const [sucursalId, setSucursalId] = useState("");
+
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        const res = await fetchWithSupabaseSession("/api/sucursales");
+        const json = await res.json();
+        if (!vivo || !res.ok) return;
+        setSucursales(json?.data?.sucursales ?? []);
+      } catch {
+        /* si falla, el select queda vacío y el submit avisa */
+      }
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, []);
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     const { name, value, type } = e.target;
@@ -58,6 +82,11 @@ export default function NuevoUsuarioPage() {
       return;
     }
 
+    if (!sucursalId) {
+      setError("Seleccioná la sucursal del usuario.");
+      return;
+    }
+
     const pct = form.porcentaje_comision.trim();
     const pctNum = pct === "" ? null : Number(pct);
     if (pctNum !== null && (!Number.isFinite(pctNum) || pctNum < 0 || pctNum > 100)) {
@@ -84,6 +113,7 @@ export default function NuevoUsuarioPage() {
           ips: form.ips,
           area: form.area,
           rol: rolFromNivelForm(form.nivel),
+          sucursal_id: sucursalId,
         }),
       });
       const json = await res.json();
@@ -126,6 +156,30 @@ export default function NuevoUsuarioPage() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        <div>
+          <label htmlFor="sucursal_id" className="block text-sm font-medium text-gray-700 mb-1.5">
+            Sucursal <span className="text-red-500">*</span>
+          </label>
+          <select
+            id="sucursal_id"
+            name="sucursal_id"
+            value={sucursalId}
+            onChange={(e) => setSucursalId(e.target.value)}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0EA5E9] focus:border-transparent"
+          >
+            <option value="">Seleccioná una sucursal…</option>
+            {sucursales.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.nombre}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-500 mt-1.5">
+            El usuario va a ver únicamente los datos de esta sucursal. No se puede cambiar desde el
+            sistema una vez creado.
+          </p>
+        </div>
+
         <UsuarioFormFields
           variant="create"
           form={form}

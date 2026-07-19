@@ -4,7 +4,7 @@ import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { normalizeUpperText, normalizeUpperCodigoBarras } from "@/lib/text/normalize";
 import type { AppSupabaseClient } from "@/lib/supabase/schema";
-import { aplicarFiltroSucursal, sucursalParaInsert } from "@/lib/sucursales/filtro";
+import { aplicarFiltroSucursal, exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 
 const PRODUCTO_COLS =
   "id, empresa_id, nombre, sku, costo_promedio, precio_venta, stock_actual, stock_minimo, " +
@@ -68,12 +68,14 @@ export async function GET(
         .select(PRODUCTO_COLS)
         .eq("empresa_id", ctx.auth.empresa_id)
         .eq("id", id),
-      ctx.auth.sucursal_id
+      exigirSucursal(ctx.auth.sucursal_id)
     ).maybeSingle();
     if (error) throw new Error(error.message);
     if (!data) return NextResponse.json(errorResponse(API_ERRORS.NOT_FOUND), { status: 404 });
     return NextResponse.json(successResponse({ producto: rowToApi(data as unknown as Record<string, unknown>) }));
   } catch (err) {
+    const rSuc = respuestaSucursalNoAsignada(err);
+    if (rSuc) return rSuc;
     console.error("[/api/productos/[id] GET]", err instanceof Error ? err.message : err);
     return NextResponse.json(errorResponse("No se pudo cargar el producto."), { status: 500 });
   }
@@ -184,7 +186,7 @@ export async function PATCH(
 
     const upd = await aplicarFiltroSucursal(
       sb.from("productos").update(patch).eq("empresa_id", empresaId).eq("id", id),
-      ctx.auth.sucursal_id
+      exigirSucursal(ctx.auth.sucursal_id)
     )
       .select(PRODUCTO_COLS)
       .maybeSingle();
@@ -231,7 +233,7 @@ export async function PATCH(
           } else {
             await sb.from("producto_categorias").insert({
               empresa_id: empresaId,
-              sucursal_id: sucursalParaInsert(ctx.auth.sucursal_id),
+              sucursal_id: exigirSucursal(ctx.auth.sucursal_id),
               producto_id: id,
               categoria_id: categoriaNueva,
               es_principal: true,
@@ -239,12 +241,16 @@ export async function PATCH(
           }
         }
       } catch (err) {
+        // No-fatal a propósito: el producto ya se guardó. No se convierte en 409
+        // aunque falte la sucursal — sería abortar después de haber escrito.
         console.error("[/api/productos/[id] PATCH] sync producto_categorias", err instanceof Error ? err.message : err);
       }
     }
 
     return NextResponse.json(successResponse({ producto: rowToApi(updRow) }));
   } catch (err) {
+    const rSuc = respuestaSucursalNoAsignada(err);
+    if (rSuc) return rSuc;
     console.error("[/api/productos/[id] PATCH] outer", err instanceof Error ? err.message : err);
     return NextResponse.json(errorResponse("No se pudo actualizar el producto."), { status: 500 });
   }

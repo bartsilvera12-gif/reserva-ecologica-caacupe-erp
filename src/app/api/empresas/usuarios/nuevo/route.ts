@@ -104,6 +104,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Solo un administrador de empresa puede crear usuarios." }, { status: 403 });
     }
 
+    // Sucursal: obligatoria y explícita. NO se hereda del admin que crea — el
+    // admin de Reserva Market se da de alta desde Casa Matriz, así que heredar
+    // lo dejaría en la sucursal equivocada viendo datos que no le corresponden.
+    // Sin sucursal el usuario queda inutilizable (los endpoints devuelven 409),
+    // por eso se valida acá y no después.
+    const sucursalId = body.sucursal_id ? String(body.sucursal_id) : "";
+    if (!sucursalId) {
+      return NextResponse.json({ error: "Seleccioná la sucursal del usuario." }, { status: 400 });
+    }
+    const { data: sucOk } = await supabase
+      .from("sucursales")
+      .select("id")
+      .eq("empresa_id", empresaId)
+      .eq("id", sucursalId)
+      .maybeSingle();
+    if (!sucOk) {
+      return NextResponse.json({ error: "La sucursal seleccionada no existe." }, { status: 400 });
+    }
+
     let authUserId: string | null = null;
     let vinculado = false;
 
@@ -142,6 +161,7 @@ export async function POST(req: Request) {
 
     const payload = {
       empresa_id: empresaId,
+      sucursal_predeterminada_id: sucursalId,
       email,
       nombre,
       telefono,

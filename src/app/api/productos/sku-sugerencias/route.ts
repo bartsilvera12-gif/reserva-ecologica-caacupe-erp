@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
-import { aplicarFiltroSucursal } from "@/lib/sucursales/filtro";
+import { aplicarFiltroSucursal, exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 
 /**
  * GET /api/productos/sku-sugerencias?tipo=<reventa|menu|materia>
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     // que el único (empresa_id, sucursal_id, sku).
     const { data, error } = await aplicarFiltroSucursal(
       ctx.supabase.from("productos").select("sku").eq("empresa_id", ctx.auth.empresa_id),
-      ctx.auth.sucursal_id
+      exigirSucursal(ctx.auth.sucursal_id)
     );
     if (error) throw new Error(error.message);
 
@@ -69,6 +69,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(successResponse({ sugerido, prefijo_tipo: prefijoTipo, patrones }));
   } catch (err) {
+    const rSuc = respuestaSucursalNoAsignada(err);
+    if (rSuc) return rSuc;
     console.error("[/api/productos/sku-sugerencias]", err instanceof Error ? err.message : err);
     return NextResponse.json(errorResponse("No se pudieron generar sugerencias de SKU."), { status: 500 });
   }

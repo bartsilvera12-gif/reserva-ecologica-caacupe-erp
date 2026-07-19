@@ -3,7 +3,7 @@ import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { normalizeUpperText, normalizeUpperNullable } from "@/lib/text/normalize";
-import { aplicarFiltroSucursal, sucursalParaInsert } from "@/lib/sucursales/filtro";
+import { aplicarFiltroSucursal, exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 
 /**
  * GET/POST de categorías de productos vía PostgREST (cliente Supabase).
@@ -21,13 +21,15 @@ export async function GET(request: NextRequest) {
         .from("categorias_productos")
         .select("id, empresa_id, nombre, codigo, descripcion, parent_id, activo, created_at, updated_at")
         .eq("empresa_id", ctx.auth.empresa_id),
-      ctx.auth.sucursal_id
+      exigirSucursal(ctx.auth.sucursal_id)
     ).order("nombre");
     if (!todas) q = q.eq("activo", true);
     const { data, error } = await q;
     if (error) throw new Error(error.message);
     return NextResponse.json(successResponse({ categorias: data ?? [] }));
   } catch (err) {
+    const rSuc = respuestaSucursalNoAsignada(err);
+    if (rSuc) return rSuc;
     console.error("[/api/inventario/categorias GET]", err instanceof Error ? err.message : err);
     return NextResponse.json(errorResponse("No se pudieron cargar las categorías."), { status: 500 });
   }
@@ -61,7 +63,7 @@ export async function POST(request: NextRequest) {
         .select("id")
         .eq("empresa_id", ctx.auth.empresa_id)
         .ilike("nombre", nombre),
-      ctx.auth.sucursal_id
+      exigirSucursal(ctx.auth.sucursal_id)
     ).limit(1);
     if (dup.error) {
       console.error("[/api/inventario/categorias POST] pre-check", dup.error.message);
@@ -81,7 +83,7 @@ export async function POST(request: NextRequest) {
       .from("categorias_productos")
       .insert({
         empresa_id: ctx.auth.empresa_id,
-        sucursal_id: sucursalParaInsert(ctx.auth.sucursal_id),
+        sucursal_id: exigirSucursal(ctx.auth.sucursal_id),
         nombre,
         codigo,
         descripcion: normalizeUpperNullable(body.descripcion) ?? null,
@@ -103,6 +105,8 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json(successResponse({ categoria: ins.data }));
   } catch (err) {
+    const rSuc = respuestaSucursalNoAsignada(err);
+    if (rSuc) return rSuc;
     console.error("[/api/inventario/categorias POST] outer", err);
     return NextResponse.json(errorResponse("No se pudo crear la categoría."), { status: 500 });
   }
