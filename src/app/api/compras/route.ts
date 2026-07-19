@@ -9,6 +9,7 @@ import {
   type CompraHeaderInput,
   type CompraItemInput,
 } from "@/lib/compras/server/compras-pg";
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 
 /**
  * GET /api/compras — lista via PG directo.
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
     const ctx = await getTenantSupabaseFromAuth(request);
     if (!ctx) return NextResponse.json(errorResponse(API_ERRORS.UNAUTHORIZED), { status: 401 });
     const schema = await fetchDataSchemaForEmpresaId(ctx.auth.empresa_id);
-    const rows = await listCompras(schema, ctx.auth.empresa_id);
+    const rows = await listCompras(schema, ctx.auth.empresa_id, exigirSucursal(ctx.auth.sucursal_id));
     return NextResponse.json(successResponse({ compras: rows }));
   } catch (err) {
     console.error("[/api/compras GET]", err instanceof Error ? err.message : err);
@@ -114,7 +115,7 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const out = await insertComprasConImpacto(schema, empresaId, header, items);
+      const out = await insertComprasConImpacto(schema, empresaId, exigirSucursal(ctx.auth.sucursal_id), header, items);
 
       return NextResponse.json(successResponse({
         numero_control: out.numero_control,

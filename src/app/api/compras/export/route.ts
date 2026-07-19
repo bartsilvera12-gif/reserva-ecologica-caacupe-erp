@@ -3,6 +3,7 @@ import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema";
 import { listCompras } from "@/lib/compras/server/compras-pg";
 import { buildXlsxBuffer, xlsxResponseHeaders, nowStamp } from "@/lib/excel/export";
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 
 export async function GET(request: NextRequest) {
   const ctx = await getTenantSupabaseFromAuth(request);
@@ -11,7 +12,7 @@ export async function GET(request: NextRequest) {
   const schema = await fetchDataSchemaForEmpresaId(empresaId);
 
   try {
-    const rows = await listCompras(schema, empresaId);
+    const rows = await listCompras(schema, empresaId, exigirSucursal(ctx.auth.sucursal_id));
     const buf = buildXlsxBuffer(rows, [
       { header: "NUMERO_CONTROL", value: (r) => r.numero_control, width: 16 },
       { header: "FECHA", value: (r) => r.fecha ? new Date(r.fecha) : "", width: 18 },

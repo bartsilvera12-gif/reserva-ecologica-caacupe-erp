@@ -130,13 +130,14 @@ export interface InsertCompraInput {
 
 export async function listCompras(
   schemaRaw: string,
-  empresaId: string
+  empresaId: string,
+  sucursalId: string
 ): Promise<CompraRow[]> {
   const schema = assertAllowedChatDataSchema(schemaRaw);
   const t = quoteSchemaTable(schema, "compras");
   const { rows } = await pool().query<CompraRow>(
-    `SELECT ${COLS} FROM ${t} WHERE empresa_id = $1::uuid ORDER BY fecha DESC LIMIT 500`,
-    [empresaId]
+    `SELECT ${COLS} FROM ${t} WHERE empresa_id = $1::uuid AND sucursal_id = $2::uuid ORDER BY fecha DESC LIMIT 500`,
+    [empresaId, sucursalId]
   );
   return rows;
 }
@@ -145,7 +146,8 @@ export async function listCompras(
 async function nextNumeroControl(
   client: import("pg").PoolClient,
   schema: string,
-  empresaId: string
+  empresaId: string,
+  sucursalId: string
 ): Promise<string> {
   const t = quoteSchemaTable(schema, "compras");
   const { rows } = await client.query<{ maxn: number | null }>(
@@ -154,8 +156,8 @@ async function nextNumeroControl(
             THEN (substring(numero_control from 6))::int
             ELSE 0 END
      ), 0) AS maxn
-     FROM ${t} WHERE empresa_id = $1::uuid`,
-    [empresaId]
+     FROM ${t} WHERE empresa_id = $1::uuid AND sucursal_id = $2::uuid`,
+    [empresaId, sucursalId]
   );
   const next = Number(rows[0]?.maxn ?? 0) + 1;
   return `COMP-${String(next).padStart(6, "0")}`;
@@ -220,6 +222,7 @@ export interface ComprasMultiResult {
 export async function insertComprasConImpacto(
   schemaRaw: string,
   empresaId: string,
+  sucursalId: string,
   header: CompraHeaderInput,
   items: CompraItemInput[]
 ): Promise<ComprasMultiResult> {
@@ -237,7 +240,7 @@ export async function insertComprasConImpacto(
   const warnings: string[] = [];
   try {
     await client.query("BEGIN");
-    const numero = await nextNumeroControl(client, schema, empresaId);
+    const numero = await nextNumeroControl(client, schema, empresaId, sucursalId);
 
     for (const it of items) {
       const { rows: compraRows } = await client.query<CompraRow>(
@@ -248,7 +251,7 @@ export async function insertComprasConImpacto(
            tipo_pago, plazo_dias, nro_timbrado, numero_control, estado, fecha,
            fecha_factura, metodo_pago,
            comprobante_url, comprobante_storage_path, comprobante_nombre, comprobante_mime_type,
-           created_by, usuario_nombre
+           created_by, usuario_nombre, sucursal_id
          ) VALUES (
            $1::uuid, $2::uuid, $3, $4::uuid, $5,
            $6::numeric, $7, $8::numeric, $9::numeric, $10::numeric,
@@ -256,7 +259,7 @@ export async function insertComprasConImpacto(
            $17, $18::integer, $19, $20, 'registrada', now(),
            $21::date, $22,
            $23, $24, $25, $26,
-           $27::uuid, $28
+           $27::uuid, $28, $29::uuid
          )
          RETURNING ${COLS}`,
         [
@@ -269,7 +272,7 @@ export async function insertComprasConImpacto(
           header.fecha_factura, header.metodo_pago,
           header.comprobante_url, header.comprobante_storage_path,
           header.comprobante_nombre, header.comprobante_mime_type,
-          header.created_by, header.usuario_nombre,
+          header.created_by, header.usuario_nombre, sucursalId,
         ]
       );
       insertedRows.push(compraRows[0]);
@@ -280,14 +283,14 @@ export async function insertComprasConImpacto(
           `INSERT INTO ${tM} (
              empresa_id, producto_id, producto_nombre, producto_sku,
              tipo, cantidad, costo_unitario, origen, referencia, fecha,
-             created_by, usuario_nombre
+             created_by, usuario_nombre, sucursal_id
            )
            SELECT $1::uuid, $2::uuid, $3, COALESCE(p.sku, ''),
                   'ENTRADA', $4::numeric, $5::numeric, 'compra', $6, now(),
-                  $7::uuid, $8
+                  $7::uuid, $8, $9::uuid
            FROM ${tP} p WHERE p.id = $2::uuid`,
           [empresaId, it.producto_id, it.producto_nombre, it.cantidad,
-           it.costo_unitario, numero, header.created_by, header.usuario_nombre]
+           it.costo_unitario, numero, header.created_by, header.usuario_nombre, sucursalId]
         );
       } catch (movErr) {
         const msg = movErr instanceof Error ? movErr.message : String(movErr);
@@ -336,6 +339,7 @@ export async function insertComprasConImpacto(
 export async function insertCompraConImpacto(
   schemaRaw: string,
   empresaId: string,
+  sucursalId: string,
   d: InsertCompraInput
 ): Promise<CompraResult> {
   const schema = assertAllowedChatDataSchema(schemaRaw);
@@ -350,7 +354,7 @@ export async function insertCompraConImpacto(
   try {
     await client.query("BEGIN");
 
-    const numero = await nextNumeroControl(client, schema, empresaId);
+    const numero = await nextNumeroControl(client, schema, empresaId, sucursalId);
 
     const { rows: compraRows } = await client.query<CompraRow>(
       `INSERT INTO ${tC} (
@@ -359,14 +363,14 @@ export async function insertCompraConImpacto(
          iva_tipo, subtotal, monto_iva, total, precio_venta, margen_venta,
          tipo_pago, plazo_dias, nro_timbrado, numero_control, estado, fecha,
          fecha_factura, metodo_pago,
-         created_by, usuario_nombre
+         created_by, usuario_nombre, sucursal_id
        ) VALUES (
          $1::uuid, $2::uuid, $3, $4::uuid, $5,
          $6::numeric, $7, $8::numeric, $9::numeric, $10::numeric,
          $11, $12::numeric, $13::numeric, $14::numeric, $15::numeric, $16::numeric,
          $17, $18::integer, $19, $20, 'registrada', now(),
          $21::date, $22,
-         $23::uuid, $24
+         $23::uuid, $24, $25::uuid
        )
        RETURNING ${COLS}`,
       [
@@ -394,6 +398,7 @@ export async function insertCompraConImpacto(
         d.metodo_pago ?? null,
         d.created_by,
         d.usuario_nombre,
+        sucursalId,
       ]
     );
     const compra = compraRows[0];
@@ -405,11 +410,11 @@ export async function insertCompraConImpacto(
         `INSERT INTO ${tM} (
            empresa_id, producto_id, producto_nombre, producto_sku,
            tipo, cantidad, costo_unitario, origen, referencia, fecha,
-           created_by, usuario_nombre
+           created_by, usuario_nombre, sucursal_id
          )
          SELECT $1::uuid, $2::uuid, $3, COALESCE(p.sku, ''),
                 'ENTRADA', $4::numeric, $5::numeric, 'compra', $6, now(),
-                $7::uuid, $8
+                $7::uuid, $8, $9::uuid
          FROM ${tP} p WHERE p.id = $2::uuid
          RETURNING id`,
         [
@@ -421,6 +426,7 @@ export async function insertCompraConImpacto(
           numero,
           d.created_by,
           d.usuario_nombre,
+          sucursalId,
         ]
       );
       movimientoId = movRows[0]?.id ?? null;
