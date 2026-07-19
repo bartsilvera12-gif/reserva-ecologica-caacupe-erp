@@ -39,25 +39,6 @@ export async function getSession() {
   return data.session;
 }
 
-export async function createUser(email: string, password: string) {
-  const res = await fetchWithSupabaseSession("/api/create-user", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-
-  const json = await res.json();
-
-  if (!res.ok) {
-    throw new Error(
-      typeof json.error === "string"
-        ? json.error
-        : json.error?.message || "Error creando usuario"
-    );
-  }
-
-  return json.user;
-}
 
 export async function getCurrentUser(): Promise<CurrentUsuario | null> {
   const { data: { user } } = await supabase.auth.getUser();

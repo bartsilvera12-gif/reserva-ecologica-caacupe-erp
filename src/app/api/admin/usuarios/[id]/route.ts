@@ -7,6 +7,7 @@ import {
 } from "@/lib/modulos/resolve-effective-modules";
 import { filterDashboardViewIdsForEmpresa } from "@/lib/dashboard/resolve-effective-dashboard-views";
 import { syncUsuarioDashboardViews } from "@/lib/dashboard/sync-usuario-dashboard-views";
+import { requireAdminEmpresa, usuarioDeLaMismaEmpresa } from "@/lib/auth/require-admin-empresa";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -33,12 +34,19 @@ async function getAuthUserId(supabase: ReturnType<typeof getSupabase>, usuario: 
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Sin guard, este endpoint exponia el perfil de cualquier usuario del
+    // sistema y podia recorrer Auth entero via listUsers().
+    const guard = await requireAdminEmpresa(req);
+    if (!guard.ok) return guard.response;
+
     const { id } = await params;
     const supabase = getSupabase();
+    const objetivo = await usuarioDeLaMismaEmpresa(supabase, id, guard.auth.empresa_id);
+    if (!objetivo.ok) return objetivo.response;
     const { data: usuario, error } = await supabase
       .from("usuarios")
       .select("id, nombre, email, telefono, fecha_nacimiento, rol, estado, created_at")
@@ -59,6 +67,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const guard = await requireAdminEmpresa(req);
+    if (!guard.ok) return guard.response;
+
     const { id } = await params;
     const body = await req.json();
     const {
@@ -80,7 +91,8 @@ export async function PATCH(
       .eq("id", id)
       .single();
 
-    if (errGet || !usuario) {
+    // 404 y no 403: no confirmar que el UUID existe en otra empresa.
+    if (errGet || !usuario || usuario.empresa_id !== guard.auth.empresa_id) {
       return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
     }
 

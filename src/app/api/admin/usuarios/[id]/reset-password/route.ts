@@ -1,12 +1,18 @@
 import { createClient } from "@supabase/supabase-js";
 import { supabaseServiceRoleClientOptions } from "@/lib/supabase/schema";
 import { NextResponse } from "next/server";
+import { requireAdminEmpresa, usuarioDeLaMismaEmpresa } from "@/lib/auth/require-admin-empresa";
 
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Sin este guard el endpoint permitia cambiar la contrasena de CUALQUIER
+    // usuario con solo conocer su UUID: no habia autenticacion de ningun tipo.
+    const guard = await requireAdminEmpresa(req);
+    if (!guard.ok) return guard.response;
+
     const { id } = await params;
     const body = await req.json();
     const { password } = body;
@@ -26,18 +32,12 @@ export async function POST(
 
     const supabase = createClient(url, key, { ...supabaseServiceRoleClientOptions });
 
-    const { data: usuario, error: errGet } = await supabase
-      .from("usuarios")
-      .select("email")
-      .eq("id", id)
-      .single();
-
-    if (errGet || !usuario) {
-      return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
-    }
+    // El objetivo tiene que ser de la MISMA empresa que el admin que llama.
+    const objetivo = await usuarioDeLaMismaEmpresa(supabase, id, guard.auth.empresa_id);
+    if (!objetivo.ok) return objetivo.response;
 
     const { data: authUsers } = await supabase.auth.admin.listUsers();
-    const authUser = authUsers?.users?.find((u) => u.email === usuario.email);
+    const authUser = authUsers?.users?.find((u) => u.email === objetivo.email);
 
     if (!authUser) {
       return NextResponse.json(
