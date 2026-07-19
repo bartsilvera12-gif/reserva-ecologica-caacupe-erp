@@ -1,3 +1,4 @@
+import { andSucursal } from "@/lib/sucursales/sql";
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema";
@@ -49,14 +50,14 @@ function parseDateRangeFromQuery(sp: URLSearchParams): DateRange {
  * el resto de modulos (clientes/facturas/etc.) sigue por supabase.from
  * y degrada silenciosamente con query_errors si el schema no esta expuesto.
  */
-async function fallbackProductosPg(schemaRaw: string, empresaId: string): Promise<unknown[]> {
+async function fallbackProductosPg(schemaRaw: string, empresaId: string, sucursalId: string): Promise<unknown[]> {
   try {
     const schema = assertAllowedChatDataSchema(schemaRaw);
     const pool = getChatPostgresPool();
     if (!pool) return [];
     const t = quoteSchemaTable(schema, "productos");
     const { rows } = await pool.query(
-      `SELECT * FROM ${t} WHERE empresa_id = $1::uuid AND activo = true`,
+      `SELECT * FROM ${t} WHERE empresa_id = $1::uuid${andSucursal(sucursalId)} AND activo = true`,
       [empresaId]
     );
     return rows;
@@ -72,6 +73,7 @@ async function fallbackProductosPg(schemaRaw: string, empresaId: string): Promis
 async function fallbackComprasPg(
   schemaRaw: string,
   empresaId: string,
+  sucursalId: string,
   range: DateRange
 ): Promise<unknown[]> {
   try {
@@ -81,13 +83,13 @@ async function fallbackComprasPg(
     const t = quoteSchemaTable(schema, "compras");
     if (range) {
       const { rows } = await pool.query(
-        `SELECT * FROM ${t} WHERE empresa_id = $1::uuid AND fecha >= $2::date AND fecha < $3::date`,
+        `SELECT * FROM ${t} WHERE empresa_id = $1::uuid${andSucursal(sucursalId)} AND fecha >= $2::date AND fecha < $3::date`,
         [empresaId, range.desde, range.hastaExclusive]
       );
       return rows;
     }
     const { rows } = await pool.query(
-      `SELECT * FROM ${t} WHERE empresa_id = $1::uuid`,
+      `SELECT * FROM ${t} WHERE empresa_id = $1::uuid${andSucursal(sucursalId)}`,
       [empresaId]
     );
     return rows;
@@ -103,6 +105,7 @@ async function fallbackComprasPg(
 async function fallbackVentasPg(
   schemaRaw: string,
   empresaId: string,
+  sucursalId: string,
   range: DateRange
 ): Promise<unknown[]> {
   try {
@@ -112,13 +115,13 @@ async function fallbackVentasPg(
     const t = quoteSchemaTable(schema, "ventas");
     if (range) {
       const { rows } = await pool.query(
-        `SELECT * FROM ${t} WHERE empresa_id = $1::uuid AND fecha >= $2::date AND fecha < $3::date`,
+        `SELECT * FROM ${t} WHERE empresa_id = $1::uuid${andSucursal(sucursalId)} AND fecha >= $2::date AND fecha < $3::date`,
         [empresaId, range.desde, range.hastaExclusive]
       );
       return rows;
     }
     const { rows } = await pool.query(
-      `SELECT * FROM ${t} WHERE empresa_id = $1::uuid`,
+      `SELECT * FROM ${t} WHERE empresa_id = $1::uuid${andSucursal(sucursalId)}`,
       [empresaId]
     );
     return rows;
@@ -134,6 +137,7 @@ async function fallbackVentasPg(
 async function fallbackVentasItemsPg(
   schemaRaw: string,
   empresaId: string,
+  sucursalId: string,
   ventaIds: string[] | null
 ): Promise<unknown[]> {
   try {
@@ -150,7 +154,9 @@ async function fallbackVentasItemsPg(
       return rows;
     }
     const { rows } = await pool.query(
-      `SELECT * FROM ${t} WHERE empresa_id = $1::uuid`,
+      `SELECT * FROM ${t} WHERE empresa_id = $1::uuid
+         AND venta_id IN (SELECT id FROM ${quoteSchemaTable(schema, "ventas")}
+                           WHERE empresa_id = $1::uuid${andSucursal(sucursalId)})`,
       [empresaId]
     );
     return rows;
@@ -225,16 +231,17 @@ export async function GET(request: NextRequest) {
 
     // Resolvemos el schema siempre — lo usamos para fallback PG directo
     // cuando se detecta un tenant no expuesto en PostgREST.
+    const sucursalId = exigirSucursal(auth.sucursal_id);
     const dataSchema = await fetchDataSchemaForEmpresaId(empresaId);
     const usarPg = isLikelyUnexposedTenantChatSchema(dataSchema);
 
     /** Helper: arma una query con o sin filtro de fecha según `range`. */
     const buildFacturasQ = () => {
-      const base = supabase.from("facturas").select("*").eq("empresa_id", empresaId);
+      const base = supabase.from("facturas").select("*").eq("empresa_id", empresaId).eq("sucursal_id", sucursalId);
       return range ? base.gte("fecha", range.desde).lt("fecha", range.hastaExclusive) : base;
     };
     const buildPagosQ = () => {
-      const base = supabase.from("pagos").select("id, factura_id, monto, fecha_pago").eq("empresa_id", empresaId);
+      const base = supabase.from("pagos").select("id, factura_id, monto, fecha_pago").eq("empresa_id", empresaId).eq("sucursal_id", sucursalId);
       return range ? base.gte("fecha_pago", range.desde).lt("fecha_pago", range.hastaExclusive) : base;
     };
     const buildTipificacionesQ = () => {
@@ -242,15 +249,15 @@ export async function GET(request: NextRequest) {
       return range ? base.gte("fecha", range.desde).lt("fecha", range.hastaExclusive) : base;
     };
     const buildVentasQ = () => {
-      const base = supabase.from("ventas").select("*").eq("empresa_id", empresaId);
+      const base = supabase.from("ventas").select("*").eq("empresa_id", empresaId).eq("sucursal_id", sucursalId);
       return range ? base.gte("fecha", range.desde).lt("fecha", range.hastaExclusive) : base;
     };
     const buildComprasQ = () => {
-      const base = supabase.from("compras").select("*").eq("empresa_id", empresaId);
+      const base = supabase.from("compras").select("*").eq("empresa_id", empresaId).eq("sucursal_id", sucursalId);
       return range ? base.gte("fecha", range.desde).lt("fecha", range.hastaExclusive) : base;
     };
     const buildGastosQ = () => {
-      const base = supabase.from("gastos").select("id, monto, fecha").eq("empresa_id", empresaId);
+      const base = supabase.from("gastos").select("id, monto, fecha").eq("empresa_id", empresaId).eq("sucursal_id", sucursalId);
       return range ? base.gte("fecha", range.desde).lt("fecha", range.hastaExclusive) : base;
     };
 
@@ -310,7 +317,8 @@ export async function GET(request: NextRequest) {
       supabase
         .from("nota_credito")
         .select("id, factura_id, monto, estado_erp")
-        .eq("empresa_id", empresaId),
+        .eq("empresa_id", empresaId)
+        .eq("sucursal_id", sucursalId),
     ]);
 
     const queryErrors: Partial<Record<TableKey, string>> = {};
@@ -319,17 +327,17 @@ export async function GET(request: NextRequest) {
     // tira Invalid schema (PGRST106) — caso erp_* no expuesto — caemos a PG directo.
     let productosRows = pickRows("productos", productosQ, queryErrors);
     if ((productosRows.length === 0 && queryErrors.productos) || (usarPg && productosRows.length === 0)) {
-      productosRows = await fallbackProductosPg(dataSchema, empresaId);
+      productosRows = await fallbackProductosPg(dataSchema, empresaId, sucursalId);
       if (productosRows.length > 0) delete queryErrors.productos;
     }
     let comprasRows = pickRows("compras", comprasQ, queryErrors);
     if ((comprasRows.length === 0 && queryErrors.compras) || (usarPg && comprasRows.length === 0)) {
-      comprasRows = await fallbackComprasPg(dataSchema, empresaId, range);
+      comprasRows = await fallbackComprasPg(dataSchema, empresaId, sucursalId, range);
       if (comprasRows.length > 0) delete queryErrors.compras;
     }
     let ventasRows = pickRows("ventas", ventasQ, queryErrors);
     if ((ventasRows.length === 0 && queryErrors.ventas) || (usarPg && ventasRows.length === 0)) {
-      ventasRows = await fallbackVentasPg(dataSchema, empresaId, range);
+      ventasRows = await fallbackVentasPg(dataSchema, empresaId, sucursalId, range);
       if (ventasRows.length > 0) delete queryErrors.ventas;
     }
 
@@ -352,14 +360,14 @@ export async function GET(request: NextRequest) {
           .in("venta_id", ventaIds);
         ventasItemsRows = pickRows("ventas_items", itemsRes, queryErrors);
         if ((ventasItemsRows.length === 0 && queryErrors.ventas_items) || (usarPg && ventasItemsRows.length === 0)) {
-          ventasItemsRows = await fallbackVentasItemsPg(dataSchema, empresaId, ventaIds);
+          ventasItemsRows = await fallbackVentasItemsPg(dataSchema, empresaId, sucursalId, ventaIds);
           if (ventasItemsRows.length > 0) delete queryErrors.ventas_items;
         }
       }
     } else {
       ventasItemsRows = pickRows("ventas_items", ventasItemsQ as { data: unknown[] | null; error: { message: string } | null }, queryErrors);
       if ((ventasItemsRows.length === 0 && queryErrors.ventas_items) || (usarPg && ventasItemsRows.length === 0)) {
-        ventasItemsRows = await fallbackVentasItemsPg(dataSchema, empresaId, null);
+        ventasItemsRows = await fallbackVentasItemsPg(dataSchema, empresaId, sucursalId, null);
         if (ventasItemsRows.length > 0) delete queryErrors.ventas_items;
       }
     }

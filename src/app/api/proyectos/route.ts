@@ -1,3 +1,4 @@
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 import { NextResponse } from "next/server";
 import { getChatServiceClientForEmpresa } from "@/app/api/chat/_chat-service-client";
 import { errorResponse, successResponse } from "@/lib/api/response";
@@ -25,9 +26,15 @@ export async function GET(request: Request) {
 
     const sb = await getChatServiceClientForEmpresa(auth.empresaId);
     const empresaId = auth.empresaId;
+    const sucursalId = exigirSucursal(auth.sucursal_id);
 
     function proyectosFiltrados() {
-      let qq = sb.from("proyectos").select("*").eq("empresa_id", empresaId).eq("archivado", archivado);
+      let qq = sb
+        .from("proyectos")
+        .select("*")
+        .eq("empresa_id", empresaId)
+        .eq("sucursal_id", sucursalId)
+        .eq("archivado", archivado);
       if (estadoId) qq = qq.eq("estado_id", estadoId);
       if (tipoId) qq = qq.eq("tipo_id", tipoId);
       if (prioridad && PRIORIDADES.has(prioridad)) qq = qq.eq("prioridad", prioridad);
@@ -205,6 +212,7 @@ export async function POST(request: Request) {
       bloqueo_motivo: typeof body.bloqueo_motivo === "string" ? body.bloqueo_motivo : null,
       created_by: auth.usuarioCatalogId,
       updated_by: auth.usuarioCatalogId,
+      sucursal_id: exigirSucursal(auth.sucursal_id),
       ultimo_movimiento_at: new Date().toISOString(),
       last_activity_at: new Date().toISOString(),
     };

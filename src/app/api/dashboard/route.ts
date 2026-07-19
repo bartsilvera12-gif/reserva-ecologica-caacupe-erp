@@ -1,3 +1,4 @@
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
@@ -26,6 +27,7 @@ export async function GET(request: NextRequest) {
         .from("facturas")
         .select("monto, fecha")
         .eq("empresa_id", auth.empresa_id)
+        .eq("sucursal_id", exigirSucursal(auth.sucursal_id))
         .neq("estado", "Anulado")
         .gte("fecha", inicioMes)
         .lt("fecha", inicioMesSiguiente),
@@ -33,9 +35,11 @@ export async function GET(request: NextRequest) {
         .from("pagos")
         .select("monto, fecha_pago")
         .eq("empresa_id", auth.empresa_id)
+        .eq("sucursal_id", exigirSucursal(auth.sucursal_id))
         .gte("fecha_pago", inicioMes)
         .lt("fecha_pago", inicioMesSiguiente),
-      supabase.from("clientes").select("id").eq("empresa_id", auth.empresa_id).eq("estado", "inactivo"),
+      supabase.from("clientes").select("id").eq("empresa_id", auth.empresa_id)
+        .eq("sucursal_id", exigirSucursal(auth.sucursal_id)).eq("estado", "inactivo"),
     ]);
 
     if (facturasRes.error) {
@@ -57,6 +61,7 @@ export async function GET(request: NextRequest) {
       .from("facturas")
       .select("saldo, cliente_id")
       .eq("empresa_id", auth.empresa_id)
+        .eq("sucursal_id", exigirSucursal(auth.sucursal_id))
       .neq("estado", "Anulado")
       .gt("saldo", 0);
 
