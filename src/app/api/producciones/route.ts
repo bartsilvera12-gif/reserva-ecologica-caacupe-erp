@@ -8,6 +8,7 @@ import {
 } from "@/lib/produccion/crear-produccion-pg";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 
 /**
  * GET /api/producciones — listado de producciones de la empresa (vía PostgREST).
@@ -24,11 +25,14 @@ export async function GET(request: NextRequest) {
         "id, receta_id, producto_id, producto_nombre, cantidad_fabricada, rendimiento_cantidad, unidad_rendimiento, costo_total, costo_unitario, fecha, usuario_nombre, observaciones"
       )
       .eq("empresa_id", auth.empresa_id)
+      .eq("sucursal_id", exigirSucursal(auth.sucursal_id))
       .order("fecha", { ascending: false })
       .limit(500);
     if (error) throw new Error(error.message);
     return NextResponse.json(successResponse({ producciones: data ?? [] }));
   } catch (err) {
+    const rSuc = respuestaSucursalNoAsignada(err);
+    if (rSuc) return rSuc;
     console.error("[/api/producciones GET]", err instanceof Error ? err.message : err);
     return NextResponse.json(errorResponse("No se pudieron cargar las producciones."), { status: 500 });
   }

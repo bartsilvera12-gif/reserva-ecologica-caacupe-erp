@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 
 const CXC_COLS =
   "id, cliente_id, venta_id, numero_venta, fecha_emision, fecha_vencimiento, moneda, total, saldo, estado, created_at";
@@ -25,6 +26,7 @@ export async function GET(request: NextRequest) {
       .from("cuentas_por_cobrar")
       .select(CXC_COLS)
       .eq("empresa_id", empresaId)
+      .eq("sucursal_id", exigirSucursal(ctx.auth.sucursal_id))
       .order("fecha_vencimiento", { ascending: true, nullsFirst: false })
       .limit(1000);
     if (clienteId) q = q.eq("cliente_id", clienteId);
@@ -141,6 +143,8 @@ export async function GET(request: NextRequest) {
       })
     );
   } catch (err) {
+    const rSuc = respuestaSucursalNoAsignada(err);
+    if (rSuc) return rSuc;
     console.error("[/api/cobros/cuentas GET]", err instanceof Error ? err.message : err);
     return NextResponse.json(errorResponse("No se pudieron cargar las cuentas por cobrar."), { status: 500 });
   }

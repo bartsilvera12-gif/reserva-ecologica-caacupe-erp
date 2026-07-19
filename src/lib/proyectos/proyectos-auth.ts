@@ -6,7 +6,7 @@ import { isBootstrapSuperAdminEmail } from "@/lib/auth/super-admin-bootstrap-ema
 import { resolveEffectiveModules } from "@/lib/modulos/resolve-effective-modules";
 
 export type ProyectosApiAuth =
-  | { ok: true; empresaId: string; usuarioCatalogId: string; rol: string | null }
+  | { ok: true; empresaId: string; usuarioCatalogId: string; rol: string | null; sucursal_id: string | null }
   | { ok: false; status: number; message: string };
 
 export async function requireProyectosApiAccess(request: Request): Promise<ProyectosApiAuth> {
@@ -27,11 +27,11 @@ export async function requireProyectosApiAccess(request: Request): Promise<Proye
 
   const rol = (usuario.rol ?? "").trim();
   if (rol === "super_admin") {
-    return { ok: true, empresaId: usuario.empresa_id, usuarioCatalogId: usuario.id, rol };
+    return { ok: true, empresaId: usuario.empresa_id, usuarioCatalogId: usuario.id, rol, sucursal_id: usuario.sucursal_predeterminada_id ?? null };
   }
 
   if (isBootstrapSuperAdminEmail(user.email)) {
-    return { ok: true, empresaId: usuario.empresa_id, usuarioCatalogId: usuario.id, rol };
+    return { ok: true, empresaId: usuario.empresa_id, usuarioCatalogId: usuario.id, rol, sucursal_id: usuario.sucursal_predeterminada_id ?? null };
   }
 
   const modulos = await resolveEffectiveModules(catalog, {
@@ -44,5 +44,5 @@ export async function requireProyectosApiAccess(request: Request): Promise<Proye
     return { ok: false, status: 403, message: "Sin acceso al módulo Proyectos" };
   }
 
-  return { ok: true, empresaId: usuario.empresa_id, usuarioCatalogId: usuario.id, rol: usuario.rol };
+  return { ok: true, empresaId: usuario.empresa_id, usuarioCatalogId: usuario.id, rol: usuario.rol, sucursal_id: usuario.sucursal_predeterminada_id ?? null };
 }

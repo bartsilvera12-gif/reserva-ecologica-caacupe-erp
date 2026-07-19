@@ -5,6 +5,7 @@ import { API_ERRORS } from "@/lib/api/errors";
 import { emitEvent, EVENT_TYPES } from "@/lib/integrations/events";
 import { toCalendarDateStr } from "@/lib/fechas/calendario";
 import { etiquetaVisibleTipoServicio } from "@/lib/clientes/tipo-servicio-catalogo";
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 
 
 export async function GET(request: NextRequest) {
@@ -22,6 +23,7 @@ export async function GET(request: NextRequest) {
       .from("pagos")
       .select("*, facturas(numero_factura, cliente_id)")
       .eq("empresa_id", auth.empresa_id)
+      .eq("sucursal_id", exigirSucursal(auth.sucursal_id))
       .order("fecha_pago", { ascending: false });
 
     if (facturaId) {
@@ -108,6 +110,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(successResponse(enriched));
   } catch (err) {
+    const rSuc = respuestaSucursalNoAsignada(err);
+    if (rSuc) return rSuc;
     const msg = err instanceof Error ? err.message : "Error";
     return NextResponse.json(errorResponse(msg), { status: 500 });
   }

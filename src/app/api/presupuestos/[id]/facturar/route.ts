@@ -5,6 +5,7 @@ import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { facturarPresupuestoDirecto } from "@/lib/presupuestos/server/presupuestos-pg";
 import { StockInsuficienteError } from "@/lib/ventas/server/create-venta-pg";
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 
 /**
  * POST /api/presupuestos/[id]/facturar
@@ -28,6 +29,7 @@ export async function POST(
       ctx.supabase,
       schema,
       ctx.auth.empresa_id,
+      exigirSucursal(ctx.auth.sucursal_id),
       id,
       {
         createdBy: ctx.auth.usuarioCatalogId ?? null,

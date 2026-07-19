@@ -3,6 +3,7 @@ import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import type { Venta, LineaVenta, TipoIvaVenta, TipoPrecioVenta } from "@/lib/ventas/types";
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 
 interface VentaRow {
   id: string;
@@ -66,6 +67,7 @@ export async function GET(request: NextRequest) {
         "id, empresa_id, numero_control, moneda, tipo_cambio, subtotal, monto_iva, total, tipo_venta, plazo_dias, metodo_pago, fecha, genera_nota_remision, nota_remision_numero, estado, anulada_at, anulacion_motivo, factura_id, cliente_id"
       )
       .eq("empresa_id", empresaId)
+      .eq("sucursal_id", exigirSucursal(ctx.auth.sucursal_id))
       .order("fecha", { ascending: false })
       .limit(500);
     if (ventasQ.error) throw new Error(ventasQ.error.message);
@@ -222,6 +224,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(successResponse({ ventas }));
   } catch (err) {
+    const rSuc = respuestaSucursalNoAsignada(err);
+    if (rSuc) return rSuc;
     console.error("[/api/ventas GET]", err instanceof Error ? err.message : err);
     return NextResponse.json(errorResponse("No se pudieron cargar las ventas."), { status: 500 });
   }

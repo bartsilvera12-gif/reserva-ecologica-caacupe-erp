@@ -3,6 +3,7 @@ import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { crearPresupuesto, type PresupuestoItemInput } from "@/lib/presupuestos/server/presupuestos-pg";
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 
 const PRESU_COLS =
   "id, cliente_id, cliente_nombre, cliente_ruc, cliente_telefono, cliente_direccion, " +
@@ -48,6 +49,7 @@ export async function GET(request: NextRequest) {
       .from("presupuestos")
       .select(PRESU_COLS)
       .eq("empresa_id", ctx.auth.empresa_id)
+      .eq("sucursal_id", exigirSucursal(ctx.auth.sucursal_id))
       .order("fecha", { ascending: false })
       .limit(500);
     if (estado) q = q.eq("estado", estado);
@@ -55,6 +57,8 @@ export async function GET(request: NextRequest) {
     if (error) throw new Error(error.message);
     return NextResponse.json(successResponse({ presupuestos: data ?? [] }));
   } catch (err) {
+    const rSuc = respuestaSucursalNoAsignada(err);
+    if (rSuc) return rSuc;
     console.error("[/api/presupuestos GET]", err instanceof Error ? err.message : err);
     return NextResponse.json(errorResponse("No se pudieron cargar los presupuestos."), { status: 500 });
   }
@@ -87,7 +91,7 @@ export async function POST(request: NextRequest) {
         ? null
         : Math.max(0, parseInt(String(validezRaw), 10) || 0) || null;
 
-    const { id, numero_control } = await crearPresupuesto(ctx.supabase, ctx.auth.empresa_id, {
+    const { id, numero_control } = await crearPresupuesto(ctx.supabase, ctx.auth.empresa_id, exigirSucursal(ctx.auth.sucursal_id), {
       cliente_id: body.cliente_id ? String(body.cliente_id) : null,
       cliente_nombre: clienteNombre,
       cliente_ruc: body.cliente_ruc ? String(body.cliente_ruc) : null,

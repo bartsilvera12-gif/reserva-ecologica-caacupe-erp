@@ -6,6 +6,8 @@ export type UsuarioErpBasico = {
   id: string;
   empresa_id: string | null;
   rol: string | null;
+  /** Sucursal del usuario. Ver `src/lib/sucursales/filtro.ts` para el contrato. */
+  sucursal_predeterminada_id: string | null;
 };
 
 /**
@@ -20,7 +22,7 @@ export async function resolveUsuarioErpFromAuthUser(
 
   const { data: byAuth, error: errAuth } = await supabase
     .from("usuarios")
-    .select("id, empresa_id, rol")
+    .select("id, empresa_id, rol, sucursal_predeterminada_id")
     .eq("auth_user_id", user.id)
     .limit(1);
   if (errAuth) {
@@ -48,7 +50,7 @@ export async function resolveUsuarioErpFromAuthUser(
   for (const em of emailsToTry) {
     const { data: rows, error } = await supabase
       .from("usuarios")
-      .select("id, empresa_id, rol")
+      .select("id, empresa_id, rol, sucursal_predeterminada_id")
       .ilike("email", em)
       .limit(1);
     if (error) {

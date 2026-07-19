@@ -3,6 +3,7 @@ import { getChatServiceClientForEmpresa } from "@/app/api/chat/_chat-service-cli
 import { errorResponse, successResponse } from "@/lib/api/response";
 import { requireProyectosApiAccess } from "@/lib/proyectos/proyectos-auth";
 import { asMetadataObject } from "@/lib/caja/facturacion";
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 
 /**
  * GET /api/caja/pedidos-pendientes
@@ -22,6 +23,7 @@ export async function GET(request: Request) {
       .from("proyectos")
       .select("id, titulo, cliente_id, monto_vendido, fecha_ingreso, created_at, brief_data, metadata")
       .eq("empresa_id", auth.empresaId)
+      .eq("sucursal_id", exigirSucursal(auth.sucursal_id))
       .eq("archivado", false)
       .eq("metadata->>facturacion_estado", "pendiente_caja")
       .order("last_activity_at", { ascending: false })
@@ -56,6 +58,8 @@ export async function GET(request: Request) {
 
     return NextResponse.json(successResponse({ pedidos }));
   } catch (e) {
+    const rSuc = respuestaSucursalNoAsignada(e);
+    if (rSuc) return rSuc;
     const msg = e instanceof Error ? e.message : "Error";
     return NextResponse.json(errorResponse(msg), { status: 500 });
   }

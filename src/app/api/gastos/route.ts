@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 
 /**
  * GET /api/gastos
@@ -18,6 +19,7 @@ export async function GET(request: NextRequest) {
       .from("gastos")
       .select("*")
       .eq("empresa_id", auth.empresa_id)
+      .eq("sucursal_id", exigirSucursal(auth.sucursal_id))
       .order("fecha", { ascending: false });
 
     if (error) {
@@ -25,6 +27,8 @@ export async function GET(request: NextRequest) {
     }
     return NextResponse.json(successResponse(data ?? []));
   } catch (err) {
+    const rSuc = respuestaSucursalNoAsignada(err);
+    if (rSuc) return rSuc;
     const msg = err instanceof Error ? err.message : "Error";
     return NextResponse.json(errorResponse(msg), { status: 500 });
   }

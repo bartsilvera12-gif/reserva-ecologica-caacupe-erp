@@ -8,6 +8,7 @@ import {
   StockInsuficienteError,
   type CreateVentaItemInput,
 } from "@/lib/ventas/server/create-venta-pg";
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 
 /**
  * POST /api/ventas/[id]/regenerar
@@ -147,6 +148,7 @@ export async function POST(
       } = await createVentaTransaccionalPg({
         schema,
         empresaId,
+        sucursalId: exigirSucursal(auth.sucursal_id),
         clienteId: venta.cliente_id,
         observaciones: `Regenerada desde ${venta.numero_control} (anulada).`,
         moneda,
@@ -188,6 +190,8 @@ export async function POST(
       throw err;
     }
   } catch (err) {
+    const rSuc = respuestaSucursalNoAsignada(err);
+    if (rSuc) return rSuc;
     const msg = err instanceof Error ? err.message : "No se pudo regenerar la venta.";
     console.error("[/api/ventas/[id]/regenerar]", msg);
     return NextResponse.json(errorResponse(msg), { status: 500 });

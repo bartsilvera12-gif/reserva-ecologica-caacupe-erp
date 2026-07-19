@@ -7,6 +7,7 @@ import { fechaMasDiasCalendario, fechaVencimientoSuscripcion, toCalendarDateStr 
 import { montosFacturaItemParaInsert, tasaIvaDesdeIvaTipo } from "@/lib/facturacion/factura-item-montos";
 import { descripcionLineaFacturaPorDefecto, parseFacturaPostTipo } from "@/lib/facturacion/factura-post-tipo";
 import { obtenerSiguienteNumeroFacturaEmpresa } from "@/lib/facturacion/factura-suscripcion-servidor";
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 
 
 export async function GET(request: NextRequest) {
@@ -24,6 +25,7 @@ export async function GET(request: NextRequest) {
       .from("facturas")
       .select("*")
       .eq("empresa_id", auth.empresa_id)
+      .eq("sucursal_id", exigirSucursal(auth.sucursal_id))
       .order("fecha", { ascending: false });
 
     if (clienteId) {
@@ -74,6 +76,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(successResponse(enriched));
   } catch (err) {
+    const rSuc = respuestaSucursalNoAsignada(err);
+    if (rSuc) return rSuc;
     const msg = err instanceof Error ? err.message : "Error";
     return NextResponse.json(errorResponse(msg), { status: 500 });
   }

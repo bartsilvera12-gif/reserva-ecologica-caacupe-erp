@@ -52,6 +52,13 @@ export interface CreateVentaPedidoCocinaInput {
 export interface CreateVentaPgParams {
   schema: string;
   empresaId: string;
+  /**
+   * Sucursal en la que se registra la venta. Obligatoria: de ella dependen los
+   * correlativos (VTA-, NR-, FAC-), que son SERIES INDEPENDIENTES por sucursal.
+   * Sin esto las dos sucursales compartirían numeración y se interlazarían las
+   * series, que es un problema fiscal, no cosmético.
+   */
+  sucursalId: string;
   clienteId: string | null;
   observaciones: string | null;
   moneda: "GS" | "USD";
@@ -369,6 +376,7 @@ export async function createVentaTransaccionalPg(
       .from("ventas")
       .select("numero_control")
       .eq("empresa_id", params.empresaId)
+      .eq("sucursal_id", params.sucursalId)
       .like("numero_control", "VTA-%")
       .order("numero_control", { ascending: false })
       .limit(1);
@@ -392,6 +400,7 @@ export async function createVentaTransaccionalPg(
       .from("ventas")
       .select("nota_remision_numero")
       .eq("empresa_id", params.empresaId)
+      .eq("sucursal_id", params.sucursalId)
       .like("nota_remision_numero", "NR-%")
       .order("nota_remision_numero", { ascending: false })
       .limit(1);
@@ -416,6 +425,7 @@ export async function createVentaTransaccionalPg(
       .from("ventas")
       .insert({
         empresa_id: params.empresaId,
+        sucursal_id: params.sucursalId,
         cliente_id: params.clienteId,
         numero_control: numeroControl,
         moneda: params.moneda,
@@ -519,6 +529,7 @@ export async function createVentaTransaccionalPg(
 
       const mov = await sb.from("movimientos_inventario").insert({
         empresa_id: params.empresaId,
+        sucursal_id: params.sucursalId,
         producto_id: line.producto_id,
         producto_nombre: line.producto_nombre,
         producto_sku: line.sku,
@@ -552,6 +563,7 @@ export async function createVentaTransaccionalPg(
 
       const mov = await sb.from("movimientos_inventario").insert({
         empresa_id: params.empresaId,
+        sucursal_id: params.sucursalId,
         producto_id: insId,
         producto_nombre: m.nombre,
         producto_sku: m.sku,
@@ -636,6 +648,7 @@ export async function createVentaTransaccionalPg(
 
       const insProy = await sb.from("proyectos").insert({
         empresa_id: params.empresaId,
+        sucursal_id: params.sucursalId,
         cliente_id: params.clienteId,
         tipo_id: tipoId,
         estado_id: estadoId,
@@ -667,6 +680,7 @@ export async function createVentaTransaccionalPg(
         .from("cuentas_por_cobrar")
         .insert({
           empresa_id: params.empresaId,
+          sucursal_id: params.sucursalId,
           cliente_id: params.clienteId,
           venta_id: ventaId,
           numero_venta: numeroControl,
@@ -726,6 +740,7 @@ export async function createVentaTransaccionalPg(
         .from("facturas")
         .select("numero_factura")
         .eq("empresa_id", params.empresaId)
+        .eq("sucursal_id", params.sucursalId)
         .like("numero_factura", "FAC-%")
         .order("numero_factura", { ascending: false })
         .limit(1);
@@ -744,6 +759,7 @@ export async function createVentaTransaccionalPg(
       //    real (el schema ya lo permite tras la migración del puente).
       const facPayload: Record<string, unknown> = {
         empresa_id: params.empresaId,
+        sucursal_id: params.sucursalId,
         cliente_id: params.clienteId ?? null,
         numero_factura: numeroFactura,
         fecha: fechaIso.slice(0, 10),

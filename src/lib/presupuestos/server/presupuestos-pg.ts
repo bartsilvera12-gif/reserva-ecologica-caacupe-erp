@@ -59,12 +59,14 @@ export function calcularItem(it: PresupuestoItemInput) {
 /** Próximo número de control PRE-XXXXXX (best-effort, puede haber carrera multi-usuario). */
 export async function siguienteNumeroControl(
   sb: AppSupabaseClient,
-  empresaId: string
+  empresaId: string,
+  sucursalId: string
 ): Promise<string> {
   const { data, error } = await sb
     .from("presupuestos")
     .select("numero_control")
     .eq("empresa_id", empresaId)
+    .eq("sucursal_id", sucursalId)
     .like("numero_control", "PRE-%")
     .order("numero_control", { ascending: false })
     .limit(1);
@@ -85,6 +87,7 @@ export async function siguienteNumeroControl(
 export async function crearPresupuesto(
   sb: AppSupabaseClient,
   empresaId: string,
+  sucursalId: string,
   input: CrearPresupuestoInput
 ): Promise<{ id: string; numero_control: string }> {
   if (!input.items || input.items.length === 0) {
@@ -107,7 +110,7 @@ export async function crearPresupuesto(
     total += calc.total;
   }
 
-  const numero = await siguienteNumeroControl(sb, empresaId);
+  const numero = await siguienteNumeroControl(sb, empresaId, sucursalId);
   const fechaIso = new Date().toISOString();
   let vencimiento: string | null = null;
   if (input.validez_dias && input.validez_dias > 0) {
@@ -120,6 +123,7 @@ export async function crearPresupuesto(
     .from("presupuestos")
     .insert({
       empresa_id: empresaId,
+      sucursal_id: sucursalId,
       cliente_id: input.cliente_id,
       cliente_nombre: input.cliente_nombre.trim(),
       cliente_ruc: input.cliente_ruc?.trim() || null,
@@ -180,6 +184,7 @@ export async function crearPresupuesto(
 export async function convertirEnPedido(
   sb: AppSupabaseClient,
   empresaId: string,
+  sucursalId: string,
   presupuestoId: string
 ): Promise<{ pedido_id: string }> {
   // Cargar presupuesto + ítems.
@@ -249,6 +254,7 @@ export async function convertirEnPedido(
     .from("proyectos")
     .insert({
       empresa_id: empresaId,
+      sucursal_id: sucursalId,
       cliente_id: p.cliente_id ?? null,
       tipo_id: tipoId,
       estado_id: estadoId,
@@ -313,6 +319,7 @@ export async function facturarPresupuestoDirecto(
   sb: AppSupabaseClient,
   schema: string,
   empresaId: string,
+  sucursalId: string,
   presupuestoId: string,
   auditor: { createdBy: string | null; usuarioNombre: string | null }
 ): Promise<{
@@ -396,6 +403,7 @@ export async function facturarPresupuestoDirecto(
   } = await createVentaTransaccionalPg({
     schema,
     empresaId,
+    sucursalId,
     clienteId: (p.cliente_id as string | null) ?? null,
     observaciones: observacionesVenta.slice(0, 500),
     moneda,

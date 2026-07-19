@@ -3,6 +3,7 @@ import { getTenantSupabaseFromAuthWithRol } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import type { NotaCreditoGlobalListItemDTO } from "@/lib/nota-credito/types";
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 
 const SELECT_LIST =
   "id, monto, motivo, observacion_interna, estado_erp, created_at, factura_id, cliente_id, moneda_snapshot, created_by_user_id, created_by_email_snapshot, created_by_nombre_snapshot, clientes(id, empresa, nombre_contacto, ruc), facturas(id, numero_factura), nota_credito_electronica(estado_sifen, cdc, cdc_factura_origen, last_error, error)";
@@ -112,6 +113,7 @@ export async function GET(request: NextRequest) {
       .from("nota_credito")
       .select(SELECT_LIST, { count: "exact" })
       .eq("empresa_id", auth.empresa_id)
+      .eq("sucursal_id", exigirSucursal(auth.sucursal_id))
       .order("created_at", { ascending: false });
 
     if (idFilter) q = q.in("id", idFilter);
@@ -149,6 +151,8 @@ export async function GET(request: NextRequest) {
       })
     );
   } catch (e) {
+    const rSuc = respuestaSucursalNoAsignada(e);
+    if (rSuc) return rSuc;
     return NextResponse.json(errorResponse(e instanceof Error ? e.message : "Error"), { status: 500 });
   }
 }
