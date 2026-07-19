@@ -1,3 +1,4 @@
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema";
@@ -14,7 +15,7 @@ export async function GET(request: NextRequest) {
     const schema = await fetchDataSchemaForEmpresaId(ctx.auth.empresa_id);
     const mes = normalizarMes(new URL(request.url).searchParams.get("mes"));
     const { start, end } = asuncionMesBoundsUtc(mes);
-    const data = await getEstadoCuenta(schema, ctx.auth.empresa_id, { mes, start, end, mesInicio: `${mes}-01` });
+    const data = await getEstadoCuenta(schema, ctx.auth.empresa_id, exigirSucursal(ctx.auth.sucursal_id), { mes, start, end, mesInicio: `${mes}-01` });
     return NextResponse.json(successResponse(data));
   } catch (err) {
     console.error("[/api/reportes/estado-cuenta]", err instanceof Error ? err.message : err);

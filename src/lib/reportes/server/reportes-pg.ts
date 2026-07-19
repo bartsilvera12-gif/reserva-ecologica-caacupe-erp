@@ -1,3 +1,4 @@
+import { andSucursal } from "@/lib/sucursales/sql";
 /**
  * Agregados SQL server-side para el módulo Reportes (schema reservacaacupe).
  * Fase 1: Estado de cuenta + Proveedores. Solo lectura sobre
@@ -53,9 +54,13 @@ const num = (v: unknown): number => Number(v ?? 0) || 0;
 export async function getEstadoCuenta(
   schemaRaw: string,
   empresaId: string,
+  sucursalId: string,
   b: MesBounds
 ): Promise<EstadoCuentaReporte> {
   const schema = assertAllowedChatDataSchema(schemaRaw);
+  const SUC = andSucursal(sucursalId);
+  const SUC_C = andSucursal(sucursalId, "c.");
+  const SUC_V = andSucursal(sucursalId, "v.");
   const tVentas = quoteSchemaTable(schema, "ventas");
   const tCompras = quoteSchemaTable(schema, "compras");
   const tGastos = quoteSchemaTable(schema, "gastos");
@@ -63,27 +68,27 @@ export async function getEstadoCuenta(
 
   const ventasQ = p.query<{ total: number }>(
     `SELECT COALESCE(SUM(total),0)::float8 AS total FROM ${tVentas}
-      WHERE empresa_id=$1::uuid AND fecha>=$2::timestamptz AND fecha<=$3::timestamptz`,
+      WHERE empresa_id=$1::uuid${SUC} AND fecha>=$2::timestamptz AND fecha<=$3::timestamptz`,
     [empresaId, b.start, b.end]
   );
   const comprasQ = p.query<{ total: number }>(
     `SELECT COALESCE(SUM(total),0)::float8 AS total FROM ${tCompras}
-      WHERE empresa_id=$1::uuid AND fecha>=$2::timestamptz AND fecha<=$3::timestamptz`,
+      WHERE empresa_id=$1::uuid${SUC} AND fecha>=$2::timestamptz AND fecha<=$3::timestamptz`,
     [empresaId, b.start, b.end]
   );
   const gastosQ = p.query<{ total: number }>(
     `SELECT COALESCE(SUM(monto),0)::float8 AS total FROM ${tGastos}
-      WHERE empresa_id=$1::uuid AND fecha>=$2::date AND fecha < ($2::date + interval '1 month')`,
+      WHERE empresa_id=$1::uuid${SUC} AND fecha>=$2::date AND fecha < ($2::date + interval '1 month')`,
     [empresaId, b.mesInicio]
   );
   const porCobrarQ = p.query<{ total: number }>(
     `SELECT COALESCE(SUM(total),0)::float8 AS total FROM ${tVentas}
-      WHERE empresa_id=$1::uuid AND tipo_venta='CREDITO' AND fecha>=$2::timestamptz AND fecha<=$3::timestamptz`,
+      WHERE empresa_id=$1::uuid${SUC} AND tipo_venta='CREDITO' AND fecha>=$2::timestamptz AND fecha<=$3::timestamptz`,
     [empresaId, b.start, b.end]
   );
   const porPagarQ = p.query<{ total: number }>(
     `SELECT COALESCE(SUM(total),0)::float8 AS total FROM ${tCompras}
-      WHERE empresa_id=$1::uuid AND tipo_pago='credito' AND fecha>=$2::timestamptz AND fecha<=$3::timestamptz`,
+      WHERE empresa_id=$1::uuid${SUC} AND tipo_pago='credito' AND fecha>=$2::timestamptz AND fecha<=$3::timestamptz`,
     [empresaId, b.start, b.end]
   );
   // Compras agrupadas por numero_control (modelo plano): una fila por compra real.
@@ -92,18 +97,18 @@ export async function getEstadoCuenta(
         SELECT fecha, 'Venta'::text AS tipo, numero_control AS referencia,
                'Venta a cliente'::text AS descripcion, total::float8 AS entrada, 0::float8 AS salida
           FROM ${tVentas}
-         WHERE empresa_id=$1::uuid AND fecha>=$2::timestamptz AND fecha<=$3::timestamptz
+         WHERE empresa_id=$1::uuid${SUC} AND fecha>=$2::timestamptz AND fecha<=$3::timestamptz
         UNION ALL
         SELECT MIN(fecha) AS fecha, 'Compra'::text, numero_control,
                MIN(proveedor_nombre), 0::float8, SUM(total)::float8
           FROM ${tCompras}
-         WHERE empresa_id=$1::uuid AND fecha>=$2::timestamptz AND fecha<=$3::timestamptz
+         WHERE empresa_id=$1::uuid${SUC} AND fecha>=$2::timestamptz AND fecha<=$3::timestamptz
          GROUP BY numero_control
         UNION ALL
         SELECT fecha::timestamptz, 'Gasto'::text, COALESCE(categoria,''),
                COALESCE(descripcion,''), 0::float8, monto::float8
           FROM ${tGastos}
-         WHERE empresa_id=$1::uuid AND fecha>=$4::date AND fecha < ($4::date + interval '1 month')
+         WHERE empresa_id=$1::uuid${SUC} AND fecha>=$4::date AND fecha < ($4::date + interval '1 month')
       ) m ORDER BY fecha ASC`,
     [empresaId, b.start, b.end, b.mesInicio]
   );
@@ -140,24 +145,28 @@ export async function getEstadoCuenta(
 export async function getReporteProveedores(
   schemaRaw: string,
   empresaId: string,
+  sucursalId: string,
   b: MesBounds
 ): Promise<ProveedoresReporte> {
   const schema = assertAllowedChatDataSchema(schemaRaw);
+  const SUC = andSucursal(sucursalId);
+  const SUC_C = andSucursal(sucursalId, "c.");
+  const SUC_V = andSucursal(sucursalId, "v.");
   const tProv = quoteSchemaTable(schema, "proveedores");
   const tC = quoteSchemaTable(schema, "compras");
   const p = pool();
 
   const totalProvQ = p.query<{ n: number }>(
-    `SELECT count(*)::int AS n FROM ${tProv} WHERE empresa_id=$1::uuid`, [empresaId]);
+    `SELECT count(*)::int AS n FROM ${tProv} WHERE empresa_id=$1::uuid`, [empresaId]);  // proveedores es COMPARTIDO entre sucursales: no lleva sucursal_id
   const mesQ = p.query<{ proveedores: number; total: number }>(
     `SELECT count(DISTINCT proveedor_id)::int AS proveedores, COALESCE(SUM(total),0)::float8 AS total
-       FROM ${tC} WHERE empresa_id=$1::uuid AND fecha>=$2::timestamptz AND fecha<=$3::timestamptz`,
+       FROM ${tC} WHERE empresa_id=$1::uuid${SUC} AND fecha>=$2::timestamptz AND fecha<=$3::timestamptz`,
     [empresaId, b.start, b.end]);
   // Última compra: total de la compra agrupada por numero_control (modelo plano).
   const ultimaQ = p.query<{ numero_control: string; proveedor_nombre: string; total: number; fecha: string }>(
     `SELECT numero_control, MIN(proveedor_nombre) AS proveedor_nombre,
             SUM(total)::float8 AS total, MAX(fecha) AS fecha
-       FROM ${tC} WHERE empresa_id=$1::uuid AND fecha>=$2::timestamptz AND fecha<=$3::timestamptz
+       FROM ${tC} WHERE empresa_id=$1::uuid${SUC} AND fecha>=$2::timestamptz AND fecha<=$3::timestamptz
       GROUP BY numero_control
       ORDER BY MAX(fecha) DESC LIMIT 1`, [empresaId, b.start, b.end]);
   // Proveedores con sus métricas del mes (LEFT JOIN para incluir los sin compras).
@@ -173,7 +182,7 @@ export async function getReporteProveedores(
                 count(DISTINCT numero_control)::int AS cantidad,
                 SUM(total)::float8 AS total,
                 MAX(fecha) AS ultima_compra
-           FROM ${tC} WHERE empresa_id=$1::uuid AND fecha>=$2::timestamptz AND fecha<=$3::timestamptz
+           FROM ${tC} WHERE empresa_id=$1::uuid${SUC} AND fecha>=$2::timestamptz AND fecha<=$3::timestamptz
           GROUP BY proveedor_id
        ) cc ON cc.proveedor_id = pr.id
       WHERE pr.empresa_id=$1::uuid
@@ -201,12 +210,16 @@ export async function getReporteProveedores(
 export async function getReporteCompras(
   schemaRaw: string,
   empresaId: string,
+  sucursalId: string,
   b: MesBounds
 ): Promise<ComprasReporte> {
   const schema = assertAllowedChatDataSchema(schemaRaw);
+  const SUC = andSucursal(sucursalId);
+  const SUC_C = andSucursal(sucursalId, "c.");
+  const SUC_V = andSucursal(sucursalId, "v.");
   const tC = quoteSchemaTable(schema, "compras");
   const p = pool();
-  const per = `c.empresa_id=$1::uuid AND c.fecha>=$2::timestamptz AND c.fecha<=$3::timestamptz`;
+  const per = `c.empresa_id=$1::uuid${SUC_C} AND c.fecha>=$2::timestamptz AND c.fecha<=$3::timestamptz`;
   // Las compras ANULADAS no cuentan en los agregados. Sí se listan en el detalle
   // con badge en la UI para trazabilidad.
   const perActivas = `${per} AND COALESCE(c.estado,'registrada') <> 'anulada'`;
@@ -310,14 +323,18 @@ function normTipoPrecio(v: unknown): TipoPrecioReporte {
 export async function getReporteVentas(
   schemaRaw: string,
   empresaId: string,
+  sucursalId: string,
   b: MesBounds
 ): Promise<VentasReporte> {
   const schema = assertAllowedChatDataSchema(schemaRaw);
+  const SUC = andSucursal(sucursalId);
+  const SUC_C = andSucursal(sucursalId, "c.");
+  const SUC_V = andSucursal(sucursalId, "v.");
   const tV = quoteSchemaTable(schema, "ventas");
   const tVI = quoteSchemaTable(schema, "ventas_items");
   const tCli = quoteSchemaTable(schema, "clientes");
   const p = pool();
-  const perV = `v.empresa_id=$1::uuid AND v.fecha>=$2::timestamptz AND v.fecha<=$3::timestamptz`;
+  const perV = `v.empresa_id=$1::uuid${SUC_V} AND v.fecha>=$2::timestamptz AND v.fecha<=$3::timestamptz`;
   // Las ventas ANULADAS no cuentan en los agregados (totales, ítems, unidades, por producto,
   // por tipo de precio). Sí se listan en el detalle para trazabilidad, con badge en la UI.
   const perVActivas = `${perV} AND COALESCE(v.estado,'completada') <> 'anulada'`;
@@ -417,9 +434,13 @@ export async function getReporteVentas(
 export async function getReporteConciliacion(
   schemaRaw: string,
   empresaId: string,
+  sucursalId: string,
   b: MesBounds
 ): Promise<ConciliacionReporte> {
   const schema = assertAllowedChatDataSchema(schemaRaw);
+  const SUC = andSucursal(sucursalId);
+  const SUC_C = andSucursal(sucursalId, "c.");
+  const SUC_V = andSucursal(sucursalId, "v.");
   const tV = quoteSchemaTable(schema, "ventas");
   const tD = quoteSchemaTable(schema, "ventas_pagos_detalle");
   const tCob = quoteSchemaTable(schema, "cobros_clientes");
@@ -444,7 +465,8 @@ export async function getReporteConciliacion(
         JOIN ${tV} v ON v.id=d.venta_id AND v.empresa_id=d.empresa_id
         LEFT JOIN ${tCli} c ON c.id=v.cliente_id AND c.empresa_id=v.empresa_id
         LEFT JOIN ${tEnt} eb ON eb.id=d.entidad_bancaria_id AND eb.empresa_id=d.empresa_id
-       WHERE d.empresa_id=$1::uuid AND v.fecha>=$2::timestamptz AND v.fecha<=$3::timestamptz
+       -- ventas_pagos_detalle no lleva sucursal_id: se filtra por la venta padre (v).
+       WHERE d.empresa_id=$1::uuid${SUC_V} AND v.fecha>=$2::timestamptz AND v.fecha<=$3::timestamptz
          AND d.metodo_pago IS NOT NULL AND d.metodo_pago <> 'efectivo'
       UNION ALL
       SELECT cc.id::text AS id, 'cobro'::text AS tipo, cc.fecha_pago AS fecha,
