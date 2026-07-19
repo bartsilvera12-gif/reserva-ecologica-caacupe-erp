@@ -1,3 +1,4 @@
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
@@ -97,6 +98,7 @@ export async function POST(request: NextRequest) {
       await crearFacturaInicialSuscripcionSiCorresponde({
         supabase,
         empresaId: auth.empresa_id,
+        sucursalId: exigirSucursal(auth.sucursal_id),
         suscripcion: {
           id: data.id,
           cliente_id: data.cliente_id,

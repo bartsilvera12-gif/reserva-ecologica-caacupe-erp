@@ -1,3 +1,4 @@
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 import { NextRequest, NextResponse } from "next/server";
 import { isAdmin } from "@/lib/middleware/auth";
 import { successResponse, errorResponse } from "@/lib/api/response";
@@ -78,6 +79,7 @@ export async function GET(
         .select("id", { count: "exact", head: true })
         .eq("cliente_id", clienteId)
         .eq("empresa_id", auth.empresa_id)
+      .eq("sucursal_id", exigirSucursal(auth.sucursal_id))
         .eq("estado", "Pagado"),
       supabase
         .from("facturas")
@@ -85,7 +87,15 @@ export async function GET(
         .eq("cliente_id", clienteId)
         .eq("empresa_id", auth.empresa_id)
         .neq("estado", "Anulado"),
-      supabase.from("ventas").select("id").eq("cliente_id", clienteId).limit(1),
+      // Antes esta consulta no filtraba por empresa: leia ventas de CUALQUIER
+      // empresa del schema. Se agregan empresa_id y sucursal_id.
+      supabase
+        .from("ventas")
+        .select("id")
+        .eq("empresa_id", auth.empresa_id)
+        .eq("sucursal_id", exigirSucursal(auth.sucursal_id))
+        .eq("cliente_id", clienteId)
+        .limit(1),
       supabase.from("tipificaciones").select("id").eq("cliente_id", clienteId).limit(1),
     ]);
 
@@ -103,7 +113,8 @@ export async function GET(
       .from("facturas")
       .select("id")
       .eq("cliente_id", clienteId)
-      .eq("empresa_id", auth.empresa_id);
+      .eq("empresa_id", auth.empresa_id)
+      .eq("sucursal_id", exigirSucursal(auth.sucursal_id));
 
     const facIds = (facIdsRows ?? []).map((r: { id: string }) => r.id).filter(Boolean);
     let pagosRegistradosCount = 0;
@@ -114,7 +125,8 @@ export async function GET(
         .from("pagos")
         .select("id", { count: "exact", head: true })
         .in("factura_id", chunk)
-        .eq("empresa_id", auth.empresa_id);
+        .eq("empresa_id", auth.empresa_id)
+      .eq("sucursal_id", exigirSucursal(auth.sucursal_id));
       pagosRegistradosCount += count ?? 0;
     }
 

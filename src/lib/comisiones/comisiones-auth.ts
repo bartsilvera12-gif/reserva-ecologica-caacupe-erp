@@ -10,7 +10,7 @@ import {
 import { esRolAdminEmpresaOGlobal } from "@/lib/auth/rol-empresa";
 
 export type ComisionesApiAuth =
-  | { ok: true; empresaId: string; usuarioCatalogId: string; rol: string | null }
+  | { ok: true; empresaId: string; usuarioCatalogId: string; rol: string | null; sucursal_id: string | null }
   | { ok: false; status: number; message: string };
 
 /** Acceso al módulo Comisiones (slug `comisiones` en empresa ∩ usuario). */
@@ -32,11 +32,11 @@ export async function requireComisionesModuleAccess(request: Request): Promise<C
 
   const rol = (usuario.rol ?? "").trim();
   if (rol === "super_admin") {
-    return { ok: true, empresaId: usuario.empresa_id, usuarioCatalogId: usuario.id, rol };
+    return { ok: true, empresaId: usuario.empresa_id, usuarioCatalogId: usuario.id, rol, sucursal_id: usuario.sucursal_predeterminada_id ?? null };
   }
 
   if (isBootstrapSuperAdminEmail(user.email)) {
-    return { ok: true, empresaId: usuario.empresa_id, usuarioCatalogId: usuario.id, rol };
+    return { ok: true, empresaId: usuario.empresa_id, usuarioCatalogId: usuario.id, rol, sucursal_id: usuario.sucursal_predeterminada_id ?? null };
   }
 
   /**
@@ -44,7 +44,7 @@ export async function requireComisionesModuleAccess(request: Request): Promise<C
    * ese listado puede no incluir `configuracion` ni `comisiones` aun así entren a Configuración.
    */
   if (esRolAdminEmpresa(usuario.rol)) {
-    return { ok: true, empresaId: usuario.empresa_id, usuarioCatalogId: usuario.id, rol };
+    return { ok: true, empresaId: usuario.empresa_id, usuarioCatalogId: usuario.id, rol, sucursal_id: usuario.sucursal_predeterminada_id ?? null };
   }
 
   const modulos = await resolveEffectiveModules(catalog, {
@@ -73,7 +73,7 @@ export async function requireComisionesModuleAccess(request: Request): Promise<C
     };
   }
 
-  return { ok: true, empresaId: usuario.empresa_id, usuarioCatalogId: usuario.id, rol: usuario.rol };
+  return { ok: true, empresaId: usuario.empresa_id, usuarioCatalogId: usuario.id, rol: usuario.rol, sucursal_id: usuario.sucursal_predeterminada_id ?? null };
 }
 
 /** Admin global / admin empresa / super_admin: configuración de políticas y escalas. */

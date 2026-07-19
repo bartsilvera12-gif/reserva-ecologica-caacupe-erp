@@ -1,3 +1,4 @@
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 import { NextResponse } from "next/server";
 import { getChatServiceClientForEmpresa } from "@/app/api/chat/_chat-service-client";
 import { computePreviewPeriod } from "@/lib/comisiones/comision-period";
@@ -64,7 +65,8 @@ function esErrorTablaNoDisponible(message: string): boolean {
 
 async function cargarNcAprobadasPorFacturaId(
   sb: Awaited<ReturnType<typeof getChatServiceClientForEmpresa>>,
-  empresaId: string
+  empresaId: string,
+  sucursalId: string
 ): Promise<{ ncMap: Map<string, number>; alertaNetoSinNc?: string }> {
   const ncRowsRaw: Record<string, unknown>[] = [];
   try {
@@ -79,6 +81,7 @@ async function cargarNcAprobadasPorFacturaId(
         .from("nota_credito")
         .select("factura_id, monto, estado_erp")
         .eq("empresa_id", empresaId)
+        .eq("sucursal_id", sucursalId)
         .range(from, from + PAGE - 1);
       if (error) {
         if (esErrorTablaNoDisponible(error.message)) {
@@ -233,6 +236,7 @@ export async function GET(request: Request) {
   const catalog = createServiceRoleClient();
   const sb = await getChatServiceClientForEmpresa(auth.empresaId);
   const empresaId = auth.empresaId;
+  const sucursalId = exigirSucursal(auth.sucursal_id);
 
   try {
     const { data: politicaRaw } = await sb
@@ -333,7 +337,7 @@ export async function GET(request: Request) {
       clienteVendedor.set(id, typeof v === "string" && v.trim() ? v.trim() : null);
     }
 
-    const { ncMap, alertaNetoSinNc } = await cargarNcAprobadasPorFacturaId(sb, empresaId);
+    const { ncMap, alertaNetoSinNc } = await cargarNcAprobadasPorFacturaId(sb, empresaId, sucursalId);
 
     const clientesAsignadosAutenticado = clientesRows.filter((c) => {
       const v = c.vendedor_usuario_id;
@@ -377,6 +381,7 @@ export async function GET(request: Request) {
             .from("pagos")
             .select("id, factura_id, monto, fecha_pago")
             .eq("empresa_id", empresaId)
+            .eq("sucursal_id", sucursalId)
             .gte("fecha_pago", desdeYmd)
             .lte("fecha_pago", hastaYmd)
             .range(from, from + PAGE - 1);
@@ -391,7 +396,7 @@ export async function GET(request: Request) {
       const facturasPorId = new Map<string, FacturaPreviewRow>();
       for (let i = 0; i < facturaIds.length; i += 120) {
         const slice = facturaIds.slice(i, i + 120);
-        const { data: facts, error } = await sb.from("facturas").select("*").eq("empresa_id", empresaId).in("id", slice);
+        const { data: facts, error } = await sb.from("facturas").select("*").eq("empresa_id", empresaId).eq("sucursal_id", sucursalId).in("id", slice);
         if (error) throw new Error(error.message);
         for (const f of facts ?? []) {
           const fr = f as unknown as FacturaPreviewRow;
@@ -439,6 +444,7 @@ export async function GET(request: Request) {
           .from("facturas")
           .select("*")
           .eq("empresa_id", empresaId)
+          .eq("sucursal_id", sucursalId)
           .gte("fecha", desdeYmd)
           .lte("fecha", hastaYmd)
           .range(from, from + PAGE - 1);
@@ -456,6 +462,7 @@ export async function GET(request: Request) {
           .from("pagos")
           .select("factura_id, monto, fecha_pago")
           .eq("empresa_id", empresaId)
+          .eq("sucursal_id", sucursalId)
           .in("factura_id", slice)
           .gte("fecha_pago", desdeYmd)
           .lte("fecha_pago", hastaYmd);
@@ -507,6 +514,7 @@ export async function GET(request: Request) {
           .from("pagos")
           .select("factura_id, fecha_pago, monto")
           .eq("empresa_id", empresaId)
+          .eq("sucursal_id", sucursalId)
           .lte("fecha_pago", hastaYmd)
           .range(from, from + PAGE - 1);
         if (error) throw new Error(error.message);
@@ -538,7 +546,7 @@ export async function GET(request: Request) {
       const facturaIds = candidatos.map(([id]) => id);
       for (let i = 0; i < facturaIds.length; i += 80) {
         const slice = facturaIds.slice(i, i + 80);
-        const { data: facts, error } = await sb.from("facturas").select("*").eq("empresa_id", empresaId).in("id", slice);
+        const { data: facts, error } = await sb.from("facturas").select("*").eq("empresa_id", empresaId).eq("sucursal_id", sucursalId).in("id", slice);
         if (error) throw new Error(error.message);
         for (const row of facts ?? []) {
           const fac = row as unknown as FacturaPreviewRow;

@@ -193,6 +193,7 @@ export async function POST(request: NextRequest) {
       referencia: referencia?.trim() || null,
       cliente_id: factura.cliente_id ?? null,
       usuario_id: auth.user?.id ?? null,
+      sucursal_id: exigirSucursal(auth.sucursal_id),
     };
 
     const { data, error } = await supabase

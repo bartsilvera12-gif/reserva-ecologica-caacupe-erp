@@ -71,6 +71,8 @@ export async function getGastos(): Promise<Gasto[]> {
   const { data, error } = await supabase
     .from("gastos")
     .select("*")
+    .eq("empresa_id", await getEmpresaId())
+    .eq("sucursal_id", await getSucursalId())
     .order("fecha", { ascending: false });
 
   if (error) throw new Error(error.message);
@@ -86,6 +88,8 @@ export async function getGastosMesActual(): Promise<Gasto[]> {
   const { data, error } = await supabase
     .from("gastos")
     .select("*")
+    .eq("empresa_id", await getEmpresaId())
+    .eq("sucursal_id", await getSucursalId())
     .gte("fecha", inicioMes)
     .lte("fecha", finMes)
     .order("fecha", { ascending: false });
@@ -141,6 +145,8 @@ export async function updateGasto(id: string, input: Partial<GastoInput>): Promi
   const { data, error } = await supabase
     .from("gastos")
     .update(update)
+    .eq("empresa_id", await getEmpresaId())
+    .eq("sucursal_id", await getSucursalId())
     .eq("id", id)
     .select()
     .single();
@@ -151,7 +157,14 @@ export async function updateGasto(id: string, input: Partial<GastoInput>): Promi
 
 export async function deleteGasto(id: string): Promise<void> {
   const supabase = await getBrowserSupabaseForEmpresaData();
-  const { error } = await supabase.from("gastos").delete().eq("id", id);
+  // Antes era .delete().eq("id", id) a secas: podia borrar el gasto de otra
+  // empresa o sucursal si se conocia el UUID.
+  const { error } = await supabase
+    .from("gastos")
+    .delete()
+    .eq("empresa_id", await getEmpresaId())
+    .eq("sucursal_id", await getSucursalId())
+    .eq("id", id);
 
   if (error) throw new Error(error.message);
 }

@@ -1,3 +1,4 @@
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 import { NextRequest, NextResponse } from "next/server";
 import { getFacturasSupabaseFromAuth } from "@/lib/facturacion/facturas-service-client";
 import { successResponse, errorResponse } from "@/lib/api/response";
@@ -104,7 +105,7 @@ export async function POST(
       );
     }
 
-    const numeroFactura = await obtenerSiguienteNumeroFacturaEmpresa(supabase, auth.empresa_id);
+    const numeroFactura = await obtenerSiguienteNumeroFacturaEmpresa(supabase, auth.empresa_id, exigirSucursal(auth.sucursal_id));
     const monto = Number(susUso.precio);
     const moneda = susUso.moneda === "USD" ? "USD" : "GS";
 
@@ -112,6 +113,7 @@ export async function POST(
       .from("facturas")
       .insert({
         empresa_id: auth.empresa_id,
+        sucursal_id: exigirSucursal(auth.sucursal_id),
         cliente_id: clienteId,
         suscripcion_id: susUso.id,
         numero_factura: numeroFactura,

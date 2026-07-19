@@ -1,3 +1,4 @@
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
@@ -38,6 +39,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
       .from("ventas")
       .select("total")
       .eq("empresa_id", empresaId)
+      .eq("sucursal_id", exigirSucursal(ctx.auth.sucursal_id))
       .eq("cliente_id", id);
     if (vq.error) throw new Error(vq.error.message);
     const totalVendido = ((vq.data ?? []) as Record<string, unknown>[]).reduce((acc, r) => acc + (Number(r.total) || 0), 0);
@@ -47,6 +49,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
       .from("cuentas_por_cobrar")
       .select("id, venta_id, numero_venta, fecha_emision, fecha_vencimiento, moneda, total, saldo, estado")
       .eq("empresa_id", empresaId)
+      .eq("sucursal_id", exigirSucursal(ctx.auth.sucursal_id))
       .eq("cliente_id", id)
       .order("fecha_emision", { ascending: false });
     if (cxcQ.error) throw new Error(cxcQ.error.message);
@@ -79,6 +82,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
       .from("cobros_clientes")
       .select("id, cuenta_por_cobrar_id, venta_id, fecha_pago, monto, metodo_pago, referencia")
       .eq("empresa_id", empresaId)
+      .eq("sucursal_id", exigirSucursal(ctx.auth.sucursal_id))
       .eq("cliente_id", id)
       .order("fecha_pago", { ascending: false })
       .limit(500);

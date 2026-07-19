@@ -1,3 +1,4 @@
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 import { NextRequest, NextResponse } from "next/server";
 import { getFacturasSupabaseFromAuth } from "@/lib/facturacion/facturas-service-client";
 import { successResponse, errorResponse } from "@/lib/api/response";
@@ -70,7 +71,8 @@ export async function GET(
       .select("id, fecha, fecha_vencimiento, saldo, estado")
       .eq("cliente_id", clienteId)
       .eq("suscripcion_id", suscripcion.id)
-      .eq("empresa_id", auth.empresa_id);
+      .eq("empresa_id", auth.empresa_id)
+      .eq("sucursal_id", exigirSucursal(auth.sucursal_id));
 
     if (errFact) {
       return NextResponse.json(errorResponse(errFact.message), { status: 400 });

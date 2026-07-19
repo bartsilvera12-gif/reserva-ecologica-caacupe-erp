@@ -1,3 +1,4 @@
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { membreteA4 } from "@/lib/documentos/membrete";
@@ -50,13 +51,15 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
     direccion: s(c.direccion) || null,
   };
 
-  const vq = await ctx.supabase.from("ventas").select("total").eq("empresa_id", empresaId).eq("cliente_id", id);
+  const vq = await ctx.supabase.from("ventas").select("total").eq("empresa_id", empresaId)
+      .eq("sucursal_id", exigirSucursal(ctx.auth.sucursal_id)).eq("cliente_id", id);
   const totalVendido = ((vq.data ?? []) as Record<string, unknown>[]).reduce((a, r) => a + (Number(r.total) || 0), 0);
 
   const cxcQ = await ctx.supabase
     .from("cuentas_por_cobrar")
     .select("numero_venta, fecha_emision, fecha_vencimiento, total, saldo, estado")
-    .eq("empresa_id", empresaId).eq("cliente_id", id).order("fecha_emision", { ascending: false });
+    .eq("empresa_id", empresaId)
+      .eq("sucursal_id", exigirSucursal(ctx.auth.sucursal_id)).eq("cliente_id", id).order("fecha_emision", { ascending: false });
   let saldoPendiente = 0, vencido = 0;
   const movs = ((cxcQ.data ?? []) as Record<string, unknown>[]).map((r) => {
     const total = Number(r.total) || 0, saldo = Number(r.saldo) || 0;
@@ -71,7 +74,8 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   const cobQ = await ctx.supabase
     .from("cobros_clientes")
     .select("fecha_pago, monto, metodo_pago, referencia, usuario_nombre")
-    .eq("empresa_id", empresaId).eq("cliente_id", id).order("fecha_pago", { ascending: false }).limit(500);
+    .eq("empresa_id", empresaId)
+      .eq("sucursal_id", exigirSucursal(ctx.auth.sucursal_id)).eq("cliente_id", id).order("fecha_pago", { ascending: false }).limit(500);
   const cobros = (cobQ.data ?? []) as Record<string, unknown>[];
 
   let nombreEmpresa: string | null = null;

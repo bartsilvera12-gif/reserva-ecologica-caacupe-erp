@@ -9,7 +9,8 @@ import { aplicarPlanPendienteSiVencido } from "./suscripcion-plan-pendiente";
 
 export async function obtenerSiguienteNumeroFacturaEmpresa(
   supabase: AppSupabaseClient,
-  empresaId: string
+  empresaId: string,
+  sucursalId: string
 ): Promise<string> {
   const prefijoDefault = process.env.FACTURA_PREFIJO ?? "FAC-";
 
@@ -27,6 +28,7 @@ export async function obtenerSiguienteNumeroFacturaEmpresa(
     .from("facturas")
     .select("numero_factura")
     .eq("empresa_id", empresaId)
+    .eq("sucursal_id", sucursalId)
     .order("created_at", { ascending: false })
     .order("updated_at", { ascending: false })
     .limit(1)
@@ -46,6 +48,7 @@ export async function obtenerSiguienteNumeroFacturaEmpresa(
       .from("facturas")
       .select("numero_factura")
       .eq("empresa_id", empresaId)
+      .eq("sucursal_id", sucursalId)
       .range(from, from + pageSize - 1);
     if (pageErr || !page?.length) break;
     for (const r of page) {
@@ -78,9 +81,10 @@ export type SuscripcionFacturaRow = {
 export async function crearFacturaInicialSuscripcionSiCorresponde(opts: {
   supabase: AppSupabaseClient;
   empresaId: string;
+  sucursalId: string;
   suscripcion: SuscripcionFacturaRow;
 }): Promise<void> {
-  const { supabase, empresaId, suscripcion } = opts;
+  const { supabase, empresaId, sucursalId, suscripcion } = opts;
   await aplicarPlanPendienteSiVencido({
     supabase,
     empresaId,
@@ -117,6 +121,7 @@ export async function crearFacturaInicialSuscripcionSiCorresponde(opts: {
     .eq("cliente_id", sRow.cliente_id)
     .eq("suscripcion_id", sRow.id)
     .eq("empresa_id", empresaId)
+    .eq("sucursal_id", sucursalId)
     .gte("fecha", `${mesActual}-01`)
     .lt("fecha", `${mesSiguiente}-01`)
     .limit(1);
@@ -126,7 +131,7 @@ export async function crearFacturaInicialSuscripcionSiCorresponde(opts: {
   const monto = Number(sRow.precio);
   if (!Number.isFinite(monto) || monto <= 0) return;
 
-  const numeroFactura = await obtenerSiguienteNumeroFacturaEmpresa(supabase, empresaId);
+  const numeroFactura = await obtenerSiguienteNumeroFacturaEmpresa(supabase, empresaId, sucursalId);
   const moneda = sRow.moneda === "USD" ? "USD" : "GS";
   const diaVencCfg = Math.min(Math.max(1, Number(sRow.dia_vencimiento) || 10), 31);
   const fechaVenc = fechaVencimientoSuscripcion(hoy, diaVencCfg);
@@ -135,6 +140,7 @@ export async function crearFacturaInicialSuscripcionSiCorresponde(opts: {
     .from("facturas")
     .insert({
       empresa_id: empresaId,
+      sucursal_id: sucursalId,
       cliente_id: sRow.cliente_id,
       suscripcion_id: sRow.id,
       numero_factura: numeroFactura,

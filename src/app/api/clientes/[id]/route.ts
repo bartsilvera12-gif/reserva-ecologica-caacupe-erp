@@ -1,3 +1,4 @@
+import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 import { NextRequest, NextResponse } from "next/server";
 import { isAdmin } from "@/lib/middleware/auth";
 import { successResponse, errorResponse } from "@/lib/api/response";
@@ -236,6 +237,7 @@ export async function DELETE(
         .select("id")
         .eq("cliente_id", clienteId)
         .eq("empresa_id", auth.empresa_id)
+      .eq("sucursal_id", exigirSucursal(auth.sucursal_id))
         .eq("estado", "activa"),
       supabase
         .from("facturas")
@@ -305,7 +307,8 @@ export async function DELETE(
           .from("facturas")
           .update({ estado: "Anulado", saldo: 0, updated_at: now })
           .in("id", facturaIds)
-          .eq("empresa_id", auth.empresa_id);
+          .eq("empresa_id", auth.empresa_id)
+      .eq("sucursal_id", exigirSucursal(auth.sucursal_id));
 
         if (errF) {
           return NextResponse.json(errorResponse("Error al anular facturas: " + errF.message), { status: 500 });
