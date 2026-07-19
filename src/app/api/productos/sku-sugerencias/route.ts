@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
+import { aplicarFiltroSucursal } from "@/lib/sucursales/filtro";
 
 /**
  * GET /api/productos/sku-sugerencias?tipo=<reventa|menu|materia>
@@ -33,10 +34,12 @@ export async function GET(request: NextRequest) {
     const tipo = (new URL(request.url).searchParams.get("tipo") ?? "reventa").toLowerCase();
     const prefijoTipo = PREFIJO_TIPO[tipo] ?? "REV";
 
-    const { data, error } = await ctx.supabase
-      .from("productos")
-      .select("sku")
-      .eq("empresa_id", ctx.auth.empresa_id);
+    // Por sucursal: el correlativo de SKU es independiente en cada una, igual
+    // que el único (empresa_id, sucursal_id, sku).
+    const { data, error } = await aplicarFiltroSucursal(
+      ctx.supabase.from("productos").select("sku").eq("empresa_id", ctx.auth.empresa_id),
+      ctx.auth.sucursal_id
+    );
     if (error) throw new Error(error.message);
 
     // prefix -> { maxNum, width }

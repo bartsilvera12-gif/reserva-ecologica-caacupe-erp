@@ -17,8 +17,16 @@ export type ApiAuthContext = {
   user: User;
   /** null solo cuando forDataSchemaEndpoint y super_admin sin empresa. */
   empresa_id: string | null;
-  /** PK `zentra_erp.usuarios.id` cuando se resolvió la fila (service role o RLS). */
+  /** PK `usuarios.id` del schema del tenant, cuando se resolvió la fila (service role o RLS). */
   usuarioCatalogId?: string | null;
+  /**
+   * Sucursal activa del usuario (`usuarios.sucursal_predeterminada_id`).
+   *
+   * `null` significa "no filtrar por sucursal" — es el comportamiento previo a
+   * multi-sucursal. Nunca se debe traducir un `null` a un filtro vacío: eso
+   * dejaría al usuario sin ver NADA. Ver `aplicarFiltroSucursal`.
+   */
+  sucursal_id?: string | null;
   /** Cliente anon + JWT del usuario (cookies o Bearer). PostgREST respeta RLS en zentra_erp. */
   userScopedSupabase: AppSupabaseClient;
   usuarioRol?: string | null;
@@ -59,6 +67,7 @@ type UsuarioRow = {
   empresa_id?: string | null;
   rol?: string | null;
   nombre?: string | null;
+  sucursal_predeterminada_id?: string | null;
 };
 
 export type ResolveApiAuthOptions = {
@@ -175,7 +184,7 @@ async function resolveApiAuthContextUncached(
     if (user.id) {
       const { data: byId, error: e1 } = await sr
         .from("usuarios")
-        .select("id, empresa_id, rol, nombre")
+        .select("id, empresa_id, rol, nombre, sucursal_predeterminada_id")
         .eq("auth_user_id", user.id)
         .limit(1);
       if (e1) lastUsuarioErr = e1.message;
@@ -185,7 +194,7 @@ async function resolveApiAuthContextUncached(
       for (const em of usuarioEmailLookupVariants(user.email)) {
         const { data: rows, error: uErr } = await sr
           .from("usuarios")
-          .select("id, empresa_id, rol, nombre")
+          .select("id, empresa_id, rol, nombre, sucursal_predeterminada_id")
           .ilike("email", em)
           .limit(1);
         if (uErr) {
@@ -202,7 +211,7 @@ async function resolveApiAuthContextUncached(
     if (user.id) {
       const { data: byId, error: e1 } = await userScopedSupabase
         .from("usuarios")
-        .select("id, empresa_id, rol, nombre")
+        .select("id, empresa_id, rol, nombre, sucursal_predeterminada_id")
         .eq("auth_user_id", user.id)
         .limit(1);
       if (e1) lastUsuarioErr = e1.message;
@@ -212,7 +221,7 @@ async function resolveApiAuthContextUncached(
       for (const em of usuarioEmailLookupVariants(user.email)) {
         const { data: rows, error: uErr } = await userScopedSupabase
           .from("usuarios")
-          .select("id, empresa_id, rol, nombre")
+          .select("id, empresa_id, rol, nombre, sucursal_predeterminada_id")
           .ilike("email", em)
           .limit(1);
         if (uErr) {
@@ -239,6 +248,8 @@ async function resolveApiAuthContextUncached(
   const usuarioRol = row.rol ?? null;
   const usuarioNombre = row.nombre ?? null;
   const usuarioCatalogId = typeof row.id === "string" ? row.id : null;
+  const sucursal_id =
+    typeof row.sucursal_predeterminada_id === "string" ? row.sucursal_predeterminada_id : null;
 
   if (empresa_id) {
     return {
@@ -247,6 +258,7 @@ async function resolveApiAuthContextUncached(
         user,
         empresa_id,
         usuarioCatalogId,
+        sucursal_id,
         userScopedSupabase,
         usuarioRol,
         usuarioNombre,
@@ -261,6 +273,7 @@ async function resolveApiAuthContextUncached(
         user,
         empresa_id: null,
         usuarioCatalogId,
+        sucursal_id,
         userScopedSupabase,
         usuarioRol,
         usuarioNombre,

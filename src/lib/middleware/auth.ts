@@ -5,8 +5,13 @@ import { resolveApiAuthContext } from "@/lib/middleware/api-auth-context";
 export interface UsuarioConEmpresa {
   user: User;
   empresa_id: string;
-  /** PK `zentra_erp.usuarios.id` cuando se resolvió la fila. */
+  /** PK `usuarios.id` del schema del tenant cuando se resolvió la fila. */
   usuarioCatalogId?: string | null;
+  /**
+   * Sucursal activa. `null` = no filtrar (comportamiento previo a multi-sucursal).
+   * Para aplicarla usá `aplicarFiltroSucursal`, que respeta ese contrato.
+   */
+  sucursal_id?: string | null;
 }
 
 export interface UsuarioConEmpresaYRol extends UsuarioConEmpresa {
@@ -29,6 +34,8 @@ export async function getAuthWithRol(request?: Request | null): Promise<UsuarioC
   return {
     user: r.ctx.user,
     empresa_id: r.ctx.empresa_id,
+    usuarioCatalogId: r.ctx.usuarioCatalogId ?? null,
+    sucursal_id: r.ctx.sucursal_id ?? null,
     rol: r.ctx.usuarioRol ?? undefined,
     nombre: r.ctx.usuarioNombre ?? undefined,
   };
@@ -50,5 +57,6 @@ export async function getUserAndEmpresa(request?: Request | null): Promise<Usuar
     user: r.ctx.user,
     empresa_id: r.ctx.empresa_id,
     usuarioCatalogId: r.ctx.usuarioCatalogId ?? null,
+    sucursal_id: r.ctx.sucursal_id ?? null,
   };
 }

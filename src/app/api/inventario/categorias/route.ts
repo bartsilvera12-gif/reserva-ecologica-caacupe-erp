@@ -3,6 +3,7 @@ import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { normalizeUpperText, normalizeUpperNullable } from "@/lib/text/normalize";
+import { aplicarFiltroSucursal, sucursalParaInsert } from "@/lib/sucursales/filtro";
 
 /**
  * GET/POST de categorías de productos vía PostgREST (cliente Supabase).
@@ -15,11 +16,13 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const todas = url.searchParams.get("todas") === "1";
 
-    let q = ctx.supabase
-      .from("categorias_productos")
-      .select("id, empresa_id, nombre, codigo, descripcion, parent_id, activo, created_at, updated_at")
-      .eq("empresa_id", ctx.auth.empresa_id)
-      .order("nombre");
+    let q = aplicarFiltroSucursal(
+      ctx.supabase
+        .from("categorias_productos")
+        .select("id, empresa_id, nombre, codigo, descripcion, parent_id, activo, created_at, updated_at")
+        .eq("empresa_id", ctx.auth.empresa_id),
+      ctx.auth.sucursal_id
+    ).order("nombre");
     if (!todas) q = q.eq("activo", true);
     const { data, error } = await q;
     if (error) throw new Error(error.message);
@@ -50,12 +53,16 @@ export async function POST(request: NextRequest) {
     if (!nombre) return NextResponse.json(errorResponse("El nombre es obligatorio."), { status: 400 });
 
     // Pre-check duplicado por nombre (case-insensitive vía ilike).
-    const dup = await ctx.supabase
-      .from("categorias_productos")
-      .select("id")
-      .eq("empresa_id", ctx.auth.empresa_id)
-      .ilike("nombre", nombre)
-      .limit(1);
+    // El único de nombre ahora incluye la sucursal, así que el pre-check también:
+    // dos sucursales SÍ pueden tener una categoría con el mismo nombre.
+    const dup = await aplicarFiltroSucursal(
+      ctx.supabase
+        .from("categorias_productos")
+        .select("id")
+        .eq("empresa_id", ctx.auth.empresa_id)
+        .ilike("nombre", nombre),
+      ctx.auth.sucursal_id
+    ).limit(1);
     if (dup.error) {
       console.error("[/api/inventario/categorias POST] pre-check", dup.error.message);
       return NextResponse.json(errorResponse("No se pudo crear la categoría."), { status: 500 });
@@ -74,6 +81,7 @@ export async function POST(request: NextRequest) {
       .from("categorias_productos")
       .insert({
         empresa_id: ctx.auth.empresa_id,
+        sucursal_id: sucursalParaInsert(ctx.auth.sucursal_id),
         nombre,
         codigo,
         descripcion: normalizeUpperNullable(body.descripcion) ?? null,

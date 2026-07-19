@@ -3,6 +3,7 @@ import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { signProductoImagen } from "@/lib/inventario/imagen-storage";
+import { aplicarFiltroSucursal } from "@/lib/sucursales/filtro";
 
 interface ProductoSearchHit {
   id: string;
@@ -72,6 +73,8 @@ export async function GET(request: NextRequest) {
       .eq("empresa_id", empresaId)
       .eq("activo", true)
       .eq("es_vendible", true);
+
+    query = aplicarFiltroSucursal(query, auth.sucursal_id);
 
     if (q.length > 0) {
       const pat = `%${escapeIlikePattern(q)}%`;

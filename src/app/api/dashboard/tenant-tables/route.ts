@@ -4,6 +4,7 @@ import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema"
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { ymdInicioFinMesLocal } from "@/lib/fechas/calendario";
+import { aplicarFiltroSucursal } from "@/lib/sucursales/filtro";
 import { getChatPostgresPool, quoteSchemaTable } from "@/lib/supabase/chat-pg-pool";
 import {
   assertAllowedChatDataSchema,
@@ -282,7 +283,10 @@ export async function GET(request: NextRequest) {
       buildFacturasQ(),
       buildPagosQ(),
       buildTipificacionesQ(),
-      supabase.from("productos").select("*").eq("empresa_id", empresaId).eq("activo", true),
+      aplicarFiltroSucursal(
+        supabase.from("productos").select("*").eq("empresa_id", empresaId).eq("activo", true),
+        auth.sucursal_id
+      ),
       buildVentasQ(),
       ventasItemsParalelo,
       buildComprasQ(),

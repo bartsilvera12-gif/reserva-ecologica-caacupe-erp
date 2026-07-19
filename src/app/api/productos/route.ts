@@ -3,6 +3,7 @@ import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { normalizeUpperText, normalizeUpperCodigoBarras } from "@/lib/text/normalize";
+import { aplicarFiltroSucursal, sucursalParaInsert } from "@/lib/sucursales/filtro";
 import type { AppSupabaseClient } from "@/lib/supabase/schema";
 
 /**
@@ -59,12 +60,14 @@ export async function GET(request: NextRequest) {
   try {
     const ctx = await getTenantSupabaseFromAuth(request);
     if (!ctx) return NextResponse.json(errorResponse(API_ERRORS.UNAUTHORIZED), { status: 401 });
-    const { data, error } = await ctx.supabase
-      .from("productos")
-      .select(PRODUCTO_COLS)
-      .eq("empresa_id", ctx.auth.empresa_id)
-      .eq("activo", true)
-      .order("nombre");
+    const { data, error } = await aplicarFiltroSucursal(
+      ctx.supabase
+        .from("productos")
+        .select(PRODUCTO_COLS)
+        .eq("empresa_id", ctx.auth.empresa_id)
+        .eq("activo", true),
+      ctx.auth.sucursal_id
+    ).order("nombre");
     if (error) throw new Error(error.message);
     const rows = ((data ?? []) as unknown as Record<string, unknown>[]).map(rowToApi);
     return NextResponse.json(successResponse({ productos: rows }));
@@ -148,6 +151,7 @@ export async function POST(request: NextRequest) {
     // Insert principal
     const insertPayload: Record<string, unknown> = {
       empresa_id: empresaId,
+      sucursal_id: sucursalParaInsert(ctx.auth.sucursal_id),
       nombre,
       sku,
       costo_promedio: costoPromedio,
@@ -210,6 +214,7 @@ export async function POST(request: NextRequest) {
     if (stockActual > 0 && controlaStockFinal) {
       const movIns = await sb.from("movimientos_inventario").insert({
         empresa_id: empresaId,
+        sucursal_id: sucursalParaInsert(ctx.auth.sucursal_id),
         producto_id: productoId,
         producto_nombre: nombre,
         producto_sku: sku,
@@ -229,6 +234,7 @@ export async function POST(request: NextRequest) {
     if (categoriaPrincipalId) {
       const pc = await sb.from("producto_categorias").insert({
         empresa_id: empresaId,
+        sucursal_id: sucursalParaInsert(ctx.auth.sucursal_id),
         producto_id: productoId,
         categoria_id: categoriaPrincipalId,
         es_principal: true,
