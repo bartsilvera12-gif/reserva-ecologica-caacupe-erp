@@ -159,11 +159,15 @@ export async function createVentaTransaccionalPg(
   }
 
   // 2) Cargar productos del carrito — TODOS los que existan y pertenezcan a la empresa, sin filtrar controla_stock ni stock>0.
+  //    El filtro por sucursal NO es cosmetico: sin el, un producto_id de otra
+  //    sucursal que llegue en el payload descontaria el stock de ESA sucursal.
+  //    Los ids que no pertenezcan a la sucursal caen en el chequeo de abajo.
   const ids = [...qtyByProduct.keys()];
   const prodQ = await sb
     .from("productos")
     .select("id, stock_actual, costo_promedio, nombre, sku, controla_stock, modo_receta")
     .eq("empresa_id", params.empresaId)
+    .eq("sucursal_id", params.sucursalId)
     .in("id", ids);
   if (prodQ.error) throw new Error(prodQ.error.message);
   const prodRows = (prodQ.data ?? []) as unknown as Array<{

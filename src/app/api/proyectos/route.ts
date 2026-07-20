@@ -94,6 +94,7 @@ export async function GET(request: Request) {
           .from("proyectos")
           .select("*")
           .eq("empresa_id", empresaId)
+          .eq("sucursal_id", sucursalId)
           .eq("archivado", archivado)
           .in("id", allIds);
         if (estadoId) q = q.eq("estado_id", estadoId);

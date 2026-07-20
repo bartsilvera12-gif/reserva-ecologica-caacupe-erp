@@ -94,6 +94,7 @@ export async function POST(
       .eq("cliente_id", clienteId)
       .eq("suscripcion_id", susUso.id)
       .eq("empresa_id", auth.empresa_id)
+      .eq("sucursal_id", exigirSucursal(auth.sucursal_id))
       .gte("fecha", `${mes}-01`)
       .lt("fecha", `${mesSiguiente}-01`)
       .limit(1);
