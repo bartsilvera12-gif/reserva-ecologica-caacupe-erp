@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { memo, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
@@ -516,6 +517,14 @@ function KpiCard({
   sub?: string;
   color?: string;
   icon: string;
+  /**
+   * Variación porcentual respecto al período anterior.
+   *
+   * SOLO con un valor calculado de datos reales. Estaba hardcodeado (+4%, +12%,
+   * +8%, -2%) y el dashboard mostraba tendencias inventadas — llegó a decir
+   * "+12%" al lado de un inventario de Gs. 0. Sobre números así se toman
+   * decisiones de compra, así que es preferible no mostrar nada.
+   */
   variation?: number;
   variant?: "light" | "zentra";
 }) {
@@ -806,7 +815,6 @@ const DashComercial = memo(function DashComercial({
           label="Leads nuevos"
           value={String(leadsNuevos)}
           color="text-[#60A5FA]"
-          variation={12}
         />
         <KpiCard variant="zentra" icon="💬" label="En negociación" value={String(enNegociacion)} color="text-amber-400" />
         <KpiCard
@@ -815,7 +823,6 @@ const DashComercial = memo(function DashComercial({
           label="Clientes ganados (CRM)"
           value={String(clientesGanados)}
           color="text-[#60A5FA]"
-          variation={8}
         />
         <KpiCard
           variant="zentra"
@@ -1605,6 +1612,17 @@ const DashInventario = memo(function DashInventario({
     return map;
   }, [compras]);
 
+  /**
+   * Sucursal recién abierta: tiene catálogo pero ninguna unidad en stock.
+   * Se distingue del caso "hay faltantes reales" porque mostrar 499 productos
+   * en rojo como "críticos" no le dice nada útil a quien todavía no cargó
+   * mercadería — el mensaje correcto es que falta registrar la primera compra.
+   */
+  const inventarioSinCargar = useMemo(
+    () => productos.length > 0 && productos.every(p => (p.stock_actual ?? 0) <= 0),
+    [productos]
+  );
+
   const criticos = useMemo(() =>
     productos
       .filter(p => p.stock_actual <= p.stock_minimo)
@@ -1626,17 +1644,19 @@ const DashInventario = memo(function DashInventario({
 
       {/* KPIs */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard icon="📦" label="Productos totales"      value={String(totalProductos)} color="text-[#0EA5E9]" variation={4} />
-        <KpiCard icon="🔢" label="Stock total (unidades)" value={formatGs(totalUnidades)} color="text-[#0EA5E9]" />
-        <KpiCard icon="⚠️" label="Bajo stock mínimo"      value={String(bajosStock)}
-          sub={bajosStock > 0 ? "requieren reposición" : "todo en orden"}
-          color={bajosStock > 0 ? "text-red-600" : "text-[#0EA5E9]"}
-          variation={bajosStock > 0 ? -2 : undefined} />
-        <KpiCard icon="💎" label="Valor del inventario"   value={`Gs. ${formatGsFull(valorTotal)}`} color="text-[#0EA5E9]" variation={12} />
+        <KpiCard icon="📦" label="Productos en catálogo" value={String(totalProductos)} color="text-[#0F172A]" />
+        <KpiCard icon="🔢" label="Stock total (unidades)" value={formatGs(totalUnidades)} color="text-[#0F172A]" />
+        <KpiCard icon="⚠️" label={inventarioSinCargar ? "Sin stock cargado" : "Bajo stock mínimo"}
+          value={inventarioSinCargar ? String(totalProductos) : String(bajosStock)}
+          sub={inventarioSinCargar
+            ? "registrá una compra para cargar stock"
+            : bajosStock > 0 ? "requieren reposición" : "todo en orden"}
+          color={inventarioSinCargar ? "text-slate-500" : bajosStock > 0 ? "text-red-600" : "text-emerald-600"} />
+        <KpiCard icon="💎" label="Valor del inventario"   value={`Gs. ${formatGsFull(valorTotal)}`} color="text-[#0F172A]" />
       </div>
 
       {/* Donut + Críticos */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <motion.div whileHover={{ y: -2 }} className="bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 p-6">
           <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Estado del stock</h3>
           <DonutChart segments={[
@@ -1645,11 +1665,36 @@ const DashInventario = memo(function DashInventario({
             { label: "Crítico",   value: cntCritico,   color: "#ef4444" },
           ]} centerLabel="productos" />
         </motion.div>
-        <motion.div whileHover={{ y: -2 }} className="col-span-2 bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 p-6 transition-shadow hover:shadow-md">
-          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">
-            Productos críticos — stock bajo mínimo
-          </h3>
-          {criticos.length === 0 ? (
+        <motion.div whileHover={{ y: -2 }} className="lg:col-span-2 bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 p-6 transition-shadow hover:shadow-md">
+          <div className="mb-4 flex items-baseline justify-between gap-3">
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+              {inventarioSinCargar ? "Productos sin stock" : "Productos críticos — stock bajo mínimo"}
+            </h3>
+            {criticos.length > 0 && (
+              <span className="shrink-0 text-xs font-medium text-slate-400 tabular-nums">
+                {criticos.length} de {inventarioSinCargar ? totalProductos : bajosStock}
+              </span>
+            )}
+          </div>
+          {inventarioSinCargar ? (
+            /* Sucursal recién abierta: 499 filas en rojo no aportan nada.
+               Lo accionable es registrar la primera compra. */
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-6 text-center">
+              <p className="text-sm font-semibold text-slate-700">
+                Todavía no hay stock cargado en esta sucursal
+              </p>
+              <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-slate-500">
+                El catálogo ya tiene {totalProductos} productos. Registrá una compra para
+                cargar las cantidades y el inventario empieza a moverse.
+              </p>
+              <Link
+                href="/compras"
+                className="mt-4 inline-flex items-center rounded-lg bg-[#4FAEB2] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#3F8E91]"
+              >
+                Registrar compra
+              </Link>
+            </div>
+          ) : criticos.length === 0 ? (
             <div className="flex items-center gap-2 text-[var(--badge-success-text)] bg-[var(--badge-success-bg)] rounded-lg px-4 py-3 text-sm">
               <span>✅</span> Todos los productos tienen stock suficiente.
             </div>
@@ -1662,33 +1707,50 @@ const DashInventario = memo(function DashInventario({
                       <input type="checkbox" className="rounded border-slate-300 text-[#0EA5E9] focus:ring-[#0EA5E9]" />
                     </th>
                     {["Producto", "Stock actual", "Stock mín.", "Estado", "Proveedor"].map(h => (
-                      <th key={h} className="text-left text-xs font-semibold text-slate-500 px-3 py-3 uppercase tracking-wide">{h}</th>
+                      <th key={h} className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {criticos.map(p => (
-                    <tr key={p.id} className={`${p.stock_actual <= 0 ? "bg-red-50/40 dark:bg-red-900/10" : "bg-amber-50/30 dark:bg-amber-900/10"} hover:bg-opacity-80 transition-colors`}>
-                      <td className="px-3 py-2.5">
-                        <input type="checkbox" className="rounded border-slate-300 text-[#0EA5E9] focus:ring-[#0EA5E9]" />
+                  {criticos.map(p => {
+                    const critico = p.stock_actual <= 0;
+                    return (
+                    /* Sin fondo tintado por fila: el color de fondo competía con
+                       el texto y dejaba los nombres casi ilegibles. La severidad
+                       se comunica con una barra lateral y el badge de estado,
+                       que no compiten con la lectura. */
+                    <tr key={p.id} className="group transition-colors hover:bg-slate-50">
+                      <td className="px-3 py-3">
+                        <input type="checkbox" className="rounded border-slate-300 text-[#4FAEB2] focus:ring-[#4FAEB2]" />
                       </td>
-                      <td className="px-3 py-2.5 text-xs font-medium text-slate-800 dark:text-slate-200">{p.nombre}</td>
-                      <td className="px-3 py-2.5">
-                        <span className={`text-xs font-bold tabular-nums ${p.stock_actual <= 0 ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}`}>
-                          {p.stock_actual} {p.unidad_medida}
+                      <td className="py-3 pr-3">
+                        <div className="flex items-center gap-2.5">
+                          <span
+                            aria-hidden="true"
+                            className={`h-8 w-1 shrink-0 rounded-full ${critico ? "bg-red-500" : "bg-amber-400"}`}
+                          />
+                          <span className="text-sm font-medium text-slate-900">{p.nombre}</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <span className={`text-sm font-bold tabular-nums ${critico ? "text-red-600" : "text-amber-600"}`}>
+                          {p.stock_actual} <span className="text-xs font-medium text-slate-400">{p.unidad_medida}</span>
                         </span>
                       </td>
-                      <td className="px-3 py-2.5 text-xs text-slate-500 dark:text-slate-400 tabular-nums">{p.stock_minimo} {p.unidad_medida}</td>
-                      <td className="px-3 py-2.5">
+                      <td className="px-3 py-3 text-sm tabular-nums text-slate-500">
+                        {p.stock_minimo} <span className="text-xs text-slate-400">{p.unidad_medida}</span>
+                      </td>
+                      <td className="px-3 py-3">
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
-                          p.stock_actual <= 0 ? "bg-[var(--badge-error-bg)] text-[var(--badge-error-text)]" : "bg-[var(--badge-warning-bg)] text-[var(--badge-warning-text)]"
+                          critico ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800"
                         }`}>
-                          {p.stock_actual <= 0 ? "Crítico" : "Bajo"}
+                          {critico ? "Crítico" : "Bajo"}
                         </span>
                       </td>
-                      <td className="px-3 py-2.5 text-xs text-slate-500 dark:text-slate-400">{proveedorMap[String(p.id)] ?? "—"}</td>
+                      <td className="px-3 py-3 text-sm text-slate-500">{proveedorMap[String(p.id)] ?? "—"}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1718,15 +1780,15 @@ const DashInventario = memo(function DashInventario({
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {topPorValor.map(p => (
-                  <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                  <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-3 py-2.5">
                       <input type="checkbox" className="rounded border-slate-300 text-[#0EA5E9] focus:ring-[#0EA5E9]" />
                     </td>
-                    <td className="px-3 py-2.5 text-xs font-medium text-slate-800 dark:text-slate-200">{p.nombre}</td>
-                    <td className="px-3 py-2.5 font-mono text-xs text-slate-500 dark:text-slate-400">{p.sku}</td>
-                    <td className="px-3 py-2.5 text-xs tabular-nums text-slate-700 dark:text-slate-300">{p.stock_actual}</td>
-                    <td className="px-3 py-2.5 text-xs tabular-nums text-slate-500 dark:text-slate-400">Gs. {formatGs(p.costo_promedio)}</td>
-                    <td className="px-3 py-2.5 text-xs tabular-nums font-semibold text-slate-800 dark:text-slate-200">Gs. {formatGs(p.valor)}</td>
+                    <td className="px-3 py-2.5 text-xs font-medium text-slate-800">{p.nombre}</td>
+                    <td className="px-3 py-2.5 font-mono text-xs text-slate-500">{p.sku}</td>
+                    <td className="px-3 py-2.5 text-xs tabular-nums text-slate-700">{p.stock_actual}</td>
+                    <td className="px-3 py-2.5 text-xs tabular-nums text-slate-500">Gs. {formatGs(p.costo_promedio)}</td>
+                    <td className="px-3 py-2.5 text-xs tabular-nums font-semibold text-slate-800">Gs. {formatGs(p.valor)}</td>
                   </tr>
                 ))}
               </tbody>
