@@ -119,25 +119,51 @@ export async function GET(request: NextRequest) {
     const facturaByIdMap = new Map<string, string>();
     const feEstadoByFacturaMap = new Map<string, string>();
     if (facturaIds.length > 0) {
-      const facQ = await ctx.supabase
-        .from("facturas")
-        .select("id, numero_factura")
-        .eq("empresa_id", empresaId)
-        .in("id", facturaIds);
-      for (const row of ((facQ.data ?? []) as Array<{ id: string; numero_factura?: string | null }>)) {
-        if (row.numero_factura) facturaByIdMap.set(row.id, row.numero_factura);
+      // NO se usa .in("id", facturaIds): con 155 facturas la URL de PostgREST
+      // supera los 5 KB solo en ese parámetro y el gateway la rechaza. El error
+      // ademas no se chequeaba, asi que fallaba EN SILENCIO — el mapa quedaba
+      // vacio y toda venta facturada se mostraba como ticket. Es el mismo modo
+      // de falla que ya habia roto el listado de items.
+      //
+      // Se pagina sobre empresa+sucursal (conjunto acotado) y se filtra en
+      // memoria contra las ventas cargadas.
+      const idsFactura = new Set(facturaIds);
+      const PAGE_FAC = 1000;
+
+      for (let desde = 0; ; desde += PAGE_FAC) {
+        const pageQ = await ctx.supabase
+          .from("facturas")
+          .select("id, numero_factura")
+          .eq("empresa_id", empresaId)
+          .eq("sucursal_id", exigirSucursal(ctx.auth.sucursal_id))
+          .order("id", { ascending: true })
+          .range(desde, desde + PAGE_FAC - 1);
+        if (pageQ.error) throw new Error(pageQ.error.message);
+        const rows = (pageQ.data ?? []) as Array<{ id: string; numero_factura?: string | null }>;
+        for (const row of rows) {
+          if (idsFactura.has(row.id) && row.numero_factura) facturaByIdMap.set(row.id, row.numero_factura);
+        }
+        if (rows.length < PAGE_FAC) break;
       }
+
       // Estado SIFEN por factura — el UI usa este dato para decidir si mostrar
       // el botón "Anular" cuando la factura quedó en error_envio/rechazado.
-      const feQ = await ctx.supabase
-        .from("factura_electronica")
-        .select("factura_id, estado_sifen")
-        .eq("empresa_id", empresaId)
-        .in("factura_id", facturaIds);
-      if (!feQ.error) {
-        for (const row of ((feQ.data ?? []) as Array<{ factura_id: string; estado_sifen?: string | null }>)) {
-          if (row.estado_sifen) feEstadoByFacturaMap.set(row.factura_id, row.estado_sifen);
+      for (let desde = 0; ; desde += PAGE_FAC) {
+        const pageQ = await ctx.supabase
+          .from("factura_electronica")
+          .select("factura_id, estado_sifen")
+          .eq("empresa_id", empresaId)
+          .eq("sucursal_id", exigirSucursal(ctx.auth.sucursal_id))
+          .order("factura_id", { ascending: true })
+          .range(desde, desde + PAGE_FAC - 1);
+        if (pageQ.error) break; // no fatal: sin estado SIFEN el UI degrada bien
+        const rows = (pageQ.data ?? []) as Array<{ factura_id: string; estado_sifen?: string | null }>;
+        for (const row of rows) {
+          if (idsFactura.has(row.factura_id) && row.estado_sifen) {
+            feEstadoByFacturaMap.set(row.factura_id, row.estado_sifen);
+          }
         }
+        if (rows.length < PAGE_FAC) break;
       }
     }
 
