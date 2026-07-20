@@ -154,6 +154,10 @@ export default function VentasPage() {
   const [busqueda,   setBusqueda]   = useState("");
   const [filtroTipo, setFiltroTipo] = useState<TipoVenta | "">("");
   const [filtroIva,  setFiltroIva]  = useState<TipoIvaVenta | "">("");
+  // Rango de fechas (YYYY-MM-DD). Vacio = sin limite por ese lado, asi que se
+  // puede filtrar solo "desde" o solo "hasta".
+  const [fechaDesde, setFechaDesde] = useState("");
+  const [fechaHasta, setFechaHasta] = useState("");
   /** Paginación en pantalla. "todas" = sin límite. */
   const [porPagina,  setPorPagina]  = useState<number | "todas">(25);
   const [pagina,     setPagina]     = useState(1);
@@ -197,6 +201,8 @@ export default function VentasPage() {
       const coincide =
         (v.cliente_nombre ?? "").toLowerCase().includes(t) ||
         v.numero_control.toLowerCase().includes(t) ||
+        // El numero de factura ahora se ve en la lista, asi que tambien se busca por el.
+        (v.numero_factura ?? "").toLowerCase().includes(t) ||
         v.items.some(
           (i) =>
             i.producto_nombre.toLowerCase().includes(t) ||
@@ -207,12 +213,17 @@ export default function VentasPage() {
     // Tipo de venta
     if (filtroTipo !== "" && v.tipo_venta !== filtroTipo) return false;
     // IVA: coincide si al menos un ítem tiene ese tipo
+    // `v.fecha` es ISO con hora; se compara solo la parte YYYY-MM-DD para que
+    // "hasta" incluya el dia completo y no corte a las 00:00.
+    const dia = (v.fecha ?? "").slice(0, 10);
+    if (fechaDesde && dia < fechaDesde) return false;
+    if (fechaHasta && dia > fechaHasta) return false;
     if (filtroIva !== "" && !v.items.some((i) => i.tipo_iva === filtroIva))
       return false;
     return true;
   });
 
-  const hayFiltros = busqueda || filtroTipo || filtroIva;
+  const hayFiltros = busqueda || filtroTipo || filtroIva || fechaDesde || fechaHasta;
 
   // Paginación en pantalla (sobre el resultado ya filtrado).
   const totalPaginas =
@@ -227,7 +238,7 @@ export default function VentasPage() {
   // de rango, volvemos a la primera. Evita quedar en una página vacía.
   useEffect(() => {
     setPagina(1);
-  }, [busqueda, filtroTipo, filtroIva, porPagina]);
+  }, [busqueda, filtroTipo, filtroIva, fechaDesde, fechaHasta, porPagina]);
 
   return (
     <div className="space-y-8">
@@ -304,7 +315,7 @@ export default function VentasPage() {
         <div className="flex flex-wrap items-center gap-3 mb-5 pb-5 border-b border-gray-100">
           <input
             type="text"
-            placeholder="Buscar por cliente, número, producto o SKU..."
+            placeholder="Buscar por cliente, N° de venta o factura, producto o SKU..."
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
             className={`${inputFilterClass} min-w-0 flex-1 sm:min-w-64`}
@@ -334,9 +345,29 @@ export default function VentasPage() {
               { value: "10%", label: "IVA 10%" },
             ]}
           />
+          <div className="flex items-center gap-1.5">
+            <label htmlFor="f-desde" className="text-xs font-medium text-slate-500">Desde</label>
+            <input
+              id="f-desde"
+              type="date"
+              value={fechaDesde}
+              max={fechaHasta || undefined}
+              onChange={(e) => setFechaDesde(e.target.value)}
+              className={`${inputFilterClass} w-[9.5rem]`}
+            />
+            <label htmlFor="f-hasta" className="text-xs font-medium text-slate-500">Hasta</label>
+            <input
+              id="f-hasta"
+              type="date"
+              value={fechaHasta}
+              min={fechaDesde || undefined}
+              onChange={(e) => setFechaHasta(e.target.value)}
+              className={`${inputFilterClass} w-[9.5rem]`}
+            />
+          </div>
           {hayFiltros && (
             <button
-              onClick={() => { setBusqueda(""); setFiltroTipo(""); setFiltroIva(""); }}
+              onClick={() => { setBusqueda(""); setFiltroTipo(""); setFiltroIva(""); setFechaDesde(""); setFechaHasta(""); }}
               className="text-sm text-gray-400 hover:text-gray-600 transition-colors px-2"
             >
               Limpiar filtros
@@ -372,6 +403,7 @@ export default function VentasPage() {
             <thead>
               <tr className="bg-slate-50 text-slate-600 text-sm font-semibold">
                 <th className="py-3 pr-4 font-medium">Número</th>
+                <th className="py-3 pr-4 font-medium">Documento</th>
                 <th className="py-3 pr-4 font-medium">Cliente</th>
                 <th className="py-3 pr-4 font-medium">Productos</th>
                 <th className="hidden py-3 pr-4 text-center font-medium lg:table-cell">Ítems</th>
@@ -388,7 +420,7 @@ export default function VentasPage() {
             <tbody>
               {filtradas.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-12 text-center text-gray-400">
+                  <td colSpan={13} className="py-12 text-center text-gray-400">
                     {todas.length === 0
                       ? "No hay ventas registradas"
                       : "Ninguna venta coincide con los filtros"}
@@ -423,6 +455,31 @@ export default function VentasPage() {
                           </button>
                           <span>{v.numero_control}</span>
                         </div>
+                      </td>
+                      {/* Documento fiscal emitido. Son DOS series distintas:
+                          FAC- solo numera las ventas facturadas, mientras que
+                          VTA- numera todas. Por eso VTA-000218 es FAC-000155 y
+                          no coinciden. El ticket no tiene numeracion propia: el
+                          comprobante impreso lleva el numero de venta. */}
+                      <td className="py-4 pr-4 align-middle whitespace-nowrap">
+                        {v.numero_factura ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                              Fac
+                            </span>
+                            <span className="font-medium tabular-nums text-slate-800">{v.numero_factura}</span>
+                          </span>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1.5"
+                            title="Los tickets no llevan numeración propia: el comprobante impreso usa el número de venta."
+                          >
+                            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                              Tkt
+                            </span>
+                            <span className="tabular-nums text-slate-500">{v.numero_control}</span>
+                          </span>
+                        )}
                       </td>
                       <td className="py-4 pr-4 align-middle text-slate-700">
                         {v.cliente_id && v.cliente_nombre ? (
@@ -579,7 +636,7 @@ export default function VentasPage() {
                     </tr>
                     {abierta && (
                       <tr className={`border-b border-slate-200 bg-slate-50/60 ${anulada ? "opacity-60" : ""}`}>
-                        <td colSpan={12} className="px-4 py-3">
+                        <td colSpan={13} className="px-4 py-3">
                           <div className="rounded-lg border border-slate-200 bg-white p-3">
                             <div className="mb-2 flex items-baseline justify-between">
                               <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
