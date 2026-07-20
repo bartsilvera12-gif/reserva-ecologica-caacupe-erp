@@ -1,3 +1,4 @@
+import { resolverPuntoExpedicion } from "@/lib/sifen/punto-expedicion-sucursal";
 import type { AppSupabaseClient } from "@/lib/supabase/schema";
 import type { SifenNotaCreditoPayload } from "./types";
 import type { AmbienteSifen } from "./types";
@@ -38,7 +39,7 @@ export async function loadValidatedNotaCreditoSifenPayload(
   const { data: nc, error: errNc } = await supabase
     .from("nota_credito")
     .select(
-      "id, numero, empresa_id, factura_id, cliente_id, monto, motivo, tipo_nc, estado_erp, factura_electronica_origen_id, created_at"
+      "id, numero, empresa_id, sucursal_id, factura_id, cliente_id, monto, motivo, tipo_nc, estado_erp, factura_electronica_origen_id, created_at"
     )
     .eq("id", nid)
     .eq("empresa_id", empresaId)
@@ -178,7 +179,25 @@ export async function loadValidatedNotaCreditoSifenPayload(
     return { ok: false, error: { status: 400, message: "No hay configuración SIFEN para esta empresa." } };
   }
 
-  const cfg = configRes.data as Record<string, unknown>;
+  const cfgBase = configRes.data as Record<string, unknown>;
+
+  // Mismo criterio que en facturas: el punto sale de la sucursal EMISORA de la
+  // nota de crédito, no de la sesión. La NC tiene que salir con el mismo punto
+  // que la factura que corrige.
+  const puntoNc = await resolverPuntoExpedicion(
+    supabase,
+    empresaId,
+    (nc as { sucursal_id?: string | null }).sucursal_id ?? null,
+    {
+      establecimiento: cfgBase.establecimiento as string | null,
+      punto_expedicion: cfgBase.punto_expedicion as string | null,
+    }
+  );
+  const cfg: Record<string, unknown> = {
+    ...cfgBase,
+    establecimiento: puntoNc.establecimiento,
+    punto_expedicion: puntoNc.punto_expedicion,
+  };
   const cli = clienteRes.data as Record<string, unknown>;
 
   const moneda = String(factura.moneda ?? "GS").toUpperCase();

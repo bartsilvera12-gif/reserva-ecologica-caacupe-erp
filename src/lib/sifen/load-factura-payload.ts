@@ -1,3 +1,4 @@
+import { resolverPuntoExpedicion } from "@/lib/sifen/punto-expedicion-sucursal";
 import type { AppSupabaseClient } from "@/lib/supabase/schema";
 import {
   validateAndBuildSifenPayload,
@@ -31,7 +32,7 @@ export async function loadValidatedSifenPayload(
 
   const { data: factura, error: errFactura } = await supabase
     .from("facturas")
-    .select("id, cliente_id, numero_factura, fecha, tipo, moneda, monto, saldo, cliente_razon_social, cliente_ruc")
+    .select("id, cliente_id, numero_factura, fecha, tipo, moneda, monto, saldo, cliente_razon_social, cliente_ruc, sucursal_id")
     .eq("id", fid)
     .eq("empresa_id", empresaId)
     .maybeSingle();
@@ -94,6 +95,22 @@ export async function loadValidatedSifenPayload(
     return { ok: false, error: { status: 400, message: electronicaRes.error.message } };
   }
 
+  // Punto de expedición según la sucursal EMISORA de esta factura (Casa Matriz
+  // 001-001, Reserva Market 001-002). El timbrado es el mismo para las dos.
+  const configRow = configRes.data as Record<string, unknown> | null;
+  const punto = await resolverPuntoExpedicion(
+    supabase,
+    empresaId,
+    (factura as { sucursal_id?: string | null }).sucursal_id ?? null,
+    {
+      establecimiento: configRow?.establecimiento as string | null,
+      punto_expedicion: configRow?.punto_expedicion as string | null,
+    }
+  );
+  const configConSucursal = configRow
+    ? { ...configRow, establecimiento: punto.establecimiento, punto_expedicion: punto.punto_expedicion }
+    : configRow;
+
   // Si no hay clientes.id, armamos un receptor mínimo a partir de los campos
   // denormalizados de la factura (cliente_razon_social + cliente_ruc). Esto
   // habilita el flujo SIFEN para ventas a "consumidor final" con datos manuales.
@@ -134,7 +151,7 @@ export async function loadValidatedSifenPayload(
     },
     items: (itemsRes.data ?? []) as BuildSifenPayloadInput["items"],
     cliente: clienteInput,
-    config: configRes.data as BuildSifenPayloadInput["config"],
+    config: configConSucursal as BuildSifenPayloadInput["config"],
     facturaElectronica: electronicaRes.data as BuildSifenPayloadInput["facturaElectronica"],
   };
 
