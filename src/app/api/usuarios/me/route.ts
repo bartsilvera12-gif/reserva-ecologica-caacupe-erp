@@ -5,6 +5,7 @@ type UsuarioMeRow = {
   nombre: string | null;
   email: string | null;
   rol: string | null;
+  sucursales: { nombre: string | null } | { nombre: string | null }[] | null;
 };
 
 function pickAuthMetadataName(authUser: { user_metadata?: Record<string, unknown> | null }): string | null {
@@ -35,7 +36,7 @@ export async function GET(request: Request) {
     if (catalogUsuario?.id) {
       const { data, error } = await supabaseSr
         .from("usuarios")
-        .select("nombre, email, rol")
+        .select("nombre, email, rol, sucursales:sucursal_predeterminada_id(nombre)")
         .eq("id", catalogUsuario.id)
         .maybeSingle();
 
@@ -49,7 +50,13 @@ export async function GET(request: Request) {
     const email = (row?.email ?? authUser.email ?? "").trim() || null;
     const rol = (row?.rol ?? catalogUsuario?.rol ?? "").trim() || null;
 
-    return NextResponse.json({ usuario: { nombre, rol, email } });
+    // PostgREST devuelve el embed como objeto o como array de un elemento
+    // segun como resuelva la relacion; se normaliza para no depender de eso.
+    const sucRaw = row?.sucursales ?? null;
+    const sucObj = Array.isArray(sucRaw) ? sucRaw[0] ?? null : sucRaw;
+    const sucursal = (sucObj?.nombre ?? "").trim() || null;
+
+    return NextResponse.json({ usuario: { nombre, rol, email, sucursal } });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error al obtener el usuario actual";
     return NextResponse.json({ error: message }, { status: 500 });

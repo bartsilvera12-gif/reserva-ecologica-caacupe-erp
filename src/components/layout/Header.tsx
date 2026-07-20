@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Bell, ChevronDown, LogOut, Menu } from "lucide-react";
+import { Bell, ChevronDown, LogOut, Menu, Store } from "lucide-react";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { signOut } from "@/lib/auth";
 import { useBoot } from "@/components/BootContext";
@@ -12,6 +12,8 @@ type HeaderUsuario = {
   nombre: string | null;
   rol: string | null;
   email: string | null;
+  /** Sucursal en la que opera el usuario. Null si no tiene una asignada. */
+  sucursal?: string | null;
 };
 
 function clean(value: string | null | undefined): string {
@@ -80,6 +82,7 @@ export default function Header() {
   const displayName = nombreReal || fallbackEmail || "Usuario";
   const dropdownName = nombreReal || "Usuario";
   const displayRole = roleLabel(usuario?.rol);
+  const sucursal = clean(usuario?.sucursal);
 
   return (
     <header
@@ -100,6 +103,20 @@ export default function Header() {
       <div className="hidden lg:block lg:flex-1" />
 
       <div className="flex items-center gap-2">
+        {/* Sucursal activa. Con mas de un local, saber donde esta parado el
+            usuario evita cargar stock o facturar en la sucursal equivocada.
+            Solo se muestra cuando el dato existe: si el usuario no tiene
+            sucursal asignada, no se inventa una etiqueta. */}
+        {sucursal && (
+          <span
+            className="flex items-center gap-1.5 rounded-lg border border-[#4FAEB2]/30 bg-[#4FAEB2]/10 px-2.5 py-1.5 text-xs font-semibold text-[#2F6F72]"
+            title={`Estás operando en ${sucursal}`}
+          >
+            <Store className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span className="max-w-[9rem] truncate">{sucursal}</span>
+          </span>
+        )}
+
         {/* Notificaciones */}
         <button
           type="button"
