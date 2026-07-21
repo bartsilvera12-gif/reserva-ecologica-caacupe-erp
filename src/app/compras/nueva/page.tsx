@@ -176,21 +176,21 @@ export default function NuevaCompraPage() {
   const nlSubtotal = nlTotal - nlIva;
   const nlMargen = nlPrecio > 0 && nlCostoPYG > 0 ? ((nlPrecio - nlCostoPYG) / nlPrecio) * 100 : null;
   const productoSel = productos.find((p) => p.id === nl.producto_id);
-  // Materia prima / insumo NO vendible: no exigimos precio de venta (se compra para recetas).
+  // Solo informativo: para mostrar el aviso "es materia prima". Ya NO condiciona
+  // si se puede agregar — el precio de venta es opcional para cualquier producto.
   const esInsumoNoVendible = !!productoSel && productoSel.es_insumo === true && productoSel.es_vendible !== true;
-  const requierePrecioVenta = !esInsumoNoVendible;
-  const lineaLista =
-    !!nl.producto_id && nlCant > 0 && nlCostoPYG > 0 && (!requierePrecioVenta || nlPrecio > 0);
+  // Precio de venta OPCIONAL: la compra no lo exige. Si se deja en 0, el backend
+  // conserva el precio actual del producto (UPDATE ... CASE WHEN $3 > 0), no lo
+  // pisa con 0. Solo se pide producto, cantidad y costo.
+  const lineaLista = !!nl.producto_id && nlCant > 0 && nlCostoPYG > 0;
   // Motivo por el que el botón está deshabilitado, para no dejar al usuario
-  // adivinando (el caso típico: producto de reventa sin precio de venta).
+  // adivinando.
   const motivoNoAgregar = !nl.producto_id
     ? "Elegí un producto."
     : nlCant <= 0
     ? "Ingresá la cantidad."
     : nlCostoPYG <= 0
     ? "Ingresá el costo unitario."
-    : requierePrecioVenta && nlPrecio <= 0
-    ? "Este producto es de reventa: ingresá el precio de venta (o cargalo como materia prima si no se revende)."
     : null;
 
   // ── Totales de la compra ───────────────────────────────────────────────────
@@ -211,8 +211,6 @@ export default function NuevaCompraPage() {
     if (!nl.producto_id) return setErrorLinea("Elegí un producto.");
     if (nlCant <= 0) return setErrorLinea("La cantidad debe ser mayor a 0.");
     if (nlCostoPYG <= 0) return setErrorLinea("El costo unitario debe ser mayor a 0.");
-    if (requierePrecioVenta && nlPrecio <= 0)
-      return setErrorLinea("El precio de venta debe ser mayor a 0.");
     if (cab.moneda === "USD" && tipoCambioNum <= 0)
       return setErrorLinea("Cargá el tipo de cambio (USD → Gs.) en la cabecera.");
     const prod = productos.find((p) => p.id === nl.producto_id);
@@ -724,15 +722,11 @@ export default function NuevaCompraPage() {
                 </div>
                 <div>
                   <label className={labelSmClass}>
-                    {esInsumoNoVendible ? (
-                      <>Precio venta <span className="font-normal text-gray-400">(opcional, solo si se vende directamente)</span></>
-                    ) : (
-                      <>Precio venta (Gs.) <span className="text-red-500">*</span></>
-                    )}
+                    Precio venta <span className="font-normal text-gray-400">(opcional)</span>
                   </label>
                   <MontoInput value={nl.precio_venta}
                     onChange={(n) => setNl((p) => ({ ...p, precio_venta: String(n) }))}
-                    placeholder={esInsumoNoVendible ? "Opcional" : "Ej: 25000"} className={inputSmClass} decimals={false} />
+                    placeholder="Opcional" className={inputSmClass} decimals={false} />
                 </div>
               </div>
 
