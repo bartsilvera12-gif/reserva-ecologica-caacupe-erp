@@ -181,6 +181,17 @@ export default function NuevaCompraPage() {
   const requierePrecioVenta = !esInsumoNoVendible;
   const lineaLista =
     !!nl.producto_id && nlCant > 0 && nlCostoPYG > 0 && (!requierePrecioVenta || nlPrecio > 0);
+  // Motivo por el que el botón está deshabilitado, para no dejar al usuario
+  // adivinando (el caso típico: producto de reventa sin precio de venta).
+  const motivoNoAgregar = !nl.producto_id
+    ? "Elegí un producto."
+    : nlCant <= 0
+    ? "Ingresá la cantidad."
+    : nlCostoPYG <= 0
+    ? "Ingresá el costo unitario."
+    : requierePrecioVenta && nlPrecio <= 0
+    ? "Este producto es de reventa: ingresá el precio de venta (o cargalo como materia prima si no se revende)."
+    : null;
 
   // ── Totales de la compra ───────────────────────────────────────────────────
   const totales = useMemo(() => {
@@ -741,6 +752,9 @@ export default function NuevaCompraPage() {
               )}
 
               {errorLinea && <p className="text-xs text-red-600">{errorLinea}</p>}
+              {!errorLinea && !lineaLista && motivoNoAgregar && (
+                <p className="text-xs text-amber-600">{motivoNoAgregar}</p>
+              )}
 
               <button type="button" onClick={handleAgregarLinea} disabled={!lineaLista}
                 className="w-full rounded-lg bg-[#4FAEB2] py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#3F8E91] disabled:opacity-40 disabled:cursor-not-allowed active:scale-95">
