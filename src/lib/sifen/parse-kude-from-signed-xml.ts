@@ -47,6 +47,13 @@ export type KudeItemRow = {
 
 export type KudeParsedFromXml = {
   cdc: string;
+  /**
+   * Documento que la NC afecta, en formato EST-PUNTO-NUMERO (ej. 001-001-0005716),
+   * derivado del CDC referenciado en gCamDEAsoc/dCdCDERef. null si el DE no
+   * referencia otro documento (facturas normales). Requerido por Decreto 312/18
+   * Art.11: la NC debe mencionar el comprobante que afecta.
+   */
+  documentoAsociado: string | null;
   /** `gTimb.iTiDE` (1 factura, 5 nota de credito, 6 nota de debito, etc). */
   iTiDE: string;
   dFeEmiDE: string;
@@ -380,8 +387,20 @@ export function parseKudeFromSignedRdeXml(xmlUtf8: string): KudeParsedFromXml {
     }
   }
 
+  // Documento asociado (gCamDEAsoc): la NC referencia la factura por su CDC.
+  // El numero legible EST-PUNTO-NUMERO esta embebido en ese CDC (posiciones
+  // 11-13 est, 14-16 punto, 17-23 numero). Se muestra en el KuDE para que el
+  // receptor vea que factura corrige sin descifrar el CDC (Decreto 312/18).
+  const gCamDEAsoc = firstNs(de, "gCamDEAsoc");
+  const cdcAsociado = gCamDEAsoc ? textOf(firstNs(gCamDEAsoc, "dCdCDERef")).replace(/\D/g, "") : "";
+  const documentoAsociado =
+    cdcAsociado.length >= 24
+      ? `${cdcAsociado.slice(11, 14)}-${cdcAsociado.slice(14, 17)}-${cdcAsociado.slice(17, 24)}`
+      : null;
+
   const baseParsed: KudeParsedFromXml = {
     cdc,
+    documentoAsociado,
     iTiDE,
     dFeEmiDE,
     dCarQR: dCarQR && dCarQR.length > 0 ? dCarQR : null,

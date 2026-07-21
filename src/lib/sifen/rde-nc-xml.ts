@@ -1,3 +1,4 @@
+import { resolverValorItemNc } from "@/lib/sifen/nc-valor-item";
 /**
  * rDE SIFEN v150 — Nota de crédito electrónica (iTiDE=5).
  * `gTotSub` (tgTotSub): misma secuencia estricta que `rde-xml.ts` / DE_v150.xsd
@@ -323,7 +324,7 @@ export function buildOfficialRdeNotaCreditoElectronicaXml(
 
   // Fase B: si hay items[] emitimos un gCamItem por producto, con su propia
   // tasa de IVA. Si no, mantenemos el ítem genérico único (compat con NC total).
-  type LineaXml = { descripcion: string; codigo: string; total: number; tasa: 0 | 5 | 10; base: number; iva: number };
+  type LineaXml = { descripcion: string; codigo: string; total: number; tasa: 0 | 5 | 10; base: number; iva: number; cantidad: number; precio_unitario: number };
   const items = Array.isArray(notaCredito.items) && notaCredito.items.length > 0
     ? notaCredito.items
     : null;
@@ -352,6 +353,8 @@ export function buildOfficialRdeNotaCreditoElectronicaXml(
         tasa,
         base,
         iva,
+        cantidad: Number(it.cantidad) || 1,
+        precio_unitario: Number(it.precio_unitario) || 0,
       };
     });
     if (Math.abs(sumaTotales - T) > 2) {
@@ -373,6 +376,8 @@ export function buildOfficialRdeNotaCreditoElectronicaXml(
         tasa: 10,
         base: sp.base,
         iva: sp.iva,
+        cantidad: 1,
+        precio_unitario: T,
       },
     ];
   }
@@ -381,15 +386,19 @@ export function buildOfficialRdeNotaCreditoElectronicaXml(
     .map((l) => {
       const iAfec = l.tasa === 0 ? "3" : "1";
       const desAfec = l.tasa === 0 ? "Exento" : XSD_DES_AFEC_GRAVADO;
+      // Cantidad y precio unitario REALES, con el mismo redondeo que valida SET
+      // (evita el 1858). Si la cantidad no cierra exacto, resolverValorItemNc
+      // cae a cantidad=1/precio=total, que es como emitia antes.
+      const vi = resolverValorItemNc(l.cantidad, l.precio_unitario, l.total);
       return [
         "<gCamItem>",
         textEl("dCodInt", l.codigo.slice(0, 20)),
         textEl("dDesProSer", l.descripcion),
         textEl("cUniMed", "77"),
         textEl("dDesUniMed", XSD_DES_UNI_MED),
-        textEl("dCantProSer", "1"),
+        textEl("dCantProSer", vi.dCantStr),
         "<gValorItem>",
-        textEl("dPUniProSer", l.total),
+        textEl("dPUniProSer", vi.dPUniStr),
         textEl("dTotBruOpeItem", l.total),
         "<gValorRestaItem>",
         textEl("dDescItem", "0"),

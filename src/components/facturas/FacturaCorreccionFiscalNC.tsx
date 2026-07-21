@@ -399,14 +399,16 @@ export function FacturaCorreccionFiscalNC({
         checked: true,
         factura_item_id: null,
         producto_nombre: "",
-        // Sin línea de origen no hay tope propio: el techo es lo acreditable de la factura.
-        cantidad_max: 1,
+        // Sin línea de origen no hay tope de cantidad por línea (el techo es el
+        // importe acreditable de la factura, que valida el backend). Se emite
+        // como "unidades" para capturar cantidad × precio reales.
+        cantidad_max: 999999,
         total_max: disponibleParaNc,
         precio_unitario: 0,
         tipo_iva: "10%",
         cantidad: 1,
         total_linea: 0,
-        modo: "monto",
+        modo: "unidades",
         porcentaje: 0,
         manual: true,
       },
@@ -442,6 +444,12 @@ export function FacturaCorreccionFiscalNC({
         const clamped = Math.max(0, Math.min(merged.cantidad_max, Number(patch.cantidad) || 0));
         merged.cantidad = clamped;
         merged.total_linea = totalDesdeCantidad(clamped, merged.precio_unitario);
+      }
+      // Línea manual: el precio unitario es editable (no viene de una factura).
+      // Al cambiarlo se recalcula el total = cantidad × precio.
+      if ("precio_unitario" in patch && merged.manual) {
+        merged.precio_unitario = Math.max(0, round2(Number(patch.precio_unitario) || 0));
+        merged.total_linea = totalDesdeCantidad(merged.cantidad, merged.precio_unitario);
       }
       // Si cambia el % en modo 'porcentaje', recalcula el total (0–100% del total línea).
       if ("porcentaje" in patch && merged.modo === "porcentaje") {
@@ -1207,9 +1215,21 @@ export function FacturaCorreccionFiscalNC({
                             </td>
                             <td className="px-2 py-1 align-middle">
                               {l.manual ? (
-                                // Sin línea de origen no hay unidades ni % contra qué calcular:
-                                // el concepto libre se acredita siempre por monto.
-                                <span className="text-[11px] text-slate-400">Monto</span>
+                                // Línea manual: precio unitario editable. La cantidad va en
+                                // su columna y el total se calcula (cant × precio).
+                                <span className="inline-flex items-center gap-1">
+                                  <span className="text-[10px] text-slate-400">P.U.</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step={1}
+                                    value={l.precio_unitario}
+                                    disabled={!l.checked}
+                                    onChange={(e) => actualizarLinea(idx, { precio_unitario: Number(e.target.value) })}
+                                    className="w-24 text-right border border-slate-200 rounded px-1 py-0.5 disabled:opacity-40 tabular-nums"
+                                    placeholder="Precio"
+                                  />
+                                </span>
                               ) : (
                                 <select
                                   value={l.modo}

@@ -488,6 +488,12 @@ export async function buildKudePdfBuffer(input: BuildKudePdfInput): Promise<Buff
   drawLabelValue(page, col1X, yOp, "Tipo de cambio: ", tipoCambio, fontBold, font, labSz, primary);
   yOp += 11;
   drawLabelValue(page, col1X, yOp, "Tipo de operación: ", parsed.operacion.tipoOperacion, fontBold, font, labSz, primary);
+  // Documento asociado: solo lo llevan las notas de crédito/débito. Muestra qué
+  // factura corrige (Decreto 312/18 Art.11) sin que el receptor descifre el CDC.
+  if (parsed.documentoAsociado) {
+    yOp += 11;
+    drawLabelValue(page, col1X, yOp, "Factura asociada: ", parsed.documentoAsociado, fontBold, font, labSz, primary);
+  }
 
   let yRec = cursorTop + 10;
   drawLabelValue(
