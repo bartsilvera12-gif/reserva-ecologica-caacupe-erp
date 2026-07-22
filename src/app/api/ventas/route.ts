@@ -84,19 +84,43 @@ export async function GET(request: NextRequest) {
     ];
     const clienteNombreByIdMap = new Map<string, string>();
     if (clienteIds.length > 0) {
-      const clQ = await ctx.supabase
-        .from("clientes")
-        .select("id, empresa, nombre_contacto, nombre, nombre_facturacion")
-        .eq("empresa_id", empresaId)
-        .in("id", clienteIds);
-      if (!clQ.error) {
-        for (const row of ((clQ.data ?? []) as Array<{
-          id: string;
-          empresa?: string | null;
-          nombre_contacto?: string | null;
-          nombre?: string | null;
-          nombre_facturacion?: string | null;
-        }>)) {
+      type ClienteNombreRow = {
+        id: string;
+        empresa?: string | null;
+        nombre_contacto?: string | null;
+        nombre?: string | null;
+        nombre_facturacion?: string | null;
+      };
+      // Mismo criterio que facturas/ítems: NO se usa .in("id", clienteIds) — con
+      // cientos de UUIDs la URL de PostgREST se dispara y el gateway la rechaza.
+      // El error ademas se descartaba en silencio, asi que TODO el listado se
+      // mostraba como "Consumidor final". Se pagina y se filtra en memoria.
+      const idsCliente = new Set(clienteIds);
+      const PAGE_CLI = 1000;
+      // Un tenant `erp_*` puede no tener todavía las columnas más nuevas (p. ej.
+      // `nombre_facturacion`): PostgREST responde 42703. En ese caso se reintenta
+      // con el set mínimo que existe desde el schema inicial de clientes.
+      let colsCliente = "id, empresa, nombre_contacto, nombre, nombre_facturacion";
+
+      for (let desde = 0; ; desde += PAGE_CLI) {
+        const pageQ = await ctx.supabase
+          .from("clientes")
+          .select(colsCliente)
+          .eq("empresa_id", empresaId)
+          .order("id", { ascending: true })
+          .range(desde, desde + PAGE_CLI - 1);
+        if (pageQ.error) {
+          console.error("[/api/ventas GET] clientes:", pageQ.error.message);
+          if (colsCliente !== "id, empresa, nombre_contacto") {
+            colsCliente = "id, empresa, nombre_contacto";
+            desde -= PAGE_CLI; // reintentar esta misma página con menos columnas
+            continue;
+          }
+          break; // no fatal: el UI degrada al snapshot de la factura
+        }
+        const rows = (pageQ.data ?? []) as unknown as ClienteNombreRow[];
+        for (const row of rows) {
+          if (!idsCliente.has(row.id)) continue;
           const disp =
             (row.nombre_facturacion?.trim() || "") ||
             (row.empresa?.trim() || "") ||
@@ -104,6 +128,7 @@ export async function GET(request: NextRequest) {
             (row.nombre?.trim() || "");
           if (disp) clienteNombreByIdMap.set(row.id, disp);
         }
+        if (rows.length < PAGE_CLI) break;
       }
     }
 
@@ -118,6 +143,9 @@ export async function GET(request: NextRequest) {
     ];
     const facturaByIdMap = new Map<string, string>();
     const feEstadoByFacturaMap = new Map<string, string>();
+    // Razón social congelada al facturar. Sirve de respaldo para la columna
+    // Cliente cuando la ficha ya no se puede leer (o el cliente fue eliminado).
+    const razonSocialByFacturaMap = new Map<string, string>();
     if (facturaIds.length > 0) {
       // NO se usa .in("id", facturaIds): con 155 facturas la URL de PostgREST
       // supera los 5 KB solo en ese parámetro y el gateway la rechaza. El error
@@ -133,15 +161,22 @@ export async function GET(request: NextRequest) {
       for (let desde = 0; ; desde += PAGE_FAC) {
         const pageQ = await ctx.supabase
           .from("facturas")
-          .select("id, numero_factura")
+          .select("id, numero_factura, cliente_razon_social")
           .eq("empresa_id", empresaId)
           .eq("sucursal_id", exigirSucursal(ctx.auth.sucursal_id))
           .order("id", { ascending: true })
           .range(desde, desde + PAGE_FAC - 1);
         if (pageQ.error) throw new Error(pageQ.error.message);
-        const rows = (pageQ.data ?? []) as Array<{ id: string; numero_factura?: string | null }>;
+        const rows = (pageQ.data ?? []) as Array<{
+          id: string;
+          numero_factura?: string | null;
+          cliente_razon_social?: string | null;
+        }>;
         for (const row of rows) {
-          if (idsFactura.has(row.id) && row.numero_factura) facturaByIdMap.set(row.id, row.numero_factura);
+          if (!idsFactura.has(row.id)) continue;
+          if (row.numero_factura) facturaByIdMap.set(row.id, row.numero_factura);
+          const rs = row.cliente_razon_social?.trim();
+          if (rs) razonSocialByFacturaMap.set(row.id, rs);
         }
         if (rows.length < PAGE_FAC) break;
       }
@@ -243,7 +278,10 @@ export async function GET(request: NextRequest) {
         cliente_id: ((r as unknown as { cliente_id?: string | null }).cliente_id) ?? null,
         cliente_nombre: (() => {
           const cid = (r as unknown as { cliente_id?: string | null }).cliente_id;
-          return cid ? clienteNombreByIdMap.get(cid) ?? null : null;
+          const fid = (r as unknown as { factura_id?: string | null }).factura_id;
+          const porFicha = cid ? clienteNombreByIdMap.get(cid) ?? null : null;
+          const porFactura = fid ? razonSocialByFacturaMap.get(fid) ?? null : null;
+          return porFicha ?? porFactura;
         })(),
       };
     });
