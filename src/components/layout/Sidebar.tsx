@@ -35,6 +35,7 @@ import {
   Utensils,
   BarChart3,
   Banknote,
+  ArrowLeftRight,
 } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
@@ -134,6 +135,9 @@ const MENU_STRUCTURE: MenuItem[] = [
     { label: "Categorías", href: "/inventario/categorias" },
     // "Depósitos / Ubicaciones" oculto en instancia En lo de Mari (no aplica para gastronomía).
   ]},
+  // Módulo propio (no hijo de Inventario): un `usuario` puede tener acceso a
+  // Reposición sin tener el Inventario completo. Gate por slug 'reposicion'.
+  { key: "reposicion", slug: "reposicion", label: "Reposición", href: "/inventario/reposicion", icon: ArrowLeftRight },
   { key: "clientes", slug: "clientes", label: "Clientes", href: "/clientes", icon: Users },
   { key: "pagos", slug: "pagos", label: "Pagos", href: "/pagos", icon: Banknote },
   {
