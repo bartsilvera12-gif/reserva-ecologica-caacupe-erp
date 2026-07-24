@@ -38,6 +38,21 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   if (rq.error || !rq.data) return new NextResponse("Recibo no encontrado", { status: 404 });
   const r = rq.data as Record<string, unknown>;
 
+  // Detalle de facturas cobradas. Un mismo pago puede cubrir varias: el cliente
+  // necesita ver cuáles, no solo el total (Decreto de recibos aparte, es lo que
+  // permite conciliar contra su cuenta corriente).
+  const itq = await ctx.supabase
+    .from("recibos_dinero_items")
+    .select("numero_documento, fecha_vencimiento, importe_aplicado")
+    .eq("empresa_id", ctx.auth.empresa_id)
+    .eq("recibo_id", id)
+    .order("created_at", { ascending: true });
+  const detalle = ((itq.data ?? []) as Array<{
+    numero_documento?: string | null;
+    fecha_vencimiento?: string | null;
+    importe_aplicado?: unknown;
+  }>);
+
   const moneda = String(r.moneda ?? "PYG");
   const metodo = METODO_LBL[String(r.metodo_pago ?? "")] ?? (r.metodo_pago ?? "—");
 
@@ -62,6 +77,11 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   .det b{color:#374151}
   .firma{margin-top:46px;display:flex;justify-content:flex-end}
   .firma .linea{width:240px;border-top:1px solid #9ca3af;text-align:center;padding-top:6px;font-size:12px;color:#6b7280}
+  .detalle{width:100%;border-collapse:collapse;margin-top:18px;font-size:12px}
+  .detalle th{background:#f1f5f9;text-align:left;padding:7px 9px;border:1px solid #e2e8f0;font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:#475569}
+  .detalle td{padding:7px 9px;border:1px solid #e2e8f0}
+  .detalle .num{text-align:right;font-variant-numeric:tabular-nums}
+  .detalle tfoot td{font-weight:700;background:#f8fafc}
   .legal{margin-top:26px;padding-top:12px;border-top:1px dashed #d1d5db;font-size:11px;color:#6b7280;text-align:center}
   .toolbar{position:sticky;top:0;background:#111827;padding:10px;text-align:center}
   .toolbar button{background:#4FAEB2;color:#fff;border:0;padding:8px 16px;border-radius:6px;font-size:14px;cursor:pointer}
@@ -86,6 +106,19 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
     <div class="lbl">Monto recibido</div>
     <div class="val">${fmtMonto(r.monto, moneda)}</div>
   </div>
+
+  ${detalle.length > 0 ? `
+  <table class="detalle">
+    <thead><tr><th>Documento</th><th>Vencimiento</th><th class="num">Importe</th></tr></thead>
+    <tbody>
+      ${detalle.map((d) => `<tr>
+        <td>${esc(d.numero_documento ?? "—")}</td>
+        <td>${d.fecha_vencimiento ? fmtFecha(d.fecha_vencimiento) : "—"}</td>
+        <td class="num">${fmtMonto(d.importe_aplicado, moneda)}</td>
+      </tr>`).join("")}
+    </tbody>
+    <tfoot><tr><td colspan="2">Total cobrado</td><td class="num">${fmtMonto(r.monto, moneda)}</td></tr></tfoot>
+  </table>` : ""}
 
   <div class="det">
     ${r.concepto ? `<div><b>Concepto:</b> ${esc(r.concepto)}</div>` : ""}
