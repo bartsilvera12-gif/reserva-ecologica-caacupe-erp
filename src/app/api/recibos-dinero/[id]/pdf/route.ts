@@ -43,7 +43,8 @@ function fechaLarga(iso: unknown, ciudad = "Caacupé"): string {
  * Coinciden con empresa_sifen_config (RUC 80131562-0, punto 001-001).
  */
 const RUC_EMPRESA = "80131562-0";
-const PUNTO_RECIBO = "001 - 001";
+/** Punto por defecto si el recibo no tiene sucursal resoluble. */
+const PUNTO_FALLBACK = "001 - 001";
 
 /** "REC-000001" -> "000001", para mostrarlo como en el talonario. */
 function numeroCorto(numero: unknown): string {
@@ -68,6 +69,24 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
     .maybeSingle();
   if (rq.error || !rq.data) return new NextResponse("Recibo no encontrado", { status: 404 });
   const r = rq.data as Record<string, unknown>;
+
+  // El punto de expedición sale de la SUCURSAL que emitió el recibo, no de una
+  // constante: cada sucursal lleva su propia serie desde 000001 y se distinguen
+  // por el punto (Casa Matriz 001-001, Reserva Market 001-002). Con un valor
+  // fijo, los recibos de Market saldrían con el punto de Casa Matriz.
+  let puntoRecibo = PUNTO_FALLBACK;
+  if (r.sucursal_id) {
+    const sq = await ctx.supabase
+      .from("sucursales")
+      .select("establecimiento, punto_expedicion")
+      .eq("empresa_id", ctx.auth.empresa_id)
+      .eq("id", String(r.sucursal_id))
+      .maybeSingle();
+    const suc = sq.data as { establecimiento?: string | null; punto_expedicion?: string | null } | null;
+    const est = (suc?.establecimiento ?? "").trim();
+    const pto = (suc?.punto_expedicion ?? "").trim();
+    if (est && pto) puntoRecibo = `${est} - ${pto}`;
+  }
 
   // Detalle de facturas cobradas. Un mismo pago puede cubrir varias: el cliente
   // necesita ver cuáles, no solo el total (Decreto de recibos aparte, es lo que
@@ -145,7 +164,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
         <div class="tit">RECIBO DE DINERO</div>
         <div class="ruc">R.U.C. ${esc(RUC_EMPRESA)}</div>
         <div class="songs"><span>Son Gs.</span><b>${fmtMonto(r.monto, moneda)}</b></div>
-        <div class="nro"><span class="pto">${esc(PUNTO_RECIBO)}</span><span class="sec">${esc(numeroCorto(r.numero_recibo))}</span></div>
+        <div class="nro"><span class="pto">${esc(puntoRecibo)}</span><span class="sec">${esc(numeroCorto(r.numero_recibo))}</span></div>
       </div>
     </div>
 
