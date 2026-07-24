@@ -35,7 +35,9 @@ function fechaLarga(iso: unknown, ciudad = "Caacupé"): string {
   if (!m) return ciudad;
   const [, y, mm, dd] = m;
   const mes = MESES[Number(mm) - 1] ?? "";
-  return `${ciudad}, ${Number(dd)} de ${mes} de ${y}`;
+  const fecha = `${Number(dd)} de ${mes} de ${y}`;
+  // Sin ciudad no se deja la coma huérfana (antes salía ", 24 de julio de 2026").
+  return ciudad.trim() ? `${ciudad.trim()}, ${fecha}` : fecha;
 }
 
 /**
@@ -123,34 +125,59 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
 <style>
   *{box-sizing:border-box} html,body{margin:0;padding:0}
   body{font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#1f2937;background:#f3f4f6}
-  .page{width:210mm;min-height:148mm;margin:0 auto;background:#fff;padding:16mm 16mm}
-  .marco{border:1.5px solid #111827;border-radius:4px;padding:14px 16px}
-  .cab{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
-  .cab-izq{flex:1}
-  .cab-der{width:270px;text-align:center;border-left:1px solid #d1d5db;padding-left:14px}
-  .cab-der .tit{font-size:18px;font-weight:800;letter-spacing:.02em}
-  .cab-der .ruc{font-size:12px;font-weight:700;border-bottom:1px solid #111827;padding-bottom:4px;margin-bottom:6px}
-  .cab-der .songs{display:flex;align-items:baseline;gap:8px;border-bottom:1px solid #111827;padding-bottom:4px}
-  .cab-der .songs span{font-size:12px;font-weight:700}
-  .cab-der .songs b{flex:1;text-align:right;font-size:17px;font-weight:800;font-variant-numeric:tabular-nums}
-  .cab-der .nro{display:flex;align-items:baseline;justify-content:space-between;margin-top:6px}
-  .cab-der .nro .pto{font-size:14px;font-weight:800;letter-spacing:.06em}
-  .cab-der .nro .sec{font-size:17px;font-weight:800;color:#c1121f;font-variant-numeric:tabular-nums}
-  .fecha{margin-top:22px;text-align:center;font-size:13px;border-bottom:1px solid #9ca3af;padding-bottom:3px;width:60%;margin-left:auto;margin-right:auto}
-  .campo{display:flex;align-items:baseline;gap:8px;margin-top:16px;font-size:12px}
-  .campo .et{color:#374151;white-space:nowrap}
-  .campo .val{flex:1;border-bottom:1px solid #9ca3af;padding-bottom:2px;font-weight:700;min-height:16px}
-  .campo .val.chico{flex:0 0 150px}
-  .campo .val.ancho{flex:1;font-weight:600;line-height:1.5}
-  .campo.alto{align-items:stretch}
-  .campo .caja{flex:1;border:1px solid #111827;padding:7px 9px;font-weight:700;font-size:12.5px;line-height:1.5;min-height:38px}
-  .campo.bloque{margin-top:18px}
-  .firmas{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-top:44px}
-  .firmas .col{flex:1;text-align:center}
-  .firmas .ln{border-bottom:1px dotted #6b7280;padding-bottom:3px;min-height:20px;font-weight:600;font-size:12px}
-  .firmas .cap{margin-top:3px;font-size:11px;color:#4b5563}
-  .firmas .sello{flex:0 0 190px;text-align:center;font-size:10px;font-weight:700;color:#9ca3af;border:1px dashed #d1d5db;border-radius:6px;padding:8px 6px}
-  .pie{display:flex;justify-content:space-between;margin-top:18px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:9.5px;color:#6b7280}
+  .page{width:210mm;min-height:150mm;margin:0 auto;background:#fff;padding:14mm}
+
+  /* Marco del comprobante */
+  .marco{border:1px solid #1f2937;border-radius:6px;padding:0;overflow:hidden}
+
+  /* ── Cabecera ─────────────────────────────────────────────── */
+  .cab{display:flex;align-items:stretch;border-bottom:2px solid #2E7D32}
+  .cab-izq{flex:1;display:flex;align-items:center;gap:14px;padding:14px 16px;min-width:0}
+  .cab-izq img{width:78px;height:auto;object-fit:contain;flex:0 0 auto}
+  .emp{min-width:0}
+  .emp .nom{font-size:14px;font-weight:800;color:#1f2937;line-height:1.25}
+  .emp .act{margin-top:3px;font-size:9.5px;color:#6b7280;line-height:1.45}
+  .emp .dir{margin-top:5px;font-size:9.5px;color:#4b5563;line-height:1.45}
+  .emp .dir b{color:#374151}
+
+  .cab-der{flex:0 0 232px;border-left:1px solid #d1d5db;background:#fafafa;padding:12px 14px;display:flex;flex-direction:column;justify-content:center}
+  .cab-der .tit{font-size:15px;font-weight:800;letter-spacing:.04em;text-align:center;color:#111827}
+  .cab-der .ruc{margin-top:2px;font-size:10.5px;font-weight:600;text-align:center;color:#4b5563}
+  .cab-der .sep{margin:9px 0;border-top:1px solid #d1d5db}
+  .cab-der .son{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+  .cab-der .son span{font-size:11px;font-weight:600;color:#4b5563}
+  .cab-der .son b{font-size:18px;font-weight:800;color:#111827;font-variant-numeric:tabular-nums}
+  .cab-der .nro{margin-top:9px;display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+  .cab-der .nro .pto{font-size:13px;font-weight:700;color:#374151;letter-spacing:.04em}
+  .cab-der .nro .sec{font-size:18px;font-weight:800;color:#c1121f;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+
+  /* ── Cuerpo ───────────────────────────────────────────────── */
+  .cuerpo{padding:18px 20px 14px}
+  .fecha{text-align:right;font-size:11.5px;color:#4b5563;margin-bottom:16px}
+
+  .fila{display:flex;align-items:flex-end;gap:10px;margin-bottom:15px}
+  .fila .et{font-size:11px;color:#6b7280;white-space:nowrap;padding-bottom:3px}
+  .fila .dato{flex:1;min-width:0;border-bottom:1px solid #cbd5e1;padding:0 2px 3px;font-size:12.5px;font-weight:700;color:#111827}
+  .fila .dato.corto{flex:0 0 170px}
+
+  .letras-lbl{font-size:11px;color:#6b7280;margin-bottom:5px}
+  .letras-caja{border:1px solid #1f2937;border-radius:4px;background:#fbfdfb;padding:11px 13px;font-size:12.5px;font-weight:700;color:#111827;letter-spacing:.01em;line-height:1.5;min-height:20px}
+
+  .concepto{margin-top:16px}
+  .concepto .dato{margin-top:5px;border-bottom:1px solid #cbd5e1;padding-bottom:4px;font-size:12px;font-weight:600;color:#1f2937;line-height:1.6;min-height:18px}
+
+  /* ── Firmas ───────────────────────────────────────────────── */
+  .firmas{display:flex;justify-content:space-between;gap:40px;margin-top:46px;padding:0 8px}
+  .firmas .col{flex:1;max-width:220px;text-align:center}
+  .firmas .val{font-size:12px;font-weight:700;color:#1f2937;min-height:17px;padding-bottom:3px}
+  .firmas .ln{border-top:1px solid #9ca3af}
+  .firmas .cap{margin-top:4px;font-size:10px;color:#6b7280;letter-spacing:.02em}
+
+  /* ── Pie ──────────────────────────────────────────────────── */
+  .pie{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:16px;padding:8px 20px;border-top:1px solid #e5e7eb;background:#fafafa;font-size:9px;color:#9ca3af}
+  .pie .doc{font-weight:700;color:#6b7280;letter-spacing:.03em}
+
+
   .toolbar{position:sticky;top:0;background:#111827;padding:10px;text-align:center}
   .toolbar button{background:#4FAEB2;color:#fff;border:0;padding:8px 16px;border-radius:6px;font-size:14px;cursor:pointer}
   @media print{body{background:#fff}.toolbar{display:none}.page{width:auto;min-height:auto;margin:0;padding:12mm}@page{size:A4;margin:12mm}}
@@ -159,43 +186,58 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
 <div class="page">
   <div class="marco">
     <div class="cab">
-      <div class="cab-izq">${membreteA4()}</div>
+      <div class="cab-izq">
+        <img src="${esc(EMPRESA_DOC.logoUrl)}" alt="${esc(EMPRESA_DOC.nombre)}" />
+        <div class="emp">
+          <div class="nom">${esc(EMPRESA_DOC.nombre)}</div>
+          <div class="act">${EMPRESA_DOC.actividad.map(esc).join(" · ")}</div>
+          <div class="dir"><b>Tel:</b> ${esc(EMPRESA_DOC.telefono)}<br>${EMPRESA_DOC.direccion.map(esc).join(" · ")}</div>
+        </div>
+      </div>
       <div class="cab-der">
         <div class="tit">RECIBO DE DINERO</div>
         <div class="ruc">R.U.C. ${esc(RUC_EMPRESA)}</div>
-        <div class="songs"><span>Son Gs.</span><b>${fmtMonto(r.monto, moneda)}</b></div>
+        <div class="sep"></div>
+        <div class="son"><span>Son Gs.</span><b>${fmtMonto(r.monto, moneda)}</b></div>
         <div class="nro"><span class="pto">${esc(puntoRecibo)}</span><span class="sec">${esc(numeroCorto(r.numero_recibo))}</span></div>
       </div>
     </div>
 
-    <div class="fecha">${esc(fechaLarga(r.fecha, ""))}</div>
+    <div class="cuerpo">
+      <div class="fecha">${esc(fechaLarga(r.fecha))}</div>
 
-    <div class="campo">
-      <span class="et">Recibí(mos) de:</span>
-      <span class="val">${esc(r.cliente_nombre)}</span>
-      <span class="et">R.U.C.:</span>
-      <span class="val chico">${esc(r.cliente_documento ?? "")}</span>
-    </div>
+      <div class="fila">
+        <span class="et">Recibí(mos) de</span>
+        <span class="dato">${esc(r.cliente_nombre)}</span>
+        <span class="et">R.U.C.</span>
+        <span class="dato corto">${esc(r.cliente_documento ?? "")}</span>
+      </div>
 
-    <div class="campo alto">
-      <span class="et">La cantidad de Guaraníes</span>
-      <span class="caja">${esc(montoEnLetras(Number(r.monto) || 0, moneda))}</span>
-    </div>
+      <div class="letras-lbl">La cantidad de Guaraníes</div>
+      <div class="letras-caja">${esc(montoEnLetras(Number(r.monto) || 0, moneda))}</div>
 
-    <div class="campo bloque">
-      <span class="et">en concepto de:</span>
-      <span class="val ancho">${esc(conceptoConDocumentos)}</span>
-    </div>
+      <div class="concepto">
+        <span class="et" style="font-size:11px;color:#6b7280">En concepto de</span>
+        <div class="dato">${esc(conceptoConDocumentos)}</div>
+      </div>
 
-    <div class="firmas">
-      <div class="col"><div class="ln"></div><div class="cap">Firma</div></div>
-      <div class="sello">${esc(EMPRESA_DOC.nombre)}</div>
-      <div class="col"><div class="ln">${esc(r.usuario_nombre ?? "")}</div><div class="cap">Aclaración de Firma</div></div>
+      <div class="firmas">
+        <div class="col">
+          <div class="val">&nbsp;</div>
+          <div class="ln"></div>
+          <div class="cap">Firma</div>
+        </div>
+        <div class="col">
+          <div class="val">${esc(r.usuario_nombre ?? "")}</div>
+          <div class="ln"></div>
+          <div class="cap">Aclaración de firma</div>
+        </div>
+      </div>
     </div>
 
     <div class="pie">
-      <span>${esc(String(r.numero_recibo))}</span>
-      <span>Original: Cliente · Duplicado: Arch. Tributario</span>
+      <span class="doc">${esc(String(r.numero_recibo))}</span>
+      <span>Original: Cliente · Duplicado: Archivo Tributario</span>
     </div>
   </div>
 </div>
