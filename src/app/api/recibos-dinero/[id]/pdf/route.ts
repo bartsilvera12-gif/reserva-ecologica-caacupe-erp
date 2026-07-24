@@ -1,3 +1,4 @@
+import { montoEnLetras } from "@/lib/recibos/numero-a-letras";
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { membreteA4 } from "@/lib/documentos/membrete";
@@ -21,6 +22,22 @@ function fmtFecha(iso: unknown): string {
     return String(iso);
   }
 }
+/**
+ * Fecha en formato largo con ciudad, como los recibos preimpresos paraguayos:
+ * "Caacupé, 24 de julio de 2026". Se arma a mano y no con toLocaleDateString
+ * para no depender de la zona horaria del servidor: se toma la parte YYYY-MM-DD
+ * del ISO, que es la fecha real del cobro.
+ */
+const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+function fechaLarga(iso: unknown, ciudad = "Caacupé"): string {
+  const s = String(iso ?? "").slice(0, 10);
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return ciudad;
+  const [, y, mm, dd] = m;
+  const mes = MESES[Number(mm) - 1] ?? "";
+  return `${ciudad}, ${Number(dd)} de ${mes} de ${y}`;
+}
+
 const METODO_LBL: Record<string, string> = { efectivo: "Efectivo", transferencia: "Transferencia", tarjeta: "Tarjeta", cheque: "Cheque", otro: "Otro" };
 
 export async function GET(request: NextRequest, ctxParams: { params: Promise<{ id: string }> }) {
@@ -77,6 +94,13 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   .det b{color:#374151}
   .firma{margin-top:46px;display:flex;justify-content:flex-end}
   .firma .linea{width:240px;border-top:1px solid #9ca3af;text-align:center;padding-top:6px;font-size:12px;color:#6b7280}
+  .metodos{margin-top:16px;display:flex;flex-wrap:wrap;gap:18px;font-size:12px;color:#374151}
+  .metodos .mp{display:inline-flex;align-items:center;gap:6px}
+  .metodos .box{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border:1.5px solid #94a3b8;border-radius:3px;font-weight:800;font-size:12px;line-height:1;color:#0f172a}
+  .fechalarga{margin-top:14px;text-align:right;font-size:12px;color:#475569}
+  .letras{margin-top:14px;border:1px solid #cbd5e1;border-radius:8px;padding:10px 12px;background:#f8fafc}
+  .letras .l{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#6b7280}
+  .letras .txt{display:block;margin-top:3px;font-size:13px;font-weight:700;color:#1f2937;line-height:1.35}
   .detalle{width:100%;border-collapse:collapse;margin-top:18px;font-size:12px}
   .detalle th{background:#f1f5f9;text-align:left;padding:7px 9px;border:1px solid #e2e8f0;font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:#475569}
   .detalle td{padding:7px 9px;border:1px solid #e2e8f0}
@@ -98,8 +122,16 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
     </div>
   </div>
 
+  <div class="fechalarga">${esc(fechaLarga(r.fecha))}</div>
+
   <div class="row">
-    <div style="flex:1"><div class="l">Recibí de</div><div><strong>${esc(r.cliente_nombre)}</strong>${r.cliente_documento ? ` · ${esc(r.cliente_documento)}` : ""}</div></div>
+    <div style="flex:1"><div class="l">Recibimos de</div><div><strong>${esc(r.cliente_nombre)}</strong>${r.cliente_documento ? ` · ${esc(r.cliente_documento)}` : ""}</div></div>
+  </div>
+
+  <!-- Monto en letras: estándar del recibo paraguayo, evita que se altere la cifra. -->
+  <div class="letras">
+    <span class="l">La cantidad de</span>
+    <span class="txt">${esc(montoEnLetras(Number(r.monto) || 0, moneda))}</span>
   </div>
 
   <div class="montobox">
@@ -120,9 +152,17 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
     <tfoot><tr><td colspan="2">Total cobrado</td><td class="num">${fmtMonto(r.monto, moneda)}</td></tr></tfoot>
   </table>` : ""}
 
+  <!-- Método de pago como casillas, igual que los recibos preimpresos: se marca
+       el que corresponde y el resto queda visible en blanco. -->
+  <div class="metodos">
+    ${["efectivo","transferencia","tarjeta","cheque"].map((k) => {
+      const activo = String(r.metodo_pago ?? "").toLowerCase() === k;
+      return `<span class="mp"><span class="box">${activo ? "×" : ""}</span>${esc(METODO_LBL[k] ?? k)}</span>`;
+    }).join("")}
+  </div>
+
   <div class="det">
     ${r.concepto ? `<div><b>Concepto:</b> ${esc(r.concepto)}</div>` : ""}
-    <div><b>Método de pago:</b> ${esc(metodo)}</div>
     ${r.referencia ? `<div><b>Referencia:</b> ${esc(r.referencia)}</div>` : ""}
     ${r.observaciones ? `<div><b>Observaciones:</b> ${esc(r.observaciones)}</div>` : ""}
   </div>
