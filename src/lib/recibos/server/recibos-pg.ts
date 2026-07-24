@@ -151,10 +151,11 @@ export async function crearOReusarRecibo(
     let numeroVenta = "";
     let saldo = 0;
     let moneda = "PYG";
+    let vencimiento: string | null = null;
     if (cob.cuenta_por_cobrar_id) {
       const ctaQ = await sb
         .from("cuentas_por_cobrar")
-        .select("numero_venta, saldo, moneda")
+        .select("numero_venta, saldo, moneda, fecha_vencimiento")
         .eq("empresa_id", empresaId)
         .eq("id", String(cob.cuenta_por_cobrar_id))
         .maybeSingle();
@@ -162,6 +163,7 @@ export async function crearOReusarRecibo(
       numeroVenta = (cta.numero_venta as string) || "";
       saldo = Number(cta.saldo) || 0;
       moneda = (cta.moneda as string) === "USD" ? "USD" : "PYG";
+      vencimiento = (cta.fecha_vencimiento as string) || null;
     }
     const concepto = saldo <= 0.001
       ? `Cancelación de cuenta ${numeroVenta}`.trim()
@@ -169,7 +171,7 @@ export async function crearOReusarRecibo(
 
     const { nombre, documento } = await nombreYDoc(sb, empresaId, cob.cliente_id ? String(cob.cliente_id) : null);
 
-    return await insertarRecibo(sb, empresaId, usuario, {
+    const out = await insertarRecibo(sb, empresaId, usuario, {
       cliente_id: cob.cliente_id ? String(cob.cliente_id) : null,
       cliente_nombre: nombre,
       cliente_documento: documento,
@@ -185,6 +187,41 @@ export async function crearOReusarRecibo(
       concepto,
       observaciones: input.observaciones ?? null,
     });
+
+    // Línea de detalle, para que el PDF muestre QUÉ documento se cobró y no
+    // solo el total. Un cobro de una sola cuenta genera una línea; el flujo
+    // multi-factura genera varias. Si ya existía el recibo (existed) no se
+    // duplica: el índice único por cobro_cliente_id lo impediría igual.
+    if (!out.existed) {
+      const reciboId = String((out.recibo as { id: unknown }).id);
+      let numeroDoc = numeroVenta || null;
+      let facturaId: string | null = null;
+      if (cob.venta_id) {
+        const fq = await sb
+          .from("facturas")
+          .select("id, numero_factura")
+          .eq("empresa_id", empresaId)
+          .eq("origen_venta_id", String(cob.venta_id))
+          .maybeSingle();
+        const f = fq.data as { id?: string; numero_factura?: string } | null;
+        if (f?.id) {
+          facturaId = f.id;
+          numeroDoc = f.numero_factura ?? numeroDoc;
+        }
+      }
+      // No fatal: si falla, el recibo ya existe y sigue siendo válido.
+      await sb.from("recibos_dinero_items").insert({
+        recibo_id: reciboId,
+        empresa_id: empresaId,
+        cuenta_por_cobrar_id: cob.cuenta_por_cobrar_id ? String(cob.cuenta_por_cobrar_id) : null,
+        cobro_cliente_id: cobroId,
+        factura_id: facturaId,
+        numero_documento: numeroDoc,
+        fecha_vencimiento: vencimiento,
+        importe_aplicado: Number(cob.monto) || 0,
+      });
+    }
+    return out;
   }
 
   throw new ReciboError("Origen de recibo inválido.");
