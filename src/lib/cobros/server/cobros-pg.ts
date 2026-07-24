@@ -49,13 +49,14 @@ export async function registrarCobro(
 
   const cq = await sb
     .from("cuentas_por_cobrar")
-    .select("id, cliente_id, venta_id, total, saldo, estado")
+    .select("id, cliente_id, venta_id, total, saldo, estado, sucursal_id")
     .eq("empresa_id", empresaId)
     .eq("id", input.cuenta_por_cobrar_id)
     .maybeSingle();
   if (cq.error) throw new CobroError(cq.error.message, 500);
   if (!cq.data) throw new CobroError("Cuenta por cobrar no encontrada.", 404);
   const cxc = cq.data as {
+    sucursal_id: string | null;
     id: string;
     cliente_id: string;
     venta_id: string;
@@ -81,6 +82,11 @@ export async function registrarCobro(
     .from("cobros_clientes")
     .insert({
       empresa_id: empresaId,
+      // Se HEREDA de la cuenta por cobrar, no del usuario: así el cobro queda
+      // en la misma sucursal que la deuda, y funciona también fuera de una
+      // sesión. Sin esto el cobro nacía huérfano y las vistas filtradas por
+      // sucursal no lo mostraban (aparecía "Cobrado: 0").
+      sucursal_id: cxc.sucursal_id ?? null,
       cliente_id: cxc.cliente_id,
       cuenta_por_cobrar_id: cxc.id,
       venta_id: cxc.venta_id,
