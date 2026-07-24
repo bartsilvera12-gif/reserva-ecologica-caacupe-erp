@@ -1,7 +1,7 @@
 import { montoEnLetras } from "@/lib/recibos/numero-a-letras";
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
-import { membreteA4 } from "@/lib/documentos/membrete";
+import { membreteA4, EMPRESA_DOC } from "@/lib/documentos/membrete";
 
 /**
  * GET /api/recibos-dinero/[id]/pdf?auto=1
@@ -93,7 +93,9 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   .det{margin-top:16px;font-size:13px;line-height:1.7}
   .det b{color:#374151}
   .firma{margin-top:46px;display:flex;justify-content:flex-end}
-  .firma .linea{width:240px;border-top:1px solid #9ca3af;text-align:center;padding-top:6px;font-size:12px;color:#6b7280}
+  .firma .linea{width:260px;border-top:1px solid #9ca3af;text-align:center;padding-top:6px}
+  .firma .empresa{font-size:12px;font-weight:700;color:#374151}
+  .firma .atendio{margin-top:2px;font-size:10px;color:#9ca3af}
   .metodos{margin-top:16px;display:flex;flex-wrap:wrap;gap:18px;font-size:12px;color:#374151}
   .metodos .mp{display:inline-flex;align-items:center;gap:6px}
   .metodos .box{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border:1.5px solid #94a3b8;border-radius:3px;font-weight:800;font-size:12px;line-height:1;color:#0f172a}
@@ -167,7 +169,16 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
     ${r.observaciones ? `<div><b>Observaciones:</b> ${esc(r.observaciones)}</div>` : ""}
   </div>
 
-  <div class="firma"><div class="linea">Recibido por${r.usuario_nombre ? `: ${esc(r.usuario_nombre)}` : ""}</div></div>
+  <!-- Firma: la empresa es quien RECIBE el dinero y es la responsable ante el
+       cliente, así que es su razón social la que va sobre la línea (igual que
+       en los recibos preimpresos). El usuario del sistema va aparte, en chico,
+       como referencia de quién atendió — no como firmante. -->
+  <div class="firma">
+    <div class="linea">
+      <div class="empresa">${esc(EMPRESA_DOC.nombre)}</div>
+      ${r.usuario_nombre ? `<div class="atendio">Atendido por: ${esc(r.usuario_nombre)}</div>` : ""}
+    </div>
+  </div>
 
   <div class="legal">Documento interno no fiscal. No reemplaza factura legal.</div>
 </div>
