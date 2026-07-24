@@ -51,9 +51,17 @@ export function RegistrarCobroModalCxc({
   // Tras un cobro exitoso, se ofrece generar el recibo (paso opcional).
   const [cobroOk, setCobroOk] = useState<{ cobroId: string; monto: number } | null>(null);
 
+  // Se resetea al ABRIR o al cambiar de cuenta, identificando la cuenta por su
+  // `id` y NO por el objeto: el padre construye el prop inline
+  // (`cuenta={cobrando ? {...} : null}`), así que es una referencia nueva en
+  // cada render. Con `[cuenta]` este efecto corría en todos los renders y
+  // borraba `cobroOk` apenas se seteaba: el pago se registraba pero el modal
+  // nunca pasaba al paso "generar recibo" ni se cerraba.
+  const cuentaId = cuenta?.id ?? null;
+  const cuentaSaldo = cuenta?.saldo ?? 0;
   useEffect(() => {
-    if (open && cuenta) {
-      setMonto(String(cuenta.saldo));
+    if (open && cuentaId) {
+      setMonto(String(cuentaSaldo));
       setMetodo("efectivo");
       setReferencia("");
       setTitular("");
@@ -61,7 +69,10 @@ export function RegistrarCobroModalCxc({
       setError(null);
       setCobroOk(null);
     }
-  }, [open, cuenta]);
+    // `cuentaSaldo` se excluye a propósito: solo interesa el valor inicial al
+    // abrir. Incluirlo reintroduciría el reseteo en cada refresco del padre.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, cuentaId]);
 
   // Entidades bancarias (mismo origen que Caja) para Transferencia/Tarjeta.
   useEffect(() => {
