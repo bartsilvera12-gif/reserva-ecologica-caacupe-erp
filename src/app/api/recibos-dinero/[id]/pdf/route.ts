@@ -38,6 +38,20 @@ function fechaLarga(iso: unknown, ciudad = "Caacupé"): string {
   return `${ciudad}, ${Number(dd)} de ${mes} de ${y}`;
 }
 
+/**
+ * Datos que en el talonario preimpreso van fijos en la cabecera.
+ * Coinciden con empresa_sifen_config (RUC 80131562-0, punto 001-001).
+ */
+const RUC_EMPRESA = "80131562-0";
+const PUNTO_RECIBO = "001 - 001";
+
+/** "REC-000001" -> "000001", para mostrarlo como en el talonario. */
+function numeroCorto(numero: unknown): string {
+  const s = String(numero ?? "");
+  const m = s.match(/(\d+)\s*$/);
+  return m ? m[1]! : s;
+}
+
 const METODO_LBL: Record<string, string> = { efectivo: "Efectivo", transferencia: "Transferencia", tarjeta: "Tarjeta", cheque: "Cheque", otro: "Otro" };
 
 export async function GET(request: NextRequest, ctxParams: { params: Promise<{ id: string }> }) {
@@ -73,6 +87,17 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   const moneda = String(r.moneda ?? "PYG");
   const metodo = METODO_LBL[String(r.metodo_pago ?? "")] ?? (r.metodo_pago ?? "—");
 
+  // En el talonario los documentos cobrados se escriben a mano en la línea
+  // "en concepto de" (ej. "Pago de factura # 001-001-0005519 y 001-001-0005565").
+  // Se arma igual desde el detalle; si no hay líneas, se cae al concepto guardado.
+  const numeros = detalle
+    .map((d) => (d.numero_documento ?? "").trim())
+    .filter((x) => x.length > 0);
+  const conceptoConDocumentos =
+    numeros.length > 0
+      ? `Pago de ${numeros.length === 1 ? "factura" : "facturas"} ${numeros.join(" y ")}`
+      : String(r.concepto ?? "");
+
   const html = `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(r.numero_recibo)} — Recibo de dinero</title>
@@ -80,107 +105,80 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   *{box-sizing:border-box} html,body{margin:0;padding:0}
   body{font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#1f2937;background:#f3f4f6}
   .page{width:210mm;min-height:148mm;margin:0 auto;background:#fff;padding:16mm 16mm}
-  .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #4FAEB2;padding-bottom:12px}
-  .negocio{font-size:20px;font-weight:800}
-  .tag{display:inline-block;margin-top:4px;background:#4FAEB2;color:#fff;font-size:13px;font-weight:700;letter-spacing:.06em;padding:4px 12px;border-radius:6px}
-  .meta{text-align:right;font-size:13px}
-  .meta .num{font-size:18px;font-weight:800;color:#4FAEB2}
-  .row{display:flex;gap:24px;margin-top:16px;font-size:13px}
-  .row .l{color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
-  .montobox{margin-top:18px;border:2px solid #4FAEB2;border-radius:10px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center}
-  .montobox .lbl{font-size:12px;text-transform:uppercase;color:#6b7280}
-  .montobox .val{font-size:26px;font-weight:800;color:#1f2937}
-  .det{margin-top:16px;font-size:13px;line-height:1.7}
-  .det b{color:#374151}
-  .firma{margin-top:46px;display:flex;justify-content:flex-end}
-  .firma .linea{width:260px;border-top:1px solid #9ca3af;text-align:center;padding-top:6px}
-  .firma .empresa{font-size:12px;font-weight:700;color:#374151}
-  .firma .atendio{margin-top:2px;font-size:10px;color:#9ca3af}
-  .metodos{margin-top:16px;display:flex;flex-wrap:wrap;gap:18px;font-size:12px;color:#374151}
-  .metodos .mp{display:inline-flex;align-items:center;gap:6px}
-  .metodos .box{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border:1.5px solid #94a3b8;border-radius:3px;font-weight:800;font-size:12px;line-height:1;color:#0f172a}
-  .fechalarga{margin-top:14px;text-align:right;font-size:12px;color:#475569}
-  .letras{margin-top:14px;border:1px solid #cbd5e1;border-radius:8px;padding:10px 12px;background:#f8fafc}
-  .letras .l{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#6b7280}
-  .letras .txt{display:block;margin-top:3px;font-size:13px;font-weight:700;color:#1f2937;line-height:1.35}
-  .detalle{width:100%;border-collapse:collapse;margin-top:18px;font-size:12px}
-  .detalle th{background:#f1f5f9;text-align:left;padding:7px 9px;border:1px solid #e2e8f0;font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:#475569}
-  .detalle td{padding:7px 9px;border:1px solid #e2e8f0}
-  .detalle .num{text-align:right;font-variant-numeric:tabular-nums}
-  .detalle tfoot td{font-weight:700;background:#f8fafc}
-  .legal{margin-top:26px;padding-top:12px;border-top:1px dashed #d1d5db;font-size:11px;color:#6b7280;text-align:center}
+  .marco{border:1.5px solid #111827;border-radius:4px;padding:14px 16px}
+  .cab{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+  .cab-izq{flex:1}
+  .cab-der{width:270px;text-align:center;border-left:1px solid #d1d5db;padding-left:14px}
+  .cab-der .tit{font-size:18px;font-weight:800;letter-spacing:.02em}
+  .cab-der .ruc{font-size:12px;font-weight:700;border-bottom:1px solid #111827;padding-bottom:4px;margin-bottom:6px}
+  .cab-der .songs{display:flex;align-items:baseline;gap:8px;border-bottom:1px solid #111827;padding-bottom:4px}
+  .cab-der .songs span{font-size:12px;font-weight:700}
+  .cab-der .songs b{flex:1;text-align:right;font-size:17px;font-weight:800;font-variant-numeric:tabular-nums}
+  .cab-der .nro{display:flex;align-items:baseline;justify-content:space-between;margin-top:6px}
+  .cab-der .nro .pto{font-size:14px;font-weight:800;letter-spacing:.06em}
+  .cab-der .nro .sec{font-size:17px;font-weight:800;color:#c1121f;font-variant-numeric:tabular-nums}
+  .fecha{margin-top:22px;text-align:center;font-size:13px;border-bottom:1px solid #9ca3af;padding-bottom:3px;width:60%;margin-left:auto;margin-right:auto}
+  .campo{display:flex;align-items:baseline;gap:8px;margin-top:16px;font-size:12px}
+  .campo .et{color:#374151;white-space:nowrap}
+  .campo .val{flex:1;border-bottom:1px solid #9ca3af;padding-bottom:2px;font-weight:700;min-height:16px}
+  .campo .val.chico{flex:0 0 150px}
+  .campo .val.ancho{flex:1;font-weight:600;line-height:1.5}
+  .campo.alto{align-items:stretch}
+  .campo .caja{flex:1;border:1px solid #111827;padding:7px 9px;font-weight:700;font-size:12.5px;line-height:1.5;min-height:38px}
+  .campo.bloque{margin-top:18px}
+  .firmas{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-top:44px}
+  .firmas .col{flex:1;text-align:center}
+  .firmas .ln{border-bottom:1px dotted #6b7280;padding-bottom:3px;min-height:20px;font-weight:600;font-size:12px}
+  .firmas .cap{margin-top:3px;font-size:11px;color:#4b5563}
+  .firmas .sello{flex:0 0 190px;text-align:center;font-size:10px;font-weight:700;color:#9ca3af;border:1px dashed #d1d5db;border-radius:6px;padding:8px 6px}
+  .pie{display:flex;justify-content:space-between;margin-top:18px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:9.5px;color:#6b7280}
   .toolbar{position:sticky;top:0;background:#111827;padding:10px;text-align:center}
   .toolbar button{background:#4FAEB2;color:#fff;border:0;padding:8px 16px;border-radius:6px;font-size:14px;cursor:pointer}
   @media print{body{background:#fff}.toolbar{display:none}.page{width:auto;min-height:auto;margin:0;padding:12mm}@page{size:A4;margin:12mm}}
 </style></head><body>
 <div class="toolbar"><button onclick="window.print()">Imprimir / Guardar PDF</button></div>
 <div class="page">
-  ${membreteA4()}
-  <div class="head">
-    <div><div class="tag">RECIBO DE DINERO</div></div>
-    <div class="meta">
-      <div class="num">${esc(r.numero_recibo)}</div>
-      <div>Fecha: ${fmtFecha(r.fecha)}</div>
+  <div class="marco">
+    <div class="cab">
+      <div class="cab-izq">${membreteA4()}</div>
+      <div class="cab-der">
+        <div class="tit">RECIBO DE DINERO</div>
+        <div class="ruc">R.U.C. ${esc(RUC_EMPRESA)}</div>
+        <div class="songs"><span>Son Gs.</span><b>${fmtMonto(r.monto, moneda)}</b></div>
+        <div class="nro"><span class="pto">${esc(PUNTO_RECIBO)}</span><span class="sec">${esc(numeroCorto(r.numero_recibo))}</span></div>
+      </div>
+    </div>
+
+    <div class="fecha">${esc(fechaLarga(r.fecha, ""))}</div>
+
+    <div class="campo">
+      <span class="et">Recibí(mos) de:</span>
+      <span class="val">${esc(r.cliente_nombre)}</span>
+      <span class="et">R.U.C.:</span>
+      <span class="val chico">${esc(r.cliente_documento ?? "")}</span>
+    </div>
+
+    <div class="campo alto">
+      <span class="et">La cantidad de Guaraníes</span>
+      <span class="caja">${esc(montoEnLetras(Number(r.monto) || 0, moneda))}</span>
+    </div>
+
+    <div class="campo bloque">
+      <span class="et">en concepto de:</span>
+      <span class="val ancho">${esc(conceptoConDocumentos)}</span>
+    </div>
+
+    <div class="firmas">
+      <div class="col"><div class="ln"></div><div class="cap">Firma</div></div>
+      <div class="sello">${esc(EMPRESA_DOC.nombre)}</div>
+      <div class="col"><div class="ln">${esc(r.usuario_nombre ?? "")}</div><div class="cap">Aclaración de Firma</div></div>
+    </div>
+
+    <div class="pie">
+      <span>${esc(String(r.numero_recibo))}</span>
+      <span>Original: Cliente · Duplicado: Arch. Tributario</span>
     </div>
   </div>
-
-  <div class="fechalarga">${esc(fechaLarga(r.fecha))}</div>
-
-  <div class="row">
-    <div style="flex:1"><div class="l">Recibimos de</div><div><strong>${esc(r.cliente_nombre)}</strong>${r.cliente_documento ? ` · ${esc(r.cliente_documento)}` : ""}</div></div>
-  </div>
-
-  <!-- Monto en letras: estándar del recibo paraguayo, evita que se altere la cifra. -->
-  <div class="letras">
-    <span class="l">La cantidad de</span>
-    <span class="txt">${esc(montoEnLetras(Number(r.monto) || 0, moneda))}</span>
-  </div>
-
-  <div class="montobox">
-    <div class="lbl">Monto recibido</div>
-    <div class="val">${fmtMonto(r.monto, moneda)}</div>
-  </div>
-
-  ${detalle.length > 0 ? `
-  <table class="detalle">
-    <thead><tr><th>Documento</th><th>Vencimiento</th><th class="num">Importe</th></tr></thead>
-    <tbody>
-      ${detalle.map((d) => `<tr>
-        <td>${esc(d.numero_documento ?? "—")}</td>
-        <td>${d.fecha_vencimiento ? fmtFecha(d.fecha_vencimiento) : "—"}</td>
-        <td class="num">${fmtMonto(d.importe_aplicado, moneda)}</td>
-      </tr>`).join("")}
-    </tbody>
-    <tfoot><tr><td colspan="2">Total cobrado</td><td class="num">${fmtMonto(r.monto, moneda)}</td></tr></tfoot>
-  </table>` : ""}
-
-  <!-- Método de pago como casillas, igual que los recibos preimpresos: se marca
-       el que corresponde y el resto queda visible en blanco. -->
-  <div class="metodos">
-    ${["efectivo","transferencia","tarjeta","cheque"].map((k) => {
-      const activo = String(r.metodo_pago ?? "").toLowerCase() === k;
-      return `<span class="mp"><span class="box">${activo ? "×" : ""}</span>${esc(METODO_LBL[k] ?? k)}</span>`;
-    }).join("")}
-  </div>
-
-  <div class="det">
-    ${r.concepto ? `<div><b>Concepto:</b> ${esc(r.concepto)}</div>` : ""}
-    ${r.referencia ? `<div><b>Referencia:</b> ${esc(r.referencia)}</div>` : ""}
-    ${r.observaciones ? `<div><b>Observaciones:</b> ${esc(r.observaciones)}</div>` : ""}
-  </div>
-
-  <!-- Firma: la empresa es quien RECIBE el dinero y es la responsable ante el
-       cliente, así que es su razón social la que va sobre la línea (igual que
-       en los recibos preimpresos). El usuario del sistema va aparte, en chico,
-       como referencia de quién atendió — no como firmante. -->
-  <div class="firma">
-    <div class="linea">
-      <div class="empresa">${esc(EMPRESA_DOC.nombre)}</div>
-      ${r.usuario_nombre ? `<div class="atendio">Atendido por: ${esc(r.usuario_nombre)}</div>` : ""}
-    </div>
-  </div>
-
-  <div class="legal">Documento interno no fiscal. No reemplaza factura legal.</div>
 </div>
 <script>try{ if (${auto ? "true" : "false"}) window.print(); }catch(e){}</script>
 </body></html>`;
