@@ -120,31 +120,25 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
       : String(r.concepto ?? "");
 
   /**
-   * Filas de la tabla. Se completan con filas vacías hasta un mínimo para que el
-   * comprobante conserve la forma del preimpreso aunque cobre un solo documento.
+   * Filas de la tabla: solo las reales. Antes se rellenaba con filas vacías
+   * hasta un mínimo para imitar el talonario preimpreso, pero con la tabla de
+   * color las filas en blanco quedaban feas. Se muestran únicamente las que hay.
    */
-  const MIN_FILAS = 5;
-  const filasReales = detalle.map((d) => ({
+  const filasTabla = detalle.map((d) => ({
     doc: (d.numero_documento ?? "").trim() || "—",
     venc: d.fecha_vencimiento ? fmtFecha(d.fecha_vencimiento) : "",
     concepto: "Cobro de cuenta",
     importe: fmtMonto(d.importe_aplicado, moneda),
   }));
   // Sin detalle (recibos anteriores al desglose) se muestra el concepto guardado.
-  if (filasReales.length === 0) {
-    filasReales.push({
+  if (filasTabla.length === 0) {
+    filasTabla.push({
       doc: "—",
       venc: "",
       concepto: String(r.concepto ?? "Cobro"),
       importe: fmtMonto(r.monto, moneda),
     });
   }
-  const filasTabla = [
-    ...filasReales,
-    ...Array.from({ length: Math.max(0, MIN_FILAS - filasReales.length) }, () => ({
-      doc: "", venc: "", concepto: "", importe: "",
-    })),
-  ];
 
   const html = `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
