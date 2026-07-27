@@ -164,61 +164,71 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
 <style>
   *{box-sizing:border-box} html,body{margin:0;padding:0}
   body{font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#1f2937;background:#f3f4f6}
-  .page{width:210mm;min-height:160mm;margin:0 auto;background:#fff;padding:12mm}
-  .marco{border:1px solid #111827;padding:10px 12px}
+  .page{width:210mm;min-height:170mm;margin:0 auto;background:#fff;padding:14mm}
 
-  /* ── Cabecera: izquierda emisor · derecha bloque fiscal ── */
-  .cab{display:flex;justify-content:space-between;gap:20px;align-items:flex-start}
-  .cab-izq{display:flex;gap:12px;align-items:flex-start;min-width:0}
-  .cab-izq img{width:62px;height:auto;object-fit:contain;flex:0 0 auto}
-  .emisor{font-size:9.5px;color:#374151;line-height:1.55;min-width:0}
-  .emisor .nom{font-size:12px;font-weight:800;color:#111827;line-height:1.25;margin-bottom:2px}
-  .emisor .g{color:#6b7280}
+  /* Paleta de marca */
+  :root{ --verde:#2E7D32; --verde-osc:#1f5c22; --tinta:#1f2937; --suave:#6b7280; --linea:#d9e2dc; --crema:#f6f9f6; }
 
-  .cab-der{flex:0 0 268px;text-align:right}
-  .montobox{display:flex;align-items:center;justify-content:flex-end;gap:7px}
-  .montobox .lb{font-size:11px;font-weight:700;color:#374151}
-  .montobox .caja{flex:1;max-width:200px;border:1px solid #111827;border-radius:2px;padding:3px 8px;text-align:right;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.02em}
-  .cab-der .tit{margin-top:7px;font-size:14px;font-weight:800;letter-spacing:.03em;color:#111827}
-  .cab-der .ruc{margin-top:1px;font-size:10px;color:#374151}
-  .cab-der .ruc .serie{margin-left:14px}
-  .cab-der .nro{margin-top:4px;font-size:19px;font-weight:800;color:#111827;font-variant-numeric:tabular-nums}
-  .cab-der .nro small{font-size:12px;font-weight:700;margin-right:4px}
+  .marco{border:1px solid var(--linea);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(31,41,55,.06)}
 
-  /* ── Datos del receptor ── */
-  .datos{margin-top:14px;display:flex;justify-content:space-between;gap:20px;align-items:flex-start}
-  .datos .izq{flex:1;min-width:0;font-size:10.5px;line-height:1.85;color:#374151}
-  .datos .izq b{color:#111827}
-  .datos .der{flex:0 0 auto;text-align:right;font-size:10.5px;color:#374151;line-height:1.85}
+  /* Cabecera con banda de marca */
+  .cab{display:flex;justify-content:space-between;align-items:center;gap:26px;padding:20px 26px;border-bottom:3px solid var(--verde)}
+  .cab-izq{display:flex;align-items:center;gap:18px;min-width:0}
+  .cab-izq img{width:132px;height:auto;object-fit:contain;flex:0 0 auto}
+  .emisor{min-width:0;border-left:1px solid var(--linea);padding-left:18px}
+  .emisor .nom{font-family:Georgia,"Times New Roman",serif;font-size:16px;font-weight:700;color:var(--verde-osc);line-height:1.2}
+  .emisor .act{margin-top:4px;font-size:9px;color:var(--suave);line-height:1.5;max-width:280px}
+  .emisor .lin{margin-top:6px;font-size:9.5px;color:#4b5563;line-height:1.55}
+  .emisor .lin b{color:var(--tinta)}
 
-  /* ── Cantidad en letras ── */
-  .letras{margin-top:10px;border:1px solid #111827;padding:7px 9px;font-size:11px;min-height:34px}
-  .letras .et{font-weight:600;color:#374151}
-  .letras .txt{font-weight:800;color:#111827;letter-spacing:.01em}
-  .letras .fill{color:#9ca3af;letter-spacing:-.5px}
+  .cab-der{flex:0 0 250px;text-align:right}
+  .cab-der .tit{font-family:Georgia,"Times New Roman",serif;font-size:19px;font-weight:700;letter-spacing:.03em;color:var(--tinta)}
+  .cab-der .fiscal{margin-top:4px;font-size:10px;color:var(--suave)}
+  .cab-der .fiscal .serie{margin-left:12px;color:#4b5563}
+  .cab-der .nro{margin-top:10px;display:inline-flex;align-items:baseline;gap:6px;background:var(--crema);border:1px solid var(--linea);border-radius:8px;padding:5px 12px}
+  .cab-der .nro small{font-size:10px;font-weight:600;color:var(--suave)}
+  .cab-der .nro b{font-size:19px;font-weight:800;color:var(--verde-osc);font-variant-numeric:tabular-nums;letter-spacing:.02em}
 
-  /* ── Tabla de documentos ── */
-  .tabla{width:100%;border-collapse:collapse;margin-top:10px;font-size:10.5px}
-  .tabla th{border:1px solid #111827;padding:5px 7px;font-weight:700;color:#111827;text-align:center;background:#fff}
-  .tabla td{border-left:1px solid #111827;border-right:1px solid #111827;padding:4px 7px;height:19px;color:#1f2937}
-  .tabla tr.ult td{border-bottom:1px solid #111827}
+  /* Franja del monto */
+  .montofranja{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 26px;background:var(--crema)}
+  .montofranja .recibi{font-size:12px;color:#4b5563}
+  .montofranja .recibi b{color:var(--tinta);font-weight:700}
+  .montofranja .fecha{font-size:10.5px;color:var(--suave);margin-top:2px}
+  .montofranja .gs{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+  .montofranja .gs .lb{font-size:11px;font-weight:700;color:var(--suave)}
+  .montofranja .gs .caja{border:1px solid var(--verde);border-radius:6px;background:#fff;padding:5px 12px;font-size:14px;font-weight:800;color:var(--verde-osc);font-variant-numeric:tabular-nums;letter-spacing:.03em}
+
+  .cuerpo{padding:18px 26px 22px}
+
+  .letras{border:1px solid var(--linea);border-radius:8px;padding:11px 14px;font-size:11px;background:#fff}
+  .letras .et{text-transform:uppercase;letter-spacing:.06em;font-size:9px;color:var(--suave);font-weight:600}
+  .letras .txt{display:block;margin-top:3px;font-size:13px;font-weight:700;color:var(--tinta);line-height:1.45}
+
+  .tabla{width:100%;border-collapse:separate;border-spacing:0;margin-top:16px;font-size:10.5px;border:1px solid var(--linea);border-radius:8px;overflow:hidden}
+  .tabla th{background:var(--verde);color:#fff;padding:8px 12px;font-weight:600;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;text-align:left}
+  .tabla th.num{text-align:right}
+  .tabla td{padding:8px 12px;height:22px;color:var(--tinta);border-top:1px solid var(--linea)}
+  .tabla tbody tr:first-child td{border-top:0}
+  .tabla tbody tr:nth-child(even) td{background:var(--crema)}
   .tabla .num{text-align:right;font-variant-numeric:tabular-nums}
-  .tabla .ct{text-align:center}
-  .totalfila{display:flex;justify-content:flex-end;margin-top:-1px}
-  .totalfila .caja{border:1px solid #111827;border-top:0;padding:5px 9px;min-width:196px;display:flex;justify-content:space-between;gap:12px;font-size:11px}
-  .totalfila .caja b{font-weight:800;font-variant-numeric:tabular-nums}
+  .tabla .ct{text-align:center;color:var(--suave)}
+  .totalfila{display:flex;justify-content:flex-end;margin-top:12px}
+  .totalfila .caja{background:var(--verde);color:#fff;border-radius:8px;padding:9px 18px;min-width:210px;display:flex;justify-content:space-between;align-items:center;gap:16px}
+  .totalfila .caja .l{font-size:10px;letter-spacing:.08em;text-transform:uppercase;opacity:.9}
+  .totalfila .caja .v{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums}
 
-  /* ── Pie: métodos · cobrador · firma ── */
-  .pie{display:flex;justify-content:space-between;gap:18px;margin-top:16px;align-items:flex-end}
-  .metodos{flex:0 0 auto;font-size:10px;color:#374151;line-height:2}
-  .metodos .it{display:flex;align-items:center;gap:7px}
-  .metodos .bx{width:13px;height:13px;border:1px solid #111827;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;line-height:1}
-  .cobrador{flex:1;text-align:center;font-size:10px;color:#374151;padding-bottom:6px}
-  .cobrador b{color:#111827}
-  .firma{flex:0 0 250px;text-align:center}
-  .firma .ln{border-top:1px solid #111827;padding-top:4px;font-size:10.5px;font-weight:800;color:#111827}
-  .firma .orig{margin-top:3px;font-size:9px;color:#6b7280}
-
+  .pie{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin-top:30px}
+  .metodos{flex:0 0 auto;font-size:10px;color:#4b5563;line-height:2.1}
+  .metodos .tt{text-transform:uppercase;letter-spacing:.06em;font-size:8.5px;color:var(--suave);font-weight:600;margin-bottom:2px}
+  .metodos .it{display:flex;align-items:center;gap:8px}
+  .metodos .bx{width:13px;height:13px;border:1.5px solid var(--suave);border-radius:3px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;line-height:1;color:var(--verde-osc)}
+  .metodos .it.on{color:var(--tinta);font-weight:700}
+  .metodos .it.on .bx{border-color:var(--verde)}
+  .cobrador{flex:1;text-align:center;font-size:10px;color:var(--suave);padding-bottom:8px}
+  .cobrador b{color:var(--tinta)}
+  .firma{flex:0 0 236px;text-align:center;padding-top:26px}
+  .firma .ln{border-top:1.5px solid var(--tinta);padding-top:5px;font-size:10.5px;font-weight:800;color:var(--verde-osc);letter-spacing:.02em}
+  .firma .orig{margin-top:4px;font-size:8.5px;color:var(--suave);letter-spacing:.02em}
 
   .toolbar{position:sticky;top:0;background:#111827;padding:10px;text-align:center}
   .toolbar button{background:#4FAEB2;color:#fff;border:0;padding:8px 16px;border-radius:6px;font-size:14px;cursor:pointer}
@@ -232,71 +242,72 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
         <img src="${esc(EMPRESA_DOC.logoUrl)}" alt="${esc(EMPRESA_DOC.nombre)}" />
         <div class="emisor">
           <div class="nom">${esc(EMPRESA_DOC.nombre)}</div>
-          <div class="g">${EMPRESA_DOC.actividad.map(esc).join(" · ")}</div>
-          <div>Tel.: ${esc(EMPRESA_DOC.telefono)}</div>
-          <div class="g">${EMPRESA_DOC.direccion.map(esc).join(" · ")}</div>
+          <div class="act">${EMPRESA_DOC.actividad.map(esc).join(" · ")}</div>
+          <div class="lin"><b>Tel.:</b> ${esc(EMPRESA_DOC.telefono)} &nbsp;·&nbsp; ${EMPRESA_DOC.direccion.map(esc).join(" · ")}</div>
         </div>
       </div>
       <div class="cab-der">
-        <div class="montobox">
-          <span class="lb">Gs.</span>
-          <span class="caja">${esc(montoConAsteriscos(Number(r.monto) || 0))}</span>
+        <div class="tit">Recibo de dinero</div>
+        <div class="fiscal">R.U.C. ${esc(RUC_EMPRESA)}<span class="serie">Serie ${esc(puntoRecibo)}</span></div>
+        <div class="nro"><small>N&ordm;</small><b>${esc(numeroCorto(r.numero_recibo))}</b></div>
+      </div>
+    </div>
+
+    <div class="montofranja">
+      <div>
+        <div class="recibi">Recibimos de: <b>${esc(r.cliente_nombre)}</b>${r.cliente_documento ? ` &nbsp;&middot;&nbsp; R.U.C./C.I.: <b>${esc(r.cliente_documento)}</b>` : ""}</div>
+        <div class="fecha">${esc(fechaLarga(r.fecha))}</div>
+      </div>
+      <div class="gs">
+        <span class="lb">Gs.</span>
+        <span class="caja">${esc(montoConAsteriscos(Number(r.monto) || 0))}</span>
+      </div>
+    </div>
+
+    <div class="cuerpo">
+      <div class="letras">
+        <span class="et">La cantidad de guaran&iacute;es</span>
+        <span class="txt">${esc(montoEnLetras(Number(r.monto) || 0, moneda))}</span>
+      </div>
+
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th style="width:28%">Documento</th>
+            <th style="width:20%">Vencimiento</th>
+            <th style="width:30%">Concepto</th>
+            <th class="num" style="width:22%">Importe</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filasTabla.map((f) => `<tr>
+            <td>${esc(f.doc)}</td>
+            <td class="ct">${esc(f.venc)}</td>
+            <td>${esc(f.concepto)}</td>
+            <td class="num">${esc(f.importe)}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+      <div class="totalfila"><div class="caja"><span class="l">Total</span><span class="v">${fmtMonto(r.monto, moneda)}</span></div></div>
+
+      <div class="pie">
+        <div class="metodos">
+          <div class="tt">Forma de pago</div>
+          ${["efectivo","transferencia","tarjeta","cheque"].map((k) => {
+            const on = String(r.metodo_pago ?? "").toLowerCase() === k;
+            return `<div class="it${on ? " on" : ""}"><span class="bx">${on ? "&times;" : ""}</span>${esc(METODO_LBL[k] ?? k)}</div>`;
+          }).join("")}
         </div>
-        <div class="tit">RECIBO DE DINERO</div>
-        <div class="ruc">R.U.C. ${esc(RUC_EMPRESA)}<span class="serie">Serie: ${esc(puntoRecibo)}</span></div>
-        <div class="nro"><small>Nº</small>${esc(numeroCorto(r.numero_recibo))}</div>
-      </div>
-    </div>
-
-    <div class="datos">
-      <div class="izq">
-        <div>Recibimos de: <b>${esc(r.cliente_nombre)}</b></div>
-        ${r.cliente_documento ? `<div>R.U.C. / C.I.: <b>${esc(r.cliente_documento)}</b></div>` : ""}
-      </div>
-      <div class="der">${esc(fechaLarga(r.fecha))}</div>
-    </div>
-
-    <div class="letras">
-      <span class="et">La cantidad de Guaraníes:</span>
-      <span class="txt">${esc(montoEnLetras(Number(r.monto) || 0, moneda))}</span>
-      <span class="fill">${" .".padEnd(2)}${"-".repeat(Math.max(0, 74 - montoEnLetras(Number(r.monto) || 0, moneda).length))}</span>
-    </div>
-
-    <table class="tabla">
-      <thead>
-        <tr>
-          <th style="width:30%">Documento</th>
-          <th style="width:22%">Vencimiento</th>
-          <th style="width:26%">Concepto</th>
-          <th style="width:22%">Importe</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${filasTabla.map((f, i) => `<tr${i === filasTabla.length - 1 ? ' class="ult"' : ""}>
-          <td>${esc(f.doc)}</td>
-          <td class="ct">${esc(f.venc)}</td>
-          <td>${esc(f.concepto)}</td>
-          <td class="num">${esc(f.importe)}</td>
-        </tr>`).join("")}
-      </tbody>
-    </table>
-    <div class="totalfila"><div class="caja"><span>TOTAL</span><b>${fmtMonto(r.monto, moneda)}</b></div></div>
-
-    <div class="pie">
-      <div class="metodos">
-        ${["efectivo","transferencia","tarjeta","cheque"].map((k) => {
-          const on = String(r.metodo_pago ?? "").toLowerCase() === k;
-          return `<div class="it"><span class="bx">${on ? "×" : ""}</span>${esc(METODO_LBL[k] ?? k)}</div>`;
-        }).join("")}
-      </div>
-      <div class="cobrador">${r.usuario_nombre ? `Cobrador: <b>${esc(r.usuario_nombre)}</b>` : ""}${r.referencia ? `<br>Ref.: ${esc(r.referencia)}` : ""}</div>
-      <div class="firma">
-        <div class="ln">${esc(EMPRESA_DOC.nombre.toUpperCase())}</div>
-        <div class="orig">Original: Cliente · Duplicado: Archivo Tributario</div>
+        <div class="cobrador">${r.usuario_nombre ? `Cobrador: <b>${esc(r.usuario_nombre)}</b>` : ""}${r.referencia ? `<br>Ref.: ${esc(r.referencia)}` : ""}</div>
+        <div class="firma">
+          <div class="ln">${esc(EMPRESA_DOC.nombre)}</div>
+          <div class="orig">Original: Cliente &middot; Duplicado: Archivo Tributario</div>
+        </div>
       </div>
     </div>
   </div>
 </div>
+
 <script>try{ if (${auto ? "true" : "false"}) window.print(); }catch(e){}</script>
 </body></html>`;
 
