@@ -152,7 +152,8 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
 <style>
   *{box-sizing:border-box} html,body{margin:0;padding:0}
   body{font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#1f2937;background:#f3f4f6}
-  .page{width:210mm;min-height:170mm;margin:0 auto;background:#fff;padding:14mm}
+  /* Apaisado (como el talonario del cliente): mas ancho que alto. */
+  .page{width:270mm;min-height:150mm;margin:0 auto;background:#fff;padding:12mm}
 
   /* Paleta de marca */
   :root{ --verde:#2E7D32; --verde-osc:#1f5c22; --tinta:#1f2937; --suave:#6b7280; --linea:#d9e2dc; --crema:#f6f9f6; }
@@ -220,7 +221,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
 
   .toolbar{position:sticky;top:0;background:#111827;padding:10px;text-align:center}
   .toolbar button{background:#4FAEB2;color:#fff;border:0;padding:8px 16px;border-radius:6px;font-size:14px;cursor:pointer}
-  @media print{body{background:#fff}.toolbar{display:none}.page{width:auto;min-height:auto;margin:0;padding:12mm}@page{size:A4;margin:12mm}}
+  @media print{body{background:#fff}.toolbar{display:none}.page{width:auto;min-height:auto;margin:0;padding:10mm}@page{size:A4 landscape;margin:10mm}}
 </style></head><body>
 <div class="toolbar"><button onclick="window.print()">Imprimir / Guardar PDF</button></div>
 <div class="page">
