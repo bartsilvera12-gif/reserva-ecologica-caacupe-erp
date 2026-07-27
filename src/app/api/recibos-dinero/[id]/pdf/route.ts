@@ -55,18 +55,6 @@ function numeroCorto(numero: unknown): string {
   return m ? m[1]! : s;
 }
 
-/**
- * Importe con relleno de asteriscos a la izquierda y ".-" al final, como en los
- * recibos preimpresos: impide que se agreguen dígitos delante de la cifra.
- * Ej. 1200000 -> "***********1.200.000.-"
- */
-function montoConAsteriscos(monto: number, ancho = 22): string {
-  const n = Math.round(Number(monto) || 0).toLocaleString("es-PY");
-  const cuerpo = `${n}.-`;
-  const relleno = Math.max(0, ancho - cuerpo.length);
-  return `${"*".repeat(relleno)}${cuerpo}`;
-}
-
 const METODO_LBL: Record<string, string> = { efectivo: "Efectivo", transferencia: "Transferencia", tarjeta: "Tarjeta", cheque: "Cheque", otro: "Otro" };
 
 export async function GET(request: NextRequest, ctxParams: { params: Promise<{ id: string }> }) {
@@ -189,20 +177,20 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   .cab-der .nro small{font-size:10px;font-weight:600;color:var(--suave)}
   .cab-der .nro b{font-size:19px;font-weight:800;color:var(--verde-osc);font-variant-numeric:tabular-nums;letter-spacing:.02em}
 
-  /* Franja del monto */
-  .montofranja{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 26px;background:var(--crema)}
+  /* Franja: cliente + fecha */
+  .montofranja{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:12px 26px;background:var(--crema)}
   .montofranja .recibi{font-size:12px;color:#4b5563}
   .montofranja .recibi b{color:var(--tinta);font-weight:700}
-  .montofranja .fecha{font-size:10.5px;color:var(--suave);margin-top:2px}
-  .montofranja .gs{display:flex;align-items:center;gap:8px;flex:0 0 auto}
-  .montofranja .gs .lb{font-size:11px;font-weight:700;color:var(--suave)}
-  .montofranja .gs .caja{border:1px solid var(--verde);border-radius:6px;background:#fff;padding:5px 12px;font-size:14px;font-weight:800;color:var(--verde-osc);font-variant-numeric:tabular-nums;letter-spacing:.03em}
+  .montofranja .fecha{font-size:10.5px;color:var(--suave);flex:0 0 auto}
+
+  /* Monto final: cifra en asteriscos + monto en letras */
+  .montofinal{margin-top:20px;border-top:1px solid var(--linea);padding-top:16px}
+  .montofinal .letras{border:1px solid var(--linea);border-radius:8px;padding:11px 14px;background:#fff}
+  .montofinal .letras .et{text-transform:uppercase;letter-spacing:.06em;font-size:9px;color:var(--suave);font-weight:600}
+  .montofinal .letras .txt{display:block;margin-top:3px;font-size:13px;font-weight:700;color:var(--tinta);line-height:1.45}
 
   .cuerpo{padding:18px 26px 22px}
 
-  .letras{border:1px solid var(--linea);border-radius:8px;padding:11px 14px;font-size:11px;background:#fff}
-  .letras .et{text-transform:uppercase;letter-spacing:.06em;font-size:9px;color:var(--suave);font-weight:600}
-  .letras .txt{display:block;margin-top:3px;font-size:13px;font-weight:700;color:var(--tinta);line-height:1.45}
 
   .tabla{width:100%;border-collapse:separate;border-spacing:0;margin-top:16px;font-size:10.5px;border:1px solid var(--linea);border-radius:8px;overflow:hidden}
   .tabla th{background:var(--verde);color:#fff;padding:8px 12px;font-weight:600;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;text-align:left}
@@ -248,28 +236,18 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
       </div>
       <div class="cab-der">
         <div class="tit">Recibo de dinero</div>
-        <div class="fiscal">R.U.C. ${esc(RUC_EMPRESA)}<span class="serie">Serie ${esc(puntoRecibo)}</span></div>
-        <div class="nro"><small>N&ordm;</small><b>${esc(numeroCorto(r.numero_recibo))}</b></div>
+        <div class="fiscal">R.U.C. ${esc(RUC_EMPRESA)}</div>
+        <div class="nro"><small>N&ordm;</small><b>${esc(puntoRecibo)} - ${esc(numeroCorto(r.numero_recibo))}</b></div>
       </div>
     </div>
 
     <div class="montofranja">
-      <div>
-        <div class="recibi">Recibimos de: <b>${esc(r.cliente_nombre)}</b>${r.cliente_documento ? ` &nbsp;&middot;&nbsp; R.U.C./C.I.: <b>${esc(r.cliente_documento)}</b>` : ""}</div>
-        <div class="fecha">${esc(fechaLarga(r.fecha))}</div>
-      </div>
-      <div class="gs">
-        <span class="lb">Gs.</span>
-        <span class="caja">${esc(montoConAsteriscos(Number(r.monto) || 0))}</span>
-      </div>
+      <div class="recibi">Recibimos de: <b>${esc(r.cliente_nombre)}</b>${r.cliente_documento ? ` &nbsp;&middot;&nbsp; R.U.C./C.I.: <b>${esc(r.cliente_documento)}</b>` : ""}</div>
+      <div class="fecha">${esc(fechaLarga(r.fecha))}</div>
     </div>
 
     <div class="cuerpo">
-      <div class="letras">
-        <span class="et">La cantidad de guaran&iacute;es</span>
-        <span class="txt">${esc(montoEnLetras(Number(r.monto) || 0, moneda))}</span>
-      </div>
-
+      <!-- Detalle ARRIBA: primero se ve QUE se cobro. -->
       <table class="tabla">
         <thead>
           <tr>
@@ -289,6 +267,14 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
         </tbody>
       </table>
       <div class="totalfila"><div class="caja"><span class="l">Total</span><span class="v">${fmtMonto(r.monto, moneda)}</span></div></div>
+
+      <!-- Monto ABAJO: cifra y letras juntas, cerrando el comprobante. -->
+      <div class="montofinal">
+        <div class="letras">
+          <span class="et">La cantidad de guaran&iacute;es</span>
+          <span class="txt">${esc(montoEnLetras(Number(r.monto) || 0, moneda))}</span>
+        </div>
+      </div>
 
       <div class="pie">
         <div class="metodos">
