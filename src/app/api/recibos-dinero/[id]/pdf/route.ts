@@ -231,7 +231,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   .tabla tbody tr:first-child td{border-top:0}
   .tabla tbody tr:nth-child(even) td{background:var(--crema)}
   .tabla .num{text-align:right;font-variant-numeric:tabular-nums}
-  .tabla .ct{text-align:center;color:var(--suave)}
+  .tabla .ct{text-align:left;color:var(--suave)}
   .totalfila{display:flex;justify-content:flex-end;margin-top:12px}
   .totalfila .caja{background:var(--verde);color:#fff;border-radius:8px;padding:9px 18px;min-width:210px;display:flex;justify-content:space-between;align-items:center;gap:16px}
   .totalfila .caja .l{font-size:10px;letter-spacing:.08em;text-transform:uppercase;opacity:.9}
