@@ -105,6 +105,43 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
     importe_aplicado?: unknown;
   }>);
 
+  // Recibos emitidos ANTES del desglose no tienen línea de detalle: mostrarían
+  // "—" y sin vencimiento. Como el recibo conserva el enlace a la cuenta por
+  // cobrar y a la venta, se derivan el documento (factura o venta) y el
+  // vencimiento al vuelo, para que también estos salgan completos.
+  if (detalle.length === 0 && (r.cuenta_por_cobrar_id || r.venta_id)) {
+    let numeroDoc: string | null = null;
+    let venc: string | null = null;
+    if (r.cuenta_por_cobrar_id) {
+      const cxq = await ctx.supabase
+        .from("cuentas_por_cobrar")
+        .select("numero_venta, fecha_vencimiento")
+        .eq("empresa_id", ctx.auth.empresa_id)
+        .eq("id", String(r.cuenta_por_cobrar_id))
+        .maybeSingle();
+      const cx = cxq.data as { numero_venta?: string | null; fecha_vencimiento?: string | null } | null;
+      numeroDoc = cx?.numero_venta ?? null;
+      venc = cx?.fecha_vencimiento ?? null;
+    }
+    if (r.venta_id) {
+      const fq = await ctx.supabase
+        .from("facturas")
+        .select("numero_factura")
+        .eq("empresa_id", ctx.auth.empresa_id)
+        .eq("origen_venta_id", String(r.venta_id))
+        .maybeSingle();
+      const f = fq.data as { numero_factura?: string | null } | null;
+      if (f?.numero_factura) numeroDoc = f.numero_factura;
+    }
+    if (numeroDoc || venc) {
+      detalle.push({
+        numero_documento: numeroDoc,
+        fecha_vencimiento: venc,
+        importe_aplicado: r.monto,
+      });
+    }
+  }
+
   const moneda = String(r.moneda ?? "PYG");
   const metodo = METODO_LBL[String(r.metodo_pago ?? "")] ?? (r.metodo_pago ?? "—");
 
