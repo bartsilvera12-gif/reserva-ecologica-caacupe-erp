@@ -152,19 +152,18 @@ SELECT e.id, m.id, true
       WHERE em.empresa_id = e.id AND em.modulo_id = m.id
    );
 
--- Darlo al rol `usuario` (que trabaja por usuario_modulos). Admin/administrador
--- lo ven solo → todos los módulos activos de la empresa. Supervisor y usuario
--- van por usuario_modulos, así que se les asigna explícitamente.
-INSERT INTO reservacaacupe.usuario_modulos (usuario_id, modulo_id)
-SELECT u.id, m.id
-  FROM reservacaacupe.usuarios u
- CROSS JOIN reservacaacupe.modulos m
- WHERE m.slug = 'reposicion'
-   AND lower(coalesce(u.rol,'')) IN ('usuario','supervisor')
-   AND NOT EXISTS (
-     SELECT 1 FROM reservacaacupe.usuario_modulos um
-      WHERE um.usuario_id = u.id AND um.modulo_id = m.id
-   );
+-- NO se insertan filas en usuario_modulos para el nuevo módulo.
+--
+-- El resolvedor de acceso trata "0 filas en usuario_modulos" como ACCESO
+-- COMPLETO (default de fábrica). Si a un usuario que está en 0 filas se le
+-- inserta UNA sola fila, pasa de "ve todo" a "ve solo esa" — lo que lo deja
+-- sin ventas, dashboard, etc. La versión previa de esta migración hacía ese
+-- INSERT y dejó a funcionario/supervisor sin acceso; se revirtió por datos.
+--
+-- Con el módulo activo en empresa_modulos, los usuarios en acceso completo lo
+-- ven automáticamente. A los usuarios con lista EXPLÍCITA de módulos hay que
+-- agregarles 'reposicion' desde la pantalla de Usuarios, uno por uno, sin
+-- tocar a los de acceso completo.
 
 -- ---------------------------------------------------------------------------
 -- 6) Verificación
