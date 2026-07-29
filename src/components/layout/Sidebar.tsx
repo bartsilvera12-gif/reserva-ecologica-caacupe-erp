@@ -161,6 +161,10 @@ const MENU_STRUCTURE: MenuItem[] = [
       { label: "Proveedores", href: "/proveedores" },
     ],
   },
+  // NC de proveedor (lado compra). hiddenFromSidebar: en pruebas — accesible por
+  // URL directa (/compras/notas-credito) pero oculto del menú hasta publicarlo.
+  // Para mostrarlo, quitar la bandera. Gate por slug 'notas_credito_compra'.
+  { key: "notas_credito_compra", slug: "notas_credito_compra", label: "NC Proveedor", href: "/compras/notas-credito", icon: ScrollText, hiddenFromSidebar: true },
   { key: "gastos", slug: "gastos", label: "Gastos", href: "/gastos", icon: Receipt },
   { key: "reportes", slug: "reportes", label: "Reportes", href: "/reportes", icon: BarChart3 },
   // Pagos oculto en instancia En lo de Mari (no usa este módulo).
