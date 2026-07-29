@@ -58,6 +58,13 @@ type MenuItem = {
   icon: React.ComponentType<{ className?: string }>;
   children?: { label: string; href: string; exactMatch?: boolean }[];
   showWhen?: string;
+  /**
+   * Oculta el ítem del menú lateral SIN quitar acceso a la ruta ni a la API.
+   * El gate de la ruta vive en AuthGuard (`pathRequiresModuleSlug`), que no lee
+   * este arreglo; por eso la URL sigue funcionando para quien tenga el módulo.
+   * Uso: probar un módulo por URL directa antes de mostrarlo al cliente en el menú.
+   */
+  hiddenFromSidebar?: boolean;
 };
 
 function menuChildPathActive(path: string, childHref: string, exactMatch?: boolean): boolean {
@@ -137,7 +144,10 @@ const MENU_STRUCTURE: MenuItem[] = [
   ]},
   // Módulo propio (no hijo de Inventario): un `usuario` puede tener acceso a
   // Reposición sin tener el Inventario completo. Gate por slug 'reposicion'.
-  { key: "reposicion", slug: "reposicion", label: "Reposición", href: "/inventario/reposicion", icon: ArrowLeftRight },
+  // hiddenFromSidebar: en pruebas — accesible por URL directa
+  // (/inventario/reposicion) pero oculto del menú hasta mostrárselo al cliente.
+  // Para publicarlo, quitar esta bandera.
+  { key: "reposicion", slug: "reposicion", label: "Reposición", href: "/inventario/reposicion", icon: ArrowLeftRight, hiddenFromSidebar: true },
   { key: "clientes", slug: "clientes", label: "Clientes", href: "/clientes", icon: Users },
   { key: "pagos", slug: "pagos", label: "Pagos", href: "/pagos", icon: Banknote },
   {
@@ -586,6 +596,7 @@ export default function Sidebar() {
       canAccessSidebarSlug(slug, slugs, esSuperAdmin, inactiveSlugsSet, { strict: strictAllowlist });
     return MENU_STRUCTURE.filter(
       (item) =>
+        !item.hiddenFromSidebar &&
         favoritos.includes(idForSlug(item.slug)) &&
         access(item.slug) &&
         puedeVerSidebarSlugPorRol(item.slug, rolErp) &&
@@ -600,6 +611,7 @@ export default function Sidebar() {
       canAccessSidebarSlug(slug, slugs, esSuperAdmin, inactiveSlugsSet, { strict: strictAllowlist });
     return MENU_STRUCTURE.filter(
       (item) =>
+        !item.hiddenFromSidebar &&
         !favoritos.includes(idForSlug(item.slug)) &&
         access(item.slug) &&
         puedeVerSidebarSlugPorRol(item.slug, rolErp) &&
