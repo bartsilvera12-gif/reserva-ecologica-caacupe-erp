@@ -144,10 +144,7 @@ const MENU_STRUCTURE: MenuItem[] = [
   ]},
   // Módulo propio (no hijo de Inventario): un `usuario` puede tener acceso a
   // Reposición sin tener el Inventario completo. Gate por slug 'reposicion'.
-  // hiddenFromSidebar: en pruebas — accesible por URL directa
-  // (/inventario/reposicion) pero oculto del menú hasta mostrárselo al cliente.
-  // Para publicarlo, quitar esta bandera.
-  { key: "reposicion", slug: "reposicion", label: "Reposición", href: "/inventario/reposicion", icon: ArrowLeftRight, hiddenFromSidebar: true },
+  { key: "reposicion", slug: "reposicion", label: "Reposición", href: "/inventario/reposicion", icon: ArrowLeftRight },
   { key: "clientes", slug: "clientes", label: "Clientes", href: "/clientes", icon: Users },
   { key: "pagos", slug: "pagos", label: "Pagos", href: "/pagos", icon: Banknote },
   {
@@ -161,10 +158,8 @@ const MENU_STRUCTURE: MenuItem[] = [
       { label: "Proveedores", href: "/proveedores" },
     ],
   },
-  // NC de proveedor (lado compra). hiddenFromSidebar: en pruebas — accesible por
-  // URL directa (/compras/notas-credito) pero oculto del menú hasta publicarlo.
-  // Para mostrarlo, quitar la bandera. Gate por slug 'notas_credito_compra'.
-  { key: "notas_credito_compra", slug: "notas_credito_compra", label: "NC Proveedor", href: "/compras/notas-credito", icon: ScrollText, hiddenFromSidebar: true },
+  // NC de proveedor (lado compra). Gate por slug 'notas_credito_compra'.
+  { key: "notas_credito_compra", slug: "notas_credito_compra", label: "NC Proveedor", href: "/compras/notas-credito", icon: ScrollText },
   { key: "gastos", slug: "gastos", label: "Gastos", href: "/gastos", icon: Receipt },
   { key: "reportes", slug: "reportes", label: "Reportes", href: "/reportes", icon: BarChart3 },
   // Pagos oculto en instancia En lo de Mari (no usa este módulo).
@@ -219,7 +214,7 @@ const MENU_FAMILIES: { id: string; titulo: string; keys: string[] }[] = [
   { id: "inicio", titulo: "Inicio", keys: ["dashboard"] },
   { id: "comercial", titulo: "Comercial", keys: ["clientes", "crm", "gestion-clientes", "ventas", "presupuestos", "comisiones", "planes"] },
   { id: "finanzas", titulo: "Finanzas", keys: ["pagos", "gastos", "notas_credito", "reportes"] },
-  { id: "operaciones", titulo: "Operaciones", keys: ["inventario", "compras", "recetas", "proyectos"] },
+  { id: "operaciones", titulo: "Operaciones", keys: ["inventario", "reposicion", "compras", "notas_credito_compra", "recetas", "proyectos"] },
   { id: "omnicanal", titulo: "Omnicanal", keys: ["conversaciones", "conversaciones-finalizadas", "historial-omnicanal", "monitoreo", "campanas"] },
   { id: "marketing", titulo: "Marketing y Automatización", keys: ["marketing", "marketing_ops", "sorteos"] },
   { id: "administracion", titulo: "Administración", keys: ["usuarios", "configuracion"] },
