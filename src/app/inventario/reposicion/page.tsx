@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
-import { ArrowLeftRight, Plus, X, Search, Clock, CheckCircle2, Truck, PackageCheck } from "lucide-react";
+import { ArrowLeftRight, Plus, X, Search, Clock, CheckCircle2, Truck, PackageCheck, Loader2, PackageSearch, Check } from "lucide-react";
 
 // ── Tipos que devuelve la API ────────────────────────────────────────────────
 type Resumen = {
@@ -118,38 +119,51 @@ export default function ReposicionPage() {
   }, []);
 
   return (
-    <div className="space-y-6 max-w-6xl">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="w-full space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900">
-            <ArrowLeftRight className="h-6 w-6 text-[#4FAEB2]" /> Reposición entre sucursales
+          <h1 className="flex items-center gap-2.5 text-2xl font-bold text-slate-900">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#4FAEB2]/10 text-[#4FAEB2]">
+              <ArrowLeftRight className="h-5 w-5" />
+            </span>
+            Reposición entre sucursales
           </h1>
           <p className="mt-1 text-sm text-slate-500">Solicitá mercadería a otra sucursal y seguí el estado de cada transferencia.</p>
         </div>
-        <button
-          onClick={() => setCrearAbierto(true)}
-          className="inline-flex items-center gap-2 rounded-lg bg-[#4FAEB2] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#3F8E91] active:scale-95"
-        >
-          <Plus className="h-4 w-4" /> Solicitar reposición
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/inventario/reposicion/recepciones"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm transition-all hover:border-indigo-300 hover:text-indigo-600 active:scale-95"
+          >
+            <Truck className="h-4 w-4" /> Recepciones
+          </Link>
+          <button
+            onClick={() => setCrearAbierto(true)}
+            className="inline-flex items-center gap-2 rounded-xl bg-[#4FAEB2] px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-[#4FAEB2]/20 transition-all hover:bg-[#3F8E91] hover:shadow-md active:scale-95"
+          >
+            <Plus className="h-4 w-4" /> Solicitar reposición
+          </button>
+        </div>
       </div>
 
       {/* Cards */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
-          { k: "pendiente", label: "Pendientes", icon: Clock, color: "text-amber-600" },
-          { k: "aprobada", label: "Aprobadas", icon: CheckCircle2, color: "text-sky-600" },
-          { k: "despachada", label: "En tránsito", icon: Truck, color: "text-indigo-600" },
-          { k: "recibida", label: "Recibidas", icon: PackageCheck, color: "text-emerald-600" },
+          { k: "pendiente", label: "Pendientes", icon: Clock, color: "text-amber-600", bg: "bg-amber-50" },
+          { k: "aprobada", label: "Aprobadas", icon: CheckCircle2, color: "text-sky-600", bg: "bg-sky-50" },
+          { k: "despachada", label: "En tránsito", icon: Truck, color: "text-indigo-600", bg: "bg-indigo-50" },
+          { k: "recibida", label: "Recibidas", icon: PackageCheck, color: "text-emerald-600", bg: "bg-emerald-50" },
         ].map((c) => {
           const Icon = c.icon;
           return (
-            <div key={c.k} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div key={c.k} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
               <div className="flex items-center justify-between">
-                <Icon className={`h-5 w-5 ${c.color}`} />
-                <span className="text-2xl font-bold tabular-nums text-slate-900">{conteos[c.k] ?? 0}</span>
+                <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${c.bg} ${c.color}`}>
+                  <Icon className="h-5 w-5" />
+                </span>
+                <span className="text-3xl font-bold tabular-nums text-slate-900">{conteos[c.k] ?? 0}</span>
               </div>
-              <p className="mt-1 text-xs font-medium text-slate-500">{c.label}</p>
+              <p className="mt-2 text-sm font-medium text-slate-500">{c.label}</p>
             </div>
           );
         })}
@@ -174,39 +188,63 @@ export default function ReposicionPage() {
       {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
       {/* Lista */}
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         {cargando ? (
-          <div className="px-4 py-10 text-center text-sm text-slate-400">Cargando…</div>
+          <div className="flex items-center justify-center gap-2 px-4 py-16 text-sm text-slate-400">
+            <Loader2 className="h-4 w-4 animate-spin" /> Cargando…
+          </div>
         ) : transfers.length === 0 ? (
-          <div className="px-4 py-10 text-center text-sm text-slate-400">
-            {tab === "realizadas" ? "Todavía no solicitaste reposiciones." : "No hay solicitudes de otras sucursales."}
+          <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
+            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+              <ArrowLeftRight className="h-7 w-7" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-slate-700">
+                {tab === "realizadas" ? "Todavía no solicitaste reposiciones" : "No hay solicitudes de otras sucursales"}
+              </p>
+              <p className="mt-0.5 text-sm text-slate-400">
+                {tab === "realizadas"
+                  ? "Cuando pidas mercadería a otra sucursal, va a aparecer acá."
+                  : "Las solicitudes que te hagan otras sucursales van a aparecer acá."}
+              </p>
+            </div>
+            {tab === "realizadas" && (
+              <button
+                onClick={() => setCrearAbierto(true)}
+                className="mt-1 inline-flex items-center gap-2 rounded-xl bg-[#4FAEB2] px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#3F8E91] active:scale-95"
+              >
+                <Plus className="h-4 w-4" /> Solicitar reposición
+              </button>
+            )}
           </div>
         ) : (
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-3 font-semibold">Número</th>
-                <th className="px-4 py-3 font-semibold">{tab === "realizadas" ? "Origen" : "Destino"}</th>
-                <th className="px-4 py-3 font-semibold text-center">Ítems</th>
-                <th className="px-4 py-3 font-semibold">Solicitada</th>
-                <th className="px-4 py-3 font-semibold">Estado</th>
-                <th className="px-4 py-3" />
+                <th className="px-5 py-3 font-semibold">Número</th>
+                <th className="px-5 py-3 font-semibold">{tab === "realizadas" ? "Origen" : "Destino"}</th>
+                <th className="px-5 py-3 font-semibold text-center">Ítems</th>
+                <th className="px-5 py-3 font-semibold">Solicitada</th>
+                <th className="px-5 py-3 font-semibold">Estado</th>
+                <th className="px-5 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {transfers.map((t) => (
-                <tr key={t.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 font-medium tabular-nums text-slate-800">{t.numero}</td>
-                  <td className="px-4 py-3 text-slate-600">
+                <tr
+                  key={t.id}
+                  onClick={() => setDetalleId(t.id)}
+                  className="cursor-pointer transition-colors hover:bg-[#4FAEB2]/[0.04]"
+                >
+                  <td className="px-5 py-3.5 font-semibold tabular-nums text-slate-800">{t.numero}</td>
+                  <td className="px-5 py-3.5 text-slate-600">
                     {tab === "realizadas" ? t.sucursal_origen_nombre : t.sucursal_destino_nombre}
                   </td>
-                  <td className="px-4 py-3 text-center tabular-nums text-slate-600">{t.items_count}</td>
-                  <td className="px-4 py-3 text-slate-500">{fmtFecha(t.solicitada_at)}</td>
-                  <td className="px-4 py-3"><EstadoBadge estado={t.estado} /></td>
-                  <td className="px-4 py-3 text-right">
-                    <button onClick={() => setDetalleId(t.id)} className="text-sm font-medium text-[#4FAEB2] hover:underline">
-                      Ver
-                    </button>
+                  <td className="px-5 py-3.5 text-center tabular-nums text-slate-600">{t.items_count}</td>
+                  <td className="px-5 py-3.5 text-slate-500">{fmtFecha(t.solicitada_at)}</td>
+                  <td className="px-5 py-3.5"><EstadoBadge estado={t.estado} /></td>
+                  <td className="px-5 py-3.5 text-right">
+                    <span className="text-sm font-medium text-[#4FAEB2] hover:underline">Ver</span>
                   </td>
                 </tr>
               ))}
@@ -246,6 +284,8 @@ function ModalCrear({ onClose, onCreada }: { onClose: () => void; onCreada: () =
   const [obs, setObs] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [resultados, setResultados] = useState<ProductoBusq[]>([]);
+  const [buscando, setBuscando] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(0);
   const [lineas, setLineas] = useState<Array<{ producto_destino_id: string; nombre: string; sku: string; stock: number; cantidad: string }>>([]);
   const [guardando, setGuardando] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -268,9 +308,11 @@ function ModalCrear({ onClose, onCreada }: { onClose: () => void; onCreada: () =
     const q = busqueda.trim();
     if (q.length < 2) {
       setResultados([]);
+      setBuscando(false);
       return;
     }
     let vivo = true;
+    setBuscando(true);
     const t = setTimeout(async () => {
       try {
         const res = await fetchWithSupabaseSession(`/api/productos/search?q=${encodeURIComponent(q)}&limit=20`);
@@ -278,9 +320,12 @@ function ModalCrear({ onClose, onCreada }: { onClose: () => void; onCreada: () =
         if (vivo && res.ok) {
           const items = (json?.data?.items ?? []) as Array<{ id: string; nombre: string; sku: string; stock_actual: number }>;
           setResultados(items.map((p) => ({ id: p.id, nombre: p.nombre, sku: p.sku, stock_actual: p.stock_actual })));
+          setActiveIdx(0);
         }
       } catch {
         /* ignore */
+      } finally {
+        if (vivo) setBuscando(false);
       }
     }, 250);
     return () => {
@@ -289,14 +334,37 @@ function ModalCrear({ onClose, onCreada }: { onClose: () => void; onCreada: () =
     };
   }, [busqueda]);
 
+  const yaAgregado = useCallback((id: string) => lineas.some((l) => l.producto_destino_id === id), [lineas]);
+
   function agregar(p: ProductoBusq) {
-    if (lineas.some((l) => l.producto_destino_id === p.id)) return;
+    if (yaAgregado(p.id)) return;
     setLineas((prev) => [...prev, { producto_destino_id: p.id, nombre: p.nombre, sku: p.sku, stock: p.stock_actual, cantidad: "" }]);
     setBusqueda("");
     setResultados([]);
+    setActiveIdx(0);
   }
   function quitar(id: string) {
     setLineas((prev) => prev.filter((l) => l.producto_destino_id !== id));
+  }
+
+  function onSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Escape") {
+      setBusqueda("");
+      setResultados([]);
+      return;
+    }
+    if (resultados.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIdx((i) => Math.min(i + 1, resultados.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIdx((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const p = resultados[activeIdx];
+      if (p && !yaAgregado(p.id)) agregar(p);
+    }
   }
 
   async function guardar() {
@@ -345,31 +413,83 @@ function ModalCrear({ onClose, onCreada }: { onClose: () => void; onCreada: () =
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-700">Agregar productos</label>
           <div className="relative">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
+              autoFocus
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
+              onKeyDown={onSearchKeyDown}
               placeholder="Buscar por nombre, SKU o código de barras…"
-              className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#4FAEB2]"
+              className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-9 text-sm transition-shadow focus:border-[#4FAEB2] focus:outline-none focus:ring-2 focus:ring-[#4FAEB2]/30"
             />
-            {resultados.length > 0 && (
-              <div className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg">
-                {resultados.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => agregar(p)}
-                    className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50"
-                  >
-                    <span>
-                      <span className="font-medium text-slate-800">{p.nombre}</span>
-                      <span className="ml-2 text-xs text-slate-400">{p.sku}</span>
-                    </span>
-                    <span className="text-xs text-slate-500">Stock: {fmtNum(p.stock_actual)}</span>
-                  </button>
-                ))}
+            {buscando ? (
+              <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-400" />
+            ) : busqueda ? (
+              <button
+                type="button"
+                onClick={() => { setBusqueda(""); setResultados([]); }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                aria-label="Limpiar"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : null}
+
+            {busqueda.trim().length >= 2 && (
+              <div className="absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+                {buscando && resultados.length === 0 ? (
+                  <div className="flex items-center gap-2 px-3 py-3 text-sm text-slate-400">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Buscando…
+                  </div>
+                ) : resultados.length === 0 ? (
+                  <div className="flex flex-col items-center gap-1 px-3 py-6 text-center">
+                    <PackageSearch className="h-6 w-6 text-slate-300" />
+                    <p className="text-sm text-slate-400">Sin resultados para “{busqueda.trim()}”</p>
+                  </div>
+                ) : (
+                  resultados.map((p, i) => {
+                    const added = yaAgregado(p.id);
+                    const sinStock = p.stock_actual <= 0;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        disabled={added}
+                        onMouseEnter={() => setActiveIdx(i)}
+                        onClick={() => agregar(p)}
+                        className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                          added
+                            ? "cursor-default opacity-60"
+                            : i === activeIdx
+                            ? "bg-[#4FAEB2]/10"
+                            : "hover:bg-slate-50"
+                        }`}
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium text-slate-800">{p.nombre}</span>
+                          <span className="text-xs text-slate-400">{p.sku}</span>
+                        </span>
+                        {added ? (
+                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                            <Check className="h-3 w-3" /> Agregado
+                          </span>
+                        ) : (
+                          <span
+                            className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+                              sinStock ? "bg-red-50 text-red-600" : "bg-slate-100 text-slate-500"
+                            }`}
+                          >
+                            Stock: {fmtNum(p.stock_actual)}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })
+                )}
               </div>
             )}
           </div>
+          <p className="mt-1 text-xs text-slate-400">Escribí al menos 2 caracteres. Usá ↑ ↓ y Enter para agregar.</p>
         </div>
 
         {lineas.length > 0 && (
@@ -658,15 +778,15 @@ function ModalDetalle({
                 Despachar
               </button>
             )}
-            {/* Recibir: destino, aprobador, despachada */}
-            {esDestino && esAprobador && estado === "despachada" && (
-              <button
-                onClick={() => accionar("recibir", undefined, "¿Confirmar la recepción? Esto suma el stock a tu sucursal.")}
-                disabled={!!accion}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+            {/* Recepción: destino, despachada. Se hace en pantalla aparte, con
+                control ítem por ítem. El botón de acá solo lleva a esa pantalla. */}
+            {esDestino && estado === "despachada" && (
+              <Link
+                href={`/inventario/reposicion/recepciones/${id}`}
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
               >
-                Confirmar recepción
-              </button>
+                <Truck className="h-4 w-4" /> Ir a recepción
+              </Link>
             )}
           </div>
         </div>

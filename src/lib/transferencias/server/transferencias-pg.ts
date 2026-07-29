@@ -505,6 +505,12 @@ export async function recibirTransferencia(params: {
   transferenciaId: string;
   usuarioId: string | null;
   usuarioNombre: string | null;
+  /**
+   * Control de recepción por ítem: cantidad efectivamente recibida. Se acota a
+   * [0, cantidad_despachada]. Si no se pasa (o falta un ítem), ese ítem se recibe
+   * completo (retrocompatible). Recibir menos deja la diferencia como faltante.
+   */
+  recepciones?: Array<{ itemId: string; cantidadRecibida: number }>;
 }): Promise<void> {
   const schema = assertAllowedChatDataSchema(params.schemaRaw);
   const { empresaId, transferenciaId } = params;
@@ -538,48 +544,59 @@ export async function recibirTransferencia(params: {
          FROM ${tI} WHERE transferencia_id = $1::uuid`,
       [transferenciaId]
     );
+    const recibidaByItem = new Map(
+      (params.recepciones ?? []).map((x) => [x.itemId, num(x.cantidadRecibida)])
+    );
     const aRecibir = items.filter((i) => num(i.cantidad_despachada) > 0);
 
     for (const it of aRecibir) {
-      const cant = num(it.cantidad_despachada);
+      const despachada = num(it.cantidad_despachada);
+      // Cantidad efectivamente recibida (control): la que indica el receptor,
+      // acotada a [0, despachada]. Sin dato explícito => se recibe todo.
+      const pedido = recibidaByItem.has(it.id) ? num(recibidaByItem.get(it.id)) : despachada;
+      const recibida = Math.max(0, Math.min(pedido, despachada));
       const costo = num(it.costo_unitario_transferencia);
 
-      // Bloquear el producto destino.
-      const { rows: prod } = await client.query<{ id: string }>(
-        `SELECT id FROM ${tP}
-          WHERE id = $1::uuid AND empresa_id = $2::uuid AND sucursal_id = $3::uuid FOR UPDATE`,
-        [it.producto_destino_id, empresaId, cab[0].sucursal_destino_id]
-      );
-      if (!prod[0]) {
-        throw new TransferenciaError(400, `El producto ${it.nombre_snapshot} no existe en el destino.`);
+      // Solo mueve stock/movimiento por lo realmente recibido. La diferencia
+      // (despachada - recibida) queda como faltante visible en el detalle.
+      if (recibida > 0) {
+        // Bloquear el producto destino.
+        const { rows: prod } = await client.query<{ id: string }>(
+          `SELECT id FROM ${tP}
+            WHERE id = $1::uuid AND empresa_id = $2::uuid AND sucursal_id = $3::uuid FOR UPDATE`,
+          [it.producto_destino_id, empresaId, cab[0].sucursal_destino_id]
+        );
+        if (!prod[0]) {
+          throw new TransferenciaError(400, `El producto ${it.nombre_snapshot} no existe en el destino.`);
+        }
+
+        // Incrementar stock destino + costo promedio (misma lógica que Compras:
+        // el costo pasa a ser el costo entrante). NO se toca precio_venta.
+        await client.query(
+          `UPDATE ${tP}
+              SET stock_actual = stock_actual + $1::numeric,
+                  costo_promedio = $2::numeric,
+                  updated_at = now()
+            WHERE id = $3::uuid AND empresa_id = $4::uuid`,
+          [recibida, costo, it.producto_destino_id, empresaId]
+        );
+
+        await client.query(
+          `INSERT INTO ${tM}
+             (empresa_id, sucursal_id, producto_id, producto_nombre, producto_sku,
+              tipo, cantidad, costo_unitario, origen, referencia, fecha, created_by, usuario_nombre)
+           VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5,'ENTRADA',$6::numeric,$7::numeric,
+                   'transferencia_entrada',$8,now(),$9::uuid,$10)`,
+          [
+            empresaId, cab[0].sucursal_destino_id, it.producto_destino_id, it.nombre_snapshot,
+            it.sku_snapshot, recibida, costo, numero, params.usuarioId, params.usuarioNombre,
+          ]
+        );
       }
-
-      // Incrementar stock destino + costo promedio (misma lógica que Compras:
-      // el costo pasa a ser el costo entrante). NO se toca precio_venta.
-      await client.query(
-        `UPDATE ${tP}
-            SET stock_actual = stock_actual + $1::numeric,
-                costo_promedio = $2::numeric,
-                updated_at = now()
-          WHERE id = $3::uuid AND empresa_id = $4::uuid`,
-        [cant, costo, it.producto_destino_id, empresaId]
-      );
-
-      await client.query(
-        `INSERT INTO ${tM}
-           (empresa_id, sucursal_id, producto_id, producto_nombre, producto_sku,
-            tipo, cantidad, costo_unitario, origen, referencia, fecha, created_by, usuario_nombre)
-         VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5,'ENTRADA',$6::numeric,$7::numeric,
-                 'transferencia_entrada',$8,now(),$9::uuid,$10)`,
-        [
-          empresaId, cab[0].sucursal_destino_id, it.producto_destino_id, it.nombre_snapshot,
-          it.sku_snapshot, cant, costo, numero, params.usuarioId, params.usuarioNombre,
-        ]
-      );
 
       await client.query(
         `UPDATE ${tI} SET cantidad_recibida = $1::numeric, updated_at = now() WHERE id = $2::uuid`,
-        [cant, it.id]
+        [recibida, it.id]
       );
     }
 

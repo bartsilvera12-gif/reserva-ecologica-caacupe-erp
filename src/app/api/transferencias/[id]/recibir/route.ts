@@ -18,12 +18,27 @@ export async function POST(request: NextRequest, ctxParams: { params: Promise<{ 
       return respProhibido("Solo la sucursal destino puede confirmar la recepción.");
     }
 
+    // Control de recepción por ítem (opcional). Sin body => recibe todo lo despachado.
+    const body = (await request.json().catch(() => ({}))) as { recepciones?: unknown };
+    const recepciones = Array.isArray(body.recepciones)
+      ? body.recepciones
+          .map((x) => {
+            const o = x as { item_id?: unknown; cantidad_recibida?: unknown };
+            return {
+              itemId: typeof o.item_id === "string" ? o.item_id : "",
+              cantidadRecibida: Number(o.cantidad_recibida) || 0,
+            };
+          })
+          .filter((x) => x.itemId)
+      : undefined;
+
     await recibirTransferencia({
       schemaRaw: r.ctx.schema,
       empresaId: r.ctx.empresaId,
       transferenciaId: id,
       usuarioId: r.ctx.usuarioId,
       usuarioNombre: r.ctx.usuarioNombre,
+      recepciones,
     });
     return NextResponse.json(successResponse({ ok: true }));
   } catch (err) {
