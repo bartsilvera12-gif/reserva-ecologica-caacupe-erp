@@ -36,7 +36,6 @@ const ESTADO_LABEL: Record<string, string> = {
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auto = new URL(request.url).searchParams.get("auto") === "1";
-  const origin = new URL(request.url).origin;
   const ctx = await getTenantSupabaseFromAuth(request);
   if (!ctx) return new NextResponse("No autorizado", { status: 401 });
 
@@ -104,7 +103,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 <body>
 <div class="toolbar"><button onclick="window.print()">Imprimir / Guardar PDF</button></div>
 <div class="page">
-  ${membreteA4(origin)}
+  ${membreteA4()}
   <div class="titublo">
     <div>
       <h1>NOTA DE REMISIÓN</h1>
