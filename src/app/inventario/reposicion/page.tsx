@@ -128,7 +128,7 @@ export default function ReposicionPage() {
             </span>
             Reposición entre sucursales
           </h1>
-          <p className="mt-1 text-sm text-slate-500">Solicitá mercadería a otra sucursal y seguí el estado de cada transferencia.</p>
+          <p className="mt-1 text-sm text-slate-500">Solicitudes, transferencias y recepción de mercaderías entre sucursales.</p>
         </div>
         <div className="flex items-center gap-2">
           <Link

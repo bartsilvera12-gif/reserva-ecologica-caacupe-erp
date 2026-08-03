@@ -34,6 +34,11 @@ export interface Compra {
 
   nro_timbrado: string;
 
+  /** Número REAL del comprobante fiscal del proveedor (ej: 001-001-0000123).
+   *  Distinto de numero_control (COMP-XXXX, correlativo interno). Nullable en
+   *  compras históricas. */
+  numero_factura_proveedor?: string | null;
+
   // Comprobante/factura del proveedor (compartido por todas las líneas del numero_control).
   comprobante_storage_path?: string | null;
   comprobante_nombre?: string | null;

@@ -52,6 +52,7 @@ function formatFechaDate(fecha: string | null | undefined): string {
 // ── Agrupación por numero_control: 1 compra = N filas ─────────────────────────
 type GrupoCompra = {
   numero_control: string;
+  numero_factura_proveedor: string | null;
   proveedor_nombre: string;
   fecha: string;
   fecha_factura: string | null;
@@ -72,6 +73,7 @@ function agrupar(rows: Compra[]): GrupoCompra[] {
     if (!g) {
       g = {
         numero_control: c.numero_control,
+        numero_factura_proveedor: c.numero_factura_proveedor ?? null,
         proveedor_nombre: c.proveedor_nombre,
         fecha: c.fecha,
         fecha_factura: c.fecha_factura ?? null,
@@ -131,6 +133,7 @@ export default function ComprasPage() {
         texto === "" ||
         g.proveedor_nombre.toLowerCase().includes(texto) ||
         g.numero_control.toLowerCase().includes(texto) ||
+        (g.numero_factura_proveedor?.toLowerCase().includes(texto) ?? false) ||
         g.items.some((i) => i.producto_nombre.toLowerCase().includes(texto));
       const coincideTipoPago = filtroTipoPago === "" || g.tipo_pago === filtroTipoPago;
       return coincideTexto && coincideTipoPago;
@@ -176,7 +179,7 @@ export default function ComprasPage() {
 
         {/* Filtros */}
         <div className="flex flex-wrap items-center gap-3 mb-5 pb-5 border-b border-gray-100">
-          <input type="text" placeholder="Buscar por proveedor, producto o N° control..."
+          <input type="text" placeholder="Buscar por proveedor, producto, N° factura o control..."
             value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
             className={`${inputFilterClass} min-w-0 flex-1 sm:min-w-72`} />
           <FancySelect value={filtroTipoPago} onChange={(v) => setFiltroTipoPago(v as TipoPago | "")}
@@ -202,7 +205,7 @@ export default function ComprasPage() {
           <table className="w-full min-w-[960px] lg:min-w-0 text-left text-sm">
             <thead>
               <tr className="border-b text-gray-500">
-                <th className="py-3 pr-4 font-medium">N° Control</th>
+                <th className="py-3 pr-4 font-medium">N° Factura / Control</th>
                 <th className="py-3 pr-4 font-medium">Proveedor</th>
                 <th className="py-3 pr-4 font-medium">Productos</th>
                 <th className="py-3 pr-4 font-medium text-right">Ítems</th>
@@ -231,9 +234,14 @@ export default function ComprasPage() {
                         className={`border-b border-slate-200 transition-colors hover:bg-[#4FAEB2]/[0.04] ${multi ? "cursor-pointer" : ""} ${g.anulada ? "opacity-60" : ""}`}
                         onClick={() => multi && toggle(g.numero_control)}
                       >
-                        <td className={`py-4 pr-4 font-mono text-xs ${g.anulada ? "line-through text-gray-400" : "text-gray-500"}`}>
-                          {multi && <span className="mr-1 inline-block text-gray-400">{abierto ? "▾" : "▸"}</span>}
-                          {g.numero_control}
+                        <td className={`py-4 pr-4 ${g.anulada ? "opacity-60" : ""}`}>
+                          <div className="flex items-center gap-1">
+                            {multi && <span className="inline-block text-gray-400">{abierto ? "▾" : "▸"}</span>}
+                            <span className={`text-sm font-medium ${g.anulada ? "line-through text-gray-400" : "text-gray-800"}`}>
+                              {g.numero_factura_proveedor || <span className="font-normal italic text-gray-400">Sin número cargado</span>}
+                            </span>
+                          </div>
+                          <div className="mt-0.5 font-mono text-[11px] text-gray-400">Control: {g.numero_control}</div>
                         </td>
                         <td className="py-4 pr-4 font-medium text-gray-800">
                           <div className="flex items-center gap-2">

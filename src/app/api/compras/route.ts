@@ -75,6 +75,10 @@ export async function POST(request: NextRequest) {
       plazo_dias: body.plazo_dias != null && String(body.plazo_dias).trim() !== ""
         ? parseInt(String(body.plazo_dias), 10) || null : null,
       nro_timbrado: String(body.nro_timbrado).trim().toUpperCase(),
+      numero_factura_proveedor:
+        body.numero_factura_proveedor != null && String(body.numero_factura_proveedor).trim() !== ""
+          ? String(body.numero_factura_proveedor).trim()
+          : null,
       fecha_factura: fechaFactura,
       metodo_pago: metodoPago,
       comprobante_url: body.comprobante_url != null && String(body.comprobante_url).trim() !== "" ? String(body.comprobante_url) : null,

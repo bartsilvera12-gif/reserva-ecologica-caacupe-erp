@@ -98,6 +98,7 @@ export default function NuevaCompraPage() {
   const [cab, setCab] = useState({
     proveedor_id: "",
     nro_timbrado: "",
+    numero_factura_proveedor: "",
     tipo_pago: "contado" as TipoPago,
     plazo_dias: "",
     moneda: "PYG" as Moneda,
@@ -289,6 +290,7 @@ export default function NuevaCompraPage() {
           tipo_pago: cab.tipo_pago,
           plazo_dias: cab.tipo_pago === "credito" && cab.plazo_dias ? parseInt(cab.plazo_dias) : undefined,
           nro_timbrado: cab.nro_timbrado,
+          numero_factura_proveedor: cab.numero_factura_proveedor.trim() || null,
           fecha_factura: cab.fecha_factura || null,
           metodo_pago: cab.metodo_pago || null,
           comprobante_storage_path: comprobante?.comprobante_storage_path ?? null,
@@ -401,6 +403,13 @@ export default function NuevaCompraPage() {
                 <input type="text" name="nro_timbrado" value={cab.nro_timbrado}
                   onChange={(e) => setCab((p) => ({ ...p, nro_timbrado: e.target.value }))}
                   placeholder="Ej: 001-001-0000001" className={inputClass} />
+              </div>
+              <div>
+                <label className={labelClass}>N° de factura del proveedor <span className="text-gray-400 font-normal">(opcional)</span></label>
+                <input type="text" name="numero_factura_proveedor" value={cab.numero_factura_proveedor}
+                  onChange={(e) => setCab((p) => ({ ...p, numero_factura_proveedor: e.target.value }))}
+                  placeholder="Ej: 001-001-0000123" className={inputClass} />
+                <p className="mt-1 text-[11px] text-slate-500">Número real del comprobante del proveedor. El COMP- interno se genera solo.</p>
               </div>
               <div>
                 <label className={labelClass}>Fecha de la factura <span className="text-gray-400 font-normal">(opcional)</span></label>

@@ -43,6 +43,7 @@ const num = (v: unknown): number => {
 // ── Tipos de salida ─────────────────────────────────────────────────────────
 export type CompraParaNC = {
   numero_control: string;
+  numero_factura_proveedor: string | null;
   proveedor_id: string | null;
   proveedor_nombre: string;
   moneda: string;
@@ -86,20 +87,44 @@ export type ResumenNCC = {
 // ── Lookup de la compra a corregir ───────────────────────────────────────────
 /**
  * Devuelve el proveedor y las líneas (agregadas por producto) de una compra
- * NO anulada, dentro de la empresa+sucursal. null si no existe o está anulada.
+ * NO anulada, dentro de la empresa+sucursal. El término de búsqueda puede ser el
+ * número REAL de factura del proveedor o el correlativo interno COMP-XXXXXX.
+ * Primero resuelve a UN único numero_control (el más reciente que coincida) para
+ * no mezclar líneas de compras distintas. null si no hay coincidencia.
  */
 export async function getCompraParaNC(
   schemaRaw: string,
   empresaId: string,
   sucursalId: string,
-  numeroControl: string
+  busqueda: string
 ): Promise<CompraParaNC | null> {
   const schema = assertAllowedChatDataSchema(schemaRaw);
   const tC = quoteSchemaTable(schema, "compras");
-  const { rows } = await pool().query<{
+  const termino = busqueda.trim();
+  if (!termino) return null;
+
+  // 1) Resolver a un único numero_control (por COMP interno o por factura real).
+  const { rows: head } = await pool().query<{
+    numero_control: string;
+    numero_factura_proveedor: string | null;
     proveedor_id: string | null;
     proveedor_nombre: string;
     moneda: string;
+  }>(
+    `SELECT numero_control, numero_factura_proveedor, proveedor_id, proveedor_nombre, moneda
+       FROM ${tC}
+      WHERE empresa_id = $1::uuid AND sucursal_id = $2::uuid
+        AND COALESCE(estado, '') <> 'anulada'
+        AND (numero_control = $3 OR numero_factura_proveedor = $3)
+      ORDER BY fecha DESC
+      LIMIT 1`,
+    [empresaId, sucursalId, termino]
+  );
+  if (!head[0]) return null;
+  const numeroControl = head[0].numero_control;
+
+  // 2) Cargar las líneas de esa compra.
+  const { rows } = await pool().query<{
     producto_id: string;
     producto_nombre: string;
     sku: string | null;
@@ -107,8 +132,7 @@ export async function getCompraParaNC(
     costo_unitario: string;
     iva_tipo: string;
   }>(
-    `SELECT c.proveedor_id, c.proveedor_nombre, c.moneda,
-            c.producto_id, c.producto_nombre,
+    `SELECT c.producto_id, c.producto_nombre,
             COALESCE(p.sku, '') AS sku,
             c.cantidad, c.costo_unitario, c.iva_tipo
        FROM ${tC} c
@@ -120,7 +144,6 @@ export async function getCompraParaNC(
   );
   if (rows.length === 0) return null;
 
-  const first = rows[0]!;
   // Agregar por producto (una compra puede repetir el mismo producto en líneas).
   const byProd = new Map<string, CompraParaNC["lineas"][number]>();
   for (const r of rows) {
@@ -140,9 +163,10 @@ export async function getCompraParaNC(
   }
   return {
     numero_control: numeroControl,
-    proveedor_id: first.proveedor_id,
-    proveedor_nombre: first.proveedor_nombre,
-    moneda: first.moneda,
+    numero_factura_proveedor: head[0].numero_factura_proveedor,
+    proveedor_id: head[0].proveedor_id,
+    proveedor_nombre: head[0].proveedor_nombre,
+    moneda: head[0].moneda,
     lineas: [...byProd.values()],
   };
 }

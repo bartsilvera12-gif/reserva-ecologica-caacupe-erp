@@ -32,6 +32,7 @@ type CompraLinea = {
 };
 type CompraParaNC = {
   numero_control: string;
+  numero_factura_proveedor: string | null;
   proveedor_id: string | null;
   proveedor_nombre: string;
   moneda: string;
@@ -307,7 +308,7 @@ function ModalCrear({ onClose, onCreada }: { onClose: () => void; onCreada: () =
                 value={numeroCompra}
                 onChange={(e) => setNumeroCompra(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") buscarCompra(); }}
-                placeholder="Ej: COMP-000012"
+                placeholder="N° de factura del proveedor o COMP-000012"
                 className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#4FAEB2]"
               />
             </div>
@@ -324,7 +325,11 @@ function ModalCrear({ onClose, onCreada }: { onClose: () => void; onCreada: () =
         {compra && (
           <>
             <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
-              Proveedor: <span className="font-medium text-slate-800">{compra.proveedor_nombre || "—"}</span>
+              <div>Proveedor: <span className="font-medium text-slate-800">{compra.proveedor_nombre || "—"}</span></div>
+              <div className="mt-0.5 text-xs text-slate-500">
+                Factura: <span className="font-medium text-slate-700">{compra.numero_factura_proveedor || "Sin número cargado"}</span>
+                <span className="ml-2 text-slate-400">· Control {compra.numero_control}</span>
+              </div>
             </div>
 
             {/* Tipo */}
