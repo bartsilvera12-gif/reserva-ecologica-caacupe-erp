@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useState } from "react";
-import { AlertTriangle, RotateCw, X } from "lucide-react";
+import { AlertTriangle, RotateCw, X, ChevronDown, Banknote } from "lucide-react";
+import CajaModule from "@/components/caja/CajaModule";
 import EdgeScrollArea from "@/components/ui/EdgeScrollArea";
 import { FancySelect } from "@/components/ui/FancySelect";
 import MobileFab from "@/components/ui/MobileFab";
@@ -150,6 +151,9 @@ function ivaResumen(v: Venta): string {
 
 export default function VentasPage() {
   const router = useRouter();
+  // Panel de turno de caja embebido en el POS (colapsado por defecto para no
+  // distraer al cajero) — patrón Ferretería República.
+  const [showCaja, setShowCaja] = useState(false);
   const [todas,      setTodas]      = useState<Venta[]>([]);
   const [busqueda,   setBusqueda]   = useState("");
   const [filtroTipo, setFiltroTipo] = useState<TipoVenta | "">("");
@@ -256,6 +260,29 @@ export default function VentasPage() {
         </div>
         <h1 className="mt-1 text-lg font-semibold tracking-tight text-slate-900">Caja</h1>
         <p className="mt-0.5 text-xs text-slate-500">Cobro, facturación y cierre de pedidos</p>
+      </div>
+
+      {/* ── Turno de caja embebido (colapsable) ──────────────────────────────── */}
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-emerald-500/15">
+        <button
+          type="button"
+          onClick={() => setShowCaja((v) => !v)}
+          aria-expanded={showCaja}
+          className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left"
+        >
+          <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-800">
+            <Banknote className="h-4 w-4 text-emerald-600" /> Turno de caja
+            <span className="text-xs font-normal text-slate-400">
+              {showCaja ? "(tocá para ocultar)" : "(abrir · movimientos · cierre y arqueo)"}
+            </span>
+          </span>
+          <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${showCaja ? "rotate-180" : ""}`} />
+        </button>
+        {showCaja && (
+          <div className="border-t border-slate-100 p-4">
+            <CajaModule compact />
+          </div>
+        )}
       </div>
 
       <PedidosPendientesCaja />
