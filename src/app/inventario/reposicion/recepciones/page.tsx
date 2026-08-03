@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
-import { ArrowLeft, Truck, PackageCheck, ChevronRight, Loader2, Inbox } from "lucide-react";
+import { ArrowLeft, Truck, PackageCheck, ChevronRight, Loader2, Inbox, PackageX } from "lucide-react";
 
 type Row = {
   id: string;
@@ -53,17 +53,25 @@ export default function RecepcionesPage() {
 
   return (
     <div className="w-full space-y-6">
-      <div>
-        <Link href="/inventario/reposicion" className="mb-2 inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700">
-          <ArrowLeft className="h-4 w-4" /> Volver a Reposición
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <Link href="/inventario/reposicion" className="mb-2 inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700">
+            <ArrowLeft className="h-4 w-4" /> Volver a Reposición
+          </Link>
+          <h1 className="flex items-center gap-2.5 text-2xl font-bold text-slate-900">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
+              <Truck className="h-5 w-5" />
+            </span>
+            Recepción de mercadería
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">Controlá y confirmá lo que llega desde otra sucursal, producto por producto.</p>
+        </div>
+        <Link
+          href="/inventario/reposicion/faltantes"
+          className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700 transition-colors hover:bg-amber-100"
+        >
+          <PackageX className="h-4 w-4" /> Faltantes
         </Link>
-        <h1 className="flex items-center gap-2.5 text-2xl font-bold text-slate-900">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
-            <Truck className="h-5 w-5" />
-          </span>
-          Recepción de mercadería
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">Controlá y confirmá lo que llega desde otra sucursal, producto por producto.</p>
       </div>
 
       {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}

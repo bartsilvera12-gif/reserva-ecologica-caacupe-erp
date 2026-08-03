@@ -146,6 +146,16 @@ export default function RecepcionDetallePage({ params }: { params: Promise<{ id:
             <Truck className="h-5 w-5" />
           </span>
           Recepción {cab?.numero ?? ""}
+          {estado === "despachada" && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">
+              <Truck className="h-3 w-3" /> En tránsito
+            </span>
+          )}
+          {estado === "recibida" && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+              <CheckCircle2 className="h-3 w-3" /> Recibida
+            </span>
+          )}
         </h1>
         {cab && (
           <p className="mt-1 text-sm text-slate-500">
@@ -182,19 +192,41 @@ export default function RecepcionDetallePage({ params }: { params: Promise<{ id:
       ) : (
         <>
           {cab.observacion_solicitud && (
-            <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">{cab.observacion_solicitud}</p>
+            <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-600">
+              <span className="mt-0.5 shrink-0 text-slate-400">✎</span>
+              <span>{cab.observacion_solicitud}</span>
+            </div>
           )}
 
-          {/* Barra de acciones rápidas */}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-slate-500">Verificá lo que llegó y ajustá la cantidad si falta algo.</p>
-            <div className="flex gap-2">
-              <button onClick={() => setTodo(true)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">
-                Recibir todo
-              </button>
-              <button onClick={() => setTodo(false)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">
-                Poner en 0
-              </button>
+          {/* Resumen + progreso */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-800">Verificá lo que llegó</p>
+                <p className="mt-0.5 text-xs text-slate-400">Ajustá la cantidad recibida si falta algo. El resto queda como faltante.</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setTodo(true)} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-100">
+                  <CheckCircle2 className="h-4 w-4" /> Recibir todo
+                </button>
+                <button onClick={() => setTodo(false)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-500 transition-colors hover:bg-slate-50">
+                  Poner en 0
+                </button>
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className="mb-1.5 flex items-center justify-between text-xs">
+                <span className="text-slate-500">{fmtNum(totales.rec)} de {fmtNum(totales.desp)} unidades</span>
+                <span className={totales.faltante > 0 ? "font-semibold text-amber-600" : "font-semibold text-emerald-600"}>
+                  {totales.faltante > 0 ? `Faltan ${fmtNum(totales.faltante)}` : "Completo"}
+                </span>
+              </div>
+              <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${totales.faltante > 0 ? "bg-amber-400" : "bg-emerald-500"}`}
+                  style={{ width: `${totales.desp > 0 ? Math.min(100, Math.round((totales.rec / totales.desp) * 100)) : 0}%` }}
+                />
+              </div>
             </div>
           </div>
 
@@ -204,8 +236,8 @@ export default function RecepcionDetallePage({ params }: { params: Promise<{ id:
               <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-5 py-3 font-semibold">Producto</th>
-                  <th className="px-5 py-3 font-semibold text-right">Despachado</th>
-                  <th className="px-5 py-3 font-semibold text-right">Recibido</th>
+                  <th className="px-5 py-3 font-semibold text-center">Despachado</th>
+                  <th className="px-5 py-3 font-semibold text-center">Recibido</th>
                   <th className="px-5 py-3 font-semibold text-right">Diferencia</th>
                 </tr>
               </thead>
@@ -215,27 +247,32 @@ export default function RecepcionDetallePage({ params }: { params: Promise<{ id:
                   const falta = Math.max(0, it.cantidad_despachada - rec);
                   const excede = rec > it.cantidad_despachada;
                   return (
-                    <tr key={it.id}>
-                      <td className="px-5 py-3">
+                    <tr key={it.id} className={falta > 0 ? "bg-amber-50/40" : excede ? "bg-red-50/40" : ""}>
+                      <td className="px-5 py-3.5">
                         <div className="font-medium text-slate-800">{it.nombre}</div>
                         <div className="text-xs text-slate-400">{it.sku} · {it.unidad}</div>
                       </td>
-                      <td className="px-5 py-3 text-right tabular-nums text-slate-500">{fmtNum(it.cantidad_despachada)}</td>
-                      <td className="px-5 py-3 text-right">
-                        <input
-                          type="number"
-                          min={0}
-                          max={it.cantidad_despachada}
-                          step="any"
-                          value={recibido[it.id] ?? ""}
-                          onChange={(e) => setRecibido((p) => ({ ...p, [it.id]: e.target.value }))}
-                          className={`w-24 rounded-lg border px-2 py-1.5 text-right tabular-nums focus:outline-none focus:ring-2 ${
-                            excede ? "border-red-300 focus:ring-red-200" : "border-slate-200 focus:ring-[#4FAEB2]/40"
-                          }`}
-                        />
+                      <td className="px-5 py-3.5 text-center tabular-nums text-slate-500">{fmtNum(it.cantidad_despachada)}</td>
+                      <td className="px-5 py-3.5">
+                        <div className="flex justify-center">
+                          <input
+                            type="number" min={0} max={it.cantidad_despachada} step="any"
+                            value={recibido[it.id] ?? ""}
+                            onChange={(e) => setRecibido((p) => ({ ...p, [it.id]: e.target.value }))}
+                            className={`w-24 rounded-lg border px-2 py-1.5 text-center text-base font-semibold tabular-nums focus:outline-none focus:ring-2 ${
+                              excede ? "border-red-300 bg-red-50 text-red-700 focus:ring-red-200"
+                                : falta > 0 ? "border-amber-300 focus:ring-amber-200"
+                                : "border-slate-200 focus:ring-emerald-400/40"
+                            }`}
+                          />
+                        </div>
                       </td>
-                      <td className="px-5 py-3 text-right">
-                        {falta > 0 ? (
+                      <td className="px-5 py-3.5 text-right">
+                        {excede ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
+                            <AlertTriangle className="h-3 w-3" /> +{fmtNum(rec - it.cantidad_despachada)}
+                          </span>
+                        ) : falta > 0 ? (
                           <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
                             Falta {fmtNum(falta)}
                           </span>
@@ -250,10 +287,10 @@ export default function RecepcionDetallePage({ params }: { params: Promise<{ id:
                 })}
               </tbody>
               <tfoot>
-                <tr className="border-t border-slate-200 bg-slate-50/60 font-semibold text-slate-700">
+                <tr className="border-t-2 border-slate-200 bg-slate-50/70 font-semibold text-slate-700">
                   <td className="px-5 py-3">Totales</td>
-                  <td className="px-5 py-3 text-right tabular-nums">{fmtNum(totales.desp)}</td>
-                  <td className="px-5 py-3 text-right tabular-nums">{fmtNum(totales.rec)}</td>
+                  <td className="px-5 py-3 text-center tabular-nums">{fmtNum(totales.desp)}</td>
+                  <td className="px-5 py-3 text-center tabular-nums">{fmtNum(totales.rec)}</td>
                   <td className="px-5 py-3 text-right tabular-nums">
                     {totales.faltante > 0 ? <span className="text-amber-700">Falta {fmtNum(totales.faltante)}</span> : <span className="text-emerald-700">Completo</span>}
                   </td>
@@ -262,23 +299,23 @@ export default function RecepcionDetallePage({ params }: { params: Promise<{ id:
             </table>
           </div>
 
-          {totales.faltante > 0 && (
-            <p className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              Vas a recibir menos de lo despachado. La diferencia queda registrada como faltante (no suma a tu stock).
-            </p>
-          )}
-
-          <div className="flex items-center justify-end gap-3">
-            {!esAprobador && <span className="text-sm text-slate-400">Solo un administrador o supervisor puede confirmar.</span>}
-            <button
-              onClick={confirmar}
-              disabled={confirmando || ok || !esAprobador}
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-emerald-700 active:scale-95 disabled:opacity-50"
-            >
-              {confirmando ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
-              Confirmar recepción
-            </button>
+          {/* Barra de acción fija */}
+          <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
+            <div className="text-sm">
+              {totales.faltante > 0 ? (
+                <span className="flex items-center gap-1.5 text-amber-700"><AlertTriangle className="h-4 w-4 shrink-0" /> {fmtNum(totales.faltante)} en faltante — no suma a stock</span>
+              ) : (
+                <span className="flex items-center gap-1.5 text-emerald-700"><CheckCircle2 className="h-4 w-4 shrink-0" /> Todo lo despachado será recibido</span>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              {!esAprobador && <span className="text-xs text-slate-400">Solo admin/supervisor confirma.</span>}
+              <button onClick={confirmar} disabled={confirmando || ok || !esAprobador}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-emerald-600/20 transition-all hover:bg-emerald-700 hover:shadow-md active:scale-95 disabled:opacity-50">
+                {confirmando ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
+                Confirmar recepción
+              </button>
+            </div>
           </div>
         </>
       )}

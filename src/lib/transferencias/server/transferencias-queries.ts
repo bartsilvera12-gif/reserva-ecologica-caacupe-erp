@@ -180,6 +180,59 @@ export async function contarPorEstado(params: {
   return out;
 }
 
+export type FaltanteRecepcion = {
+  numero: string;
+  recibida_at: string | null;
+  origen_nombre: string;
+  producto: string;
+  sku: string;
+  unidad: string;
+  cantidad_despachada: number;
+  cantidad_recibida: number;
+  faltante: number;
+};
+
+/**
+ * Faltantes de recepción para seguimiento: ítems de transferencias RECIBIDAS por
+ * la sucursal del usuario (destino) donde se recibió menos de lo despachado.
+ */
+export async function listFaltantesRecepcion(params: {
+  schemaRaw: string;
+  empresaId: string;
+  sucursalId: string;
+}): Promise<FaltanteRecepcion[]> {
+  const schema = assertAllowedChatDataSchema(params.schemaRaw);
+  const tT = quoteSchemaTable(schema, "transferencias_inventario");
+  const tI = quoteSchemaTable(schema, "transferencias_inventario_items");
+  const tS = quoteSchemaTable(schema, "sucursales");
+  const { rows } = await pool().query(
+    `SELECT t.numero, t.recibida_at, so.nombre AS origen_nombre,
+            i.nombre_snapshot AS producto, i.sku_snapshot AS sku, i.unidad_snapshot AS unidad,
+            i.cantidad_despachada, i.cantidad_recibida,
+            (i.cantidad_despachada - i.cantidad_recibida) AS faltante
+       FROM ${tT} t
+       JOIN ${tI} i ON i.transferencia_id = t.id
+       JOIN ${tS} so ON so.id = t.sucursal_origen_id
+      WHERE t.empresa_id = $1::uuid AND t.sucursal_destino_id = $2::uuid
+        AND t.estado = 'recibida'
+        AND i.cantidad_despachada > i.cantidad_recibida
+      ORDER BY t.recibida_at DESC NULLS LAST, t.numero DESC
+      LIMIT 500`,
+    [params.empresaId, params.sucursalId]
+  );
+  return rows.map((r) => ({
+    numero: r.numero,
+    recibida_at: r.recibida_at ? new Date(r.recibida_at).toISOString() : null,
+    origen_nombre: r.origen_nombre,
+    producto: r.producto ?? "",
+    sku: r.sku ?? "",
+    unidad: r.unidad ?? "",
+    cantidad_despachada: n(r.cantidad_despachada),
+    cantidad_recibida: n(r.cantidad_recibida),
+    faltante: n(r.faltante),
+  }));
+}
+
 /** Productos activos con control de stock de una sucursal, para el selector de equivalencia. */
 export async function buscarProductosDeSucursal(params: {
   schemaRaw: string;
