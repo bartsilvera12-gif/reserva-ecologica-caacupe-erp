@@ -2,7 +2,7 @@
 
 import PageHeader from "@/components/ui/PageHeader";
 import { ReportCard } from "@/components/reportes/ReportCard";
-import { Wallet, Truck, Package, ShoppingCart, ArrowLeftRight } from "lucide-react";
+import { Wallet, Truck, Package, ShoppingCart, ArrowLeftRight, TrendingDown, PackageX } from "lucide-react";
 
 /** Hub de reportería operativa (Fase 1: Estado de cuenta + Proveedores). */
 export default function ReportesPage() {
@@ -58,6 +58,24 @@ export default function ReportesPage() {
             icon={ArrowLeftRight}
             description="Detalle de cobro por venta (efectivo/transferencia/tarjeta), por método y por entidad."
             href="/reportes/conciliacion"
+          />
+        </li>
+        <li>
+          <ReportCard
+            title="Proyección de inventario"
+            subtitle="Cobertura y quiebre de stock"
+            icon={TrendingDown}
+            description="Días de cobertura y fecha estimada de quiebre por producto, según el consumo de los últimos 30 días."
+            href="/reportes/proyeccion-inventario"
+          />
+        </li>
+        <li>
+          <ReportCard
+            title="Inventario crítico"
+            subtitle="Productos bajo el mínimo"
+            icon={PackageX}
+            description="Listado completo de productos de tu sucursal con stock igual o por debajo del mínimo."
+            href="/reportes/inventario-critico"
           />
         </li>
       </ul>
