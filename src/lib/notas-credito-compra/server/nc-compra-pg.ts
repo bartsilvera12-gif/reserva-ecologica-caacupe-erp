@@ -15,6 +15,7 @@
  */
 import { getChatPostgresPool, quoteSchemaTable } from "@/lib/supabase/chat-pg-pool";
 import { assertAllowedChatDataSchema } from "@/lib/supabase/chat-data-schema";
+import { aplicarNCaCuentaPorPagar, revertirNCdeCuentaPorPagar } from "@/lib/cuentas-por-pagar/server/cxp-pg";
 import type { PoolClient } from "pg";
 
 function pool() {
@@ -326,6 +327,17 @@ export async function crearNotaCreditoCompra(params: {
       }
     }
 
+    // Reducir el saldo de la cuenta por pagar de la compra (si existe).
+    // Best-effort bajo SAVEPOINT: no aborta la NC si algo falla.
+    try {
+      await client.query("SAVEPOINT sp_cxp_nc");
+      await aplicarNCaCuentaPorPagar(client, schema, empresaId, compra.numero_control, num(params.total));
+      await client.query("RELEASE SAVEPOINT sp_cxp_nc");
+    } catch (e) {
+      await client.query("ROLLBACK TO SAVEPOINT sp_cxp_nc").catch(() => null);
+      console.error("[nc-compra-pg] aplicar NC a cuenta por pagar falló (best-effort)", e instanceof Error ? e.message : e);
+    }
+
     await client.query("COMMIT");
     return { id: ncId, numero };
   } catch (e) {
@@ -409,8 +421,9 @@ export async function anularNotaCreditoCompra(params: {
     await client.query("BEGIN");
     const { rows: cab } = await client.query<{
       numero: string; estado: string; tipo: string; sucursal_id: string;
+      compra_numero_control: string; total: string;
     }>(
-      `SELECT numero, estado, tipo, sucursal_id FROM ${tNC}
+      `SELECT numero, estado, tipo, sucursal_id, compra_numero_control, total FROM ${tNC}
         WHERE id = $1::uuid AND empresa_id = $2::uuid FOR UPDATE`,
       [id, empresaId]
     );
@@ -466,6 +479,16 @@ export async function anularNotaCreditoCompra(params: {
         WHERE id = $3::uuid`,
       [params.usuarioId, params.motivo.slice(0, 2000), id]
     );
+
+    // Revertir el impacto de la NC en la cuenta por pagar (best-effort).
+    try {
+      await client.query("SAVEPOINT sp_cxp_ncrev");
+      await revertirNCdeCuentaPorPagar(client, schema, empresaId, cab[0].compra_numero_control, num(cab[0].total));
+      await client.query("RELEASE SAVEPOINT sp_cxp_ncrev");
+    } catch (e) {
+      await client.query("ROLLBACK TO SAVEPOINT sp_cxp_ncrev").catch(() => null);
+      console.error("[nc-compra-pg] revertir NC de cuenta por pagar falló (best-effort)", e instanceof Error ? e.message : e);
+    }
 
     await client.query("COMMIT");
   } catch (e) {

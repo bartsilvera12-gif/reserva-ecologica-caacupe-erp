@@ -8,6 +8,7 @@ import { motion } from "framer-motion";
 // que vive en este mismo archivo queda intacto.
 import MobileDashboard from "@/app/_components/MobileDashboard";
 import CobranzasResumenCards from "@/components/cobros/CobranzasResumenCards";
+import CuentasPorPagarResumenCard from "@/components/cuentas-por-pagar/CuentasPorPagarResumenCard";
 import { getConfig } from "@/lib/config/storage";
 import { getUsuarios } from "@/lib/usuarios/storage";
 import type { ConfigGlobal } from "@/lib/config/types";
@@ -2379,6 +2380,7 @@ export default function DashboardPage() {
       {tab === "financiero" && (
         <div className="space-y-6">
           <CobranzasResumenCards />
+          <CuentasPorPagarResumenCard />
           <DashFinanciero
             facturas={facturas}
             pagos={pagos}

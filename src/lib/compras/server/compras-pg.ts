@@ -9,6 +9,7 @@
  */
 import { getChatPostgresPool, quoteSchemaTable } from "@/lib/supabase/chat-pg-pool";
 import { assertAllowedChatDataSchema } from "@/lib/supabase/chat-data-schema";
+import { crearCuentaPorPagarDesdeCompra } from "@/lib/cuentas-por-pagar/server/cxp-pg";
 
 function pool() {
   const p = getChatPostgresPool();
@@ -322,6 +323,36 @@ export async function insertComprasConImpacto(
       await upsertProveedorProducto(
         client, tPP, empresaId, it.producto_id, header.proveedor_id, it.costo_unitario
       );
+    }
+
+    // Cuenta por pagar para compras a crédito. Best-effort bajo SAVEPOINT:
+    // si algo falla, la compra NO se aborta (igual criterio que proveedor_productos).
+    if (header.tipo_pago === "credito") {
+      try {
+        await client.query("SAVEPOINT sp_cxp");
+        const totalCompra = insertedRows.reduce((acc, r) => acc + (Number(r.total) || 0), 0);
+        await crearCuentaPorPagarDesdeCompra(client, schema, {
+          empresaId,
+          sucursalId,
+          compraNumeroControl: numero,
+          proveedorId: header.proveedor_id || null,
+          proveedorNombre: header.proveedor_nombre,
+          numeroFacturaProveedor: header.numero_factura_proveedor,
+          fechaFactura: header.fecha_factura,
+          plazoDias: header.plazo_dias,
+          montoOriginal: totalCompra,
+          moneda: header.moneda,
+          usuarioId: header.created_by,
+          usuarioNombre: header.usuario_nombre,
+        });
+        await client.query("RELEASE SAVEPOINT sp_cxp");
+      } catch (cxpErr) {
+        await client.query("ROLLBACK TO SAVEPOINT sp_cxp").catch(() => null);
+        console.error(
+          "[compras-pg] crear cuenta por pagar falló (best-effort)",
+          cxpErr instanceof Error ? cxpErr.message : cxpErr
+        );
+      }
     }
 
     await client.query("COMMIT");
