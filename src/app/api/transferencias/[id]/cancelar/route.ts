@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { successResponse } from "@/lib/api/response";
 import { resolverCtx, respError, respProhibido, cargarLado } from "../../_ctx";
 import { cancelarTransferencia } from "@/lib/transferencias/server/transferencias-pg";
-import { esDestino } from "@/lib/transferencias/permisos";
+import { esOrigen } from "@/lib/transferencias/permisos";
 
 /**
- * POST /api/transferencias/[id]/cancelar — la sucursal SOLICITANTE (destino),
+ * POST /api/transferencias/[id]/cancelar — la sucursal que ENVÍA (origen),
  * cualquier rol, solo si está pendiente (la transacción valida el estado).
  */
 export async function POST(request: NextRequest, ctxParams: { params: Promise<{ id: string }> }) {
@@ -15,8 +15,8 @@ export async function POST(request: NextRequest, ctxParams: { params: Promise<{ 
     const { id } = await ctxParams.params;
     const lado = await cargarLado(r.ctx.schema, r.ctx.empresaId, id);
     if (!lado) return respProhibido("Transferencia no encontrada.");
-    if (!esDestino(lado, r.ctx.sucursalId)) {
-      return respProhibido("Solo la sucursal solicitante puede cancelar.");
+    if (!esOrigen(lado, r.ctx.sucursalId)) {
+      return respProhibido("Solo la sucursal que envía puede cancelar.");
     }
 
     await cancelarTransferencia({

@@ -72,7 +72,7 @@ function fmtNum(n: number): string {
 }
 
 export default function ReposicionPage() {
-  const [tab, setTab] = useState<"realizadas" | "recibidas">("realizadas");
+  const [tab, setTab] = useState<"realizadas" | "recibidas">("recibidas");
   const [transfers, setTransfers] = useState<Resumen[]>([]);
   const [conteos, setConteos] = useState<Record<string, number>>({});
   const [rol, setRol] = useState<string>("");
@@ -141,7 +141,7 @@ export default function ReposicionPage() {
             onClick={() => setCrearAbierto(true)}
             className="inline-flex items-center gap-2 rounded-xl bg-[#4FAEB2] px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-[#4FAEB2]/20 transition-all hover:bg-[#3F8E91] hover:shadow-md active:scale-95"
           >
-            <Plus className="h-4 w-4" /> Solicitar reposición
+            <Plus className="h-4 w-4" /> Nueva remisión
           </button>
         </div>
       </div>
@@ -172,8 +172,8 @@ export default function ReposicionPage() {
       {/* Tabs */}
       <div className="flex gap-1 rounded-lg bg-slate-100 p-1 w-fit">
         {([
-          ["realizadas", "Solicitudes realizadas"],
-          ["recibidas", "Solicitudes recibidas"],
+          ["recibidas", "Mis envíos"],
+          ["realizadas", "Entrantes (a recibir)"],
         ] as const).map(([k, label]) => (
           <button
             key={k}
@@ -200,20 +200,20 @@ export default function ReposicionPage() {
             </span>
             <div>
               <p className="text-sm font-semibold text-slate-700">
-                {tab === "realizadas" ? "Todavía no solicitaste reposiciones" : "No hay solicitudes de otras sucursales"}
+                {tab === "recibidas" ? "Todavía no enviaste mercadería" : "No hay mercadería entrante"}
               </p>
               <p className="mt-0.5 text-sm text-slate-400">
-                {tab === "realizadas"
-                  ? "Cuando pidas mercadería a otra sucursal, va a aparecer acá."
-                  : "Las solicitudes que te hagan otras sucursales van a aparecer acá."}
+                {tab === "recibidas"
+                  ? "Cuando remitas mercadería a otra sucursal, va a aparecer acá."
+                  : "Lo que otras sucursales te remitan va a aparecer acá."}
               </p>
             </div>
-            {tab === "realizadas" && (
+            {tab === "recibidas" && (
               <button
                 onClick={() => setCrearAbierto(true)}
                 className="mt-1 inline-flex items-center gap-2 rounded-xl bg-[#4FAEB2] px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#3F8E91] active:scale-95"
               >
-                <Plus className="h-4 w-4" /> Solicitar reposición
+                <Plus className="h-4 w-4" /> Nueva remisión
               </button>
             )}
           </div>
@@ -258,7 +258,7 @@ export default function ReposicionPage() {
           onClose={() => setCrearAbierto(false)}
           onCreada={() => {
             setCrearAbierto(false);
-            setTab("realizadas");
+            setTab("recibidas");
             cargar();
           }}
         />
@@ -280,26 +280,36 @@ export default function ReposicionPage() {
 // ── Modal: crear solicitud ───────────────────────────────────────────────────
 function ModalCrear({ onClose, onCreada }: { onClose: () => void; onCreada: () => void }) {
   const [sucursales, setSucursales] = useState<Sucursal[]>([]);
-  const [origenId, setOrigenId] = useState("");
+  const [destinoId, setDestinoId] = useState("");
+  const [sucursalActual, setSucursalActual] = useState("");
   const [obs, setObs] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [resultados, setResultados] = useState<ProductoBusq[]>([]);
   const [buscando, setBuscando] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
-  const [lineas, setLineas] = useState<Array<{ producto_destino_id: string; nombre: string; sku: string; stock: number; cantidad: string }>>([]);
+  const [lineas, setLineas] = useState<Array<{ producto_id: string; nombre: string; sku: string; stock: number; cantidad: string }>>([]);
   const [guardando, setGuardando] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Sucursal ACTUAL (origen fijo, desde la sesión) + lista de destinos posibles.
   useEffect(() => {
     (async () => {
-      const res = await fetchWithSupabaseSession("/api/sucursales");
-      const json = await res.json();
-      if (res.ok) {
-        const list: Sucursal[] = json?.data?.sucursales ?? [];
+      try {
+        const [rs, rm] = await Promise.all([
+          fetchWithSupabaseSession("/api/sucursales"),
+          fetchWithSupabaseSession("/api/usuarios/me", { cache: "no-store" }),
+        ]);
+        const js = await rs.json();
+        const jm = await rm.json();
+        const list: Sucursal[] = rs.ok ? (js?.data?.sucursales ?? []) : [];
         setSucursales(list);
-        // Opción inicial: la sucursal principal (es_principal).
-        const principal = list.find((s) => s.es_principal);
-        if (principal) setOrigenId(principal.id);
+        const actual = (rm.ok ? (jm?.usuario?.sucursal ?? "") : "").trim();
+        setSucursalActual(actual);
+        // Destinos posibles = activas distintas de la actual. Si hay una sola, la preselecciona.
+        const destinos = list.filter((s) => s.nombre.trim() !== actual);
+        if (destinos.length === 1) setDestinoId(destinos[0].id);
+      } catch {
+        /* la UI muestra el error al guardar si falta el destino */
       }
     })();
   }, []);
@@ -334,17 +344,17 @@ function ModalCrear({ onClose, onCreada }: { onClose: () => void; onCreada: () =
     };
   }, [busqueda]);
 
-  const yaAgregado = useCallback((id: string) => lineas.some((l) => l.producto_destino_id === id), [lineas]);
+  const yaAgregado = useCallback((id: string) => lineas.some((l) => l.producto_id === id), [lineas]);
 
   function agregar(p: ProductoBusq) {
     if (yaAgregado(p.id)) return;
-    setLineas((prev) => [...prev, { producto_destino_id: p.id, nombre: p.nombre, sku: p.sku, stock: p.stock_actual, cantidad: "" }]);
+    setLineas((prev) => [...prev, { producto_id: p.id, nombre: p.nombre, sku: p.sku, stock: p.stock_actual, cantidad: "" }]);
     setBusqueda("");
     setResultados([]);
     setActiveIdx(0);
   }
   function quitar(id: string) {
-    setLineas((prev) => prev.filter((l) => l.producto_destino_id !== id));
+    setLineas((prev) => prev.filter((l) => l.producto_id !== id));
   }
 
   function onSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -369,9 +379,9 @@ function ModalCrear({ onClose, onCreada }: { onClose: () => void; onCreada: () =
 
   async function guardar() {
     setErr(null);
-    if (!origenId) return setErr("Elegí la sucursal de origen.");
+    if (!destinoId) return setErr("Elegí la sucursal de destino.");
     const items = lineas
-      .map((l) => ({ producto_destino_id: l.producto_destino_id, cantidad_solicitada: Number(l.cantidad) || 0 }))
+      .map((l) => ({ producto_id: l.producto_id, cantidad_solicitada: Number(l.cantidad) || 0 }))
       .filter((i) => i.cantidad_solicitada > 0);
     if (items.length === 0) return setErr("Agregá al menos un producto con cantidad mayor a 0.");
     setGuardando(true);
@@ -379,7 +389,7 @@ function ModalCrear({ onClose, onCreada }: { onClose: () => void; onCreada: () =
       const res = await fetchWithSupabaseSession("/api/transferencias", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sucursal_origen_id: origenId, observacion: obs.trim() || undefined, items }),
+        body: JSON.stringify({ sucursal_destino_id: destinoId, observacion: obs.trim() || undefined, items }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(typeof json.error === "string" ? json.error : "No se pudo crear.");
@@ -390,24 +400,32 @@ function ModalCrear({ onClose, onCreada }: { onClose: () => void; onCreada: () =
     }
   }
 
+  const destinos = sucursales.filter((s) => s.nombre.trim() !== sucursalActual);
+
   return (
-    <Overlay onClose={onClose} titulo="Solicitar reposición">
+    <Overlay onClose={onClose} titulo="Nueva remisión / envío de mercadería">
       <div className="space-y-4">
-        <div>
-          <label className="mb-1 block text-sm font-medium text-slate-700">Sucursal de origen</label>
-          <select
-            value={origenId}
-            onChange={(e) => setOrigenId(e.target.value)}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#4FAEB2]"
-          >
-            <option value="">Seleccioná…</option>
-            {sucursales.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.nombre}
-                {s.es_principal ? " (principal)" : ""}
-              </option>
-            ))}
-          </select>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Depósito de origen</label>
+            <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+              {sucursalActual || "Tu sucursal"}
+              <span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-500">fijo</span>
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Sucursal de destino</label>
+            <select
+              value={destinoId}
+              onChange={(e) => setDestinoId(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#4FAEB2]"
+            >
+              <option value="">Seleccioná…</option>
+              {destinos.map((s) => (
+                <option key={s.id} value={s.id}>{s.nombre}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div>
@@ -505,7 +523,7 @@ function ModalCrear({ onClose, onCreada }: { onClose: () => void; onCreada: () =
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {lineas.map((l) => (
-                  <tr key={l.producto_destino_id}>
+                  <tr key={l.producto_id}>
                     <td className="px-3 py-2">
                       <div className="font-medium text-slate-800">{l.nombre}</div>
                       <div className="text-xs text-slate-400">{l.sku}</div>
@@ -518,13 +536,13 @@ function ModalCrear({ onClose, onCreada }: { onClose: () => void; onCreada: () =
                         step="any"
                         value={l.cantidad}
                         onChange={(e) =>
-                          setLineas((prev) => prev.map((x) => (x.producto_destino_id === l.producto_destino_id ? { ...x, cantidad: e.target.value } : x)))
+                          setLineas((prev) => prev.map((x) => (x.producto_id === l.producto_id ? { ...x, cantidad: e.target.value } : x)))
                         }
                         className="w-24 rounded border border-slate-200 px-2 py-1 text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-[#4FAEB2]"
                       />
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <button onClick={() => quitar(l.producto_destino_id)} className="text-xs text-red-500 hover:underline">
+                      <button onClick={() => quitar(l.producto_id)} className="text-xs text-red-500 hover:underline">
                         Quitar
                       </button>
                     </td>
@@ -733,14 +751,14 @@ function ModalDetalle({
 
           {/* Acciones según rol/lado/estado */}
           <div className="flex flex-wrap justify-end gap-2 pt-1">
-            {/* Cancelar: solicitante, pendiente */}
-            {esDestino && estado === "pendiente" && (
+            {/* Cancelar: la sucursal que envía (origen), pendiente */}
+            {esOrigen && estado === "pendiente" && (
               <button
-                onClick={() => accionar("cancelar", undefined, "¿Cancelar esta solicitud?")}
+                onClick={() => accionar("cancelar", undefined, "¿Cancelar esta remisión?")}
                 disabled={!!accion}
                 className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
               >
-                Cancelar solicitud
+                Cancelar remisión
               </button>
             )}
             {/* Aprobar / rechazar: origen, aprobador, pendiente */}

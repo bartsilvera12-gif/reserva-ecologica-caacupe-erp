@@ -31,7 +31,8 @@ export type EstadoTransferencia =
   | "cancelada";
 
 export type TransferenciaItemInput = {
-  producto_destino_id: string;
+  /** Producto del ORIGEN (el depósito de la sucursal del usuario) que se envía. */
+  producto_id: string;
   cantidad_solicitada: number;
 };
 
@@ -79,11 +80,13 @@ async function proximoNumeroTransferencia(
   return `TRF-${String(next).padStart(6, "0")}`;
 }
 
-// ── Crear solicitud ─────────────────────────────────────────────────────────
+// ── Crear remisión/envío ────────────────────────────────────────────────────
 /**
- * La crea la sucursal SOLICITANTE (= destino). El origen se elige entre las
- * sucursales activas de la empresa. Los ítems nacen con el producto del DESTINO;
- * el equivalente del origen se resuelve por SKU acá (nullable si no existe).
+ * La crea la sucursal que ENVÍA (= origen = sucursal del usuario, fija). El
+ * destino se elige en el modal. Los ítems nacen con el producto del ORIGEN (lo
+ * que el usuario tiene y envía); el equivalente en el DESTINO se resuelve por
+ * SKU y es obligatorio (si el destino no tiene ese producto, se rechaza con un
+ * mensaje que nombra el producto).
  */
 export async function crearTransferencia(params: {
   schemaRaw: string;
@@ -145,43 +148,50 @@ export async function crearTransferencia(params: {
       const cant = num(it.cantidad_solicitada);
       if (cant <= 0) throw new TransferenciaError(400, "Las cantidades deben ser mayores a 0.");
 
-      // Producto del DESTINO: debe existir, ser de esa sucursal, activo y controlar stock.
-      const { rows: prodDst } = await client.query<{
+      // Producto del ORIGEN (mi depósito): el que se envía. Debe existir, ser de
+      // mi sucursal, estar activo y controlar stock.
+      const { rows: prodOrg } = await client.query<{
         id: string; sku: string; nombre: string; unidad_medida: string;
       }>(
         `SELECT id, sku, nombre, unidad_medida FROM ${tP}
           WHERE id = $1::uuid AND empresa_id = $2::uuid AND sucursal_id = $3::uuid
             AND activo = true AND controla_stock = true`,
-        [it.producto_destino_id, empresaId, sucursalDestinoId]
+        [it.producto_id, empresaId, sucursalOrigenId]
       );
-      if (!prodDst[0]) {
+      if (!prodOrg[0]) {
         throw new TransferenciaError(
           400,
-          "Un producto no pertenece a tu sucursal, está inactivo o no controla stock."
+          "Un producto seleccionado no pertenece a tu depósito, está inactivo o no controla stock."
         );
       }
-      const p = prodDst[0];
+      const p = prodOrg[0];
 
-      // Equivalente en el ORIGEN por MISMO SKU (no por nombre). Nullable si no hay.
-      const { rows: prodOrg } = await client.query<{ id: string }>(
+      // Equivalente en el DESTINO por MISMO SKU. Obligatorio para poder recibir.
+      const { rows: prodDst } = await client.query<{ id: string }>(
         `SELECT id FROM ${tP}
           WHERE empresa_id = $1::uuid AND sucursal_id = $2::uuid AND sku = $3
             AND activo = true AND controla_stock = true
           LIMIT 1`,
-        [empresaId, sucursalOrigenId, p.sku]
+        [empresaId, sucursalDestinoId, p.sku]
       );
-      const productoOrigenId = prodOrg[0]?.id ?? null;
+      if (!prodDst[0]) {
+        throw new TransferenciaError(
+          400,
+          `El producto "${p.nombre}" (SKU ${p.sku}) no existe en la sucursal de destino. Cargalo en el destino antes de remitirlo.`
+        );
+      }
+      const productoDestinoId = prodDst[0].id;
 
       await client.query(
         `INSERT INTO ${tI}
            (transferencia_id, empresa_id, producto_destino_id, producto_origen_id,
             sku_snapshot, nombre_snapshot, unidad_snapshot, cantidad_solicitada)
-         VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8::numeric)`,
+         VALUES ($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5,$6,$7,$8::numeric)`,
         [
           transferenciaId,
           empresaId,
+          productoDestinoId,
           p.id,
-          productoOrigenId,
           p.sku,
           p.nombre,
           p.unidad_medida,
