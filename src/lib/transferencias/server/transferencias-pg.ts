@@ -174,7 +174,9 @@ export async function crearTransferencia(params: {
       }
       const p = p0;
 
-      // Equivalente en el DESTINO por MISMO SKU. Obligatorio para poder recibir.
+      // Equivalente en el DESTINO por MISMO SKU. Si no existe, se CREA clonando el
+      // producto de origen (mismo SKU, stock 0), para remitir sin fricción.
+      let productoDestinoId: string;
       const { rows: prodDst } = await client.query<{ id: string }>(
         `SELECT id FROM ${tP}
           WHERE empresa_id = $1::uuid AND sucursal_id = $2::uuid AND sku = $3
@@ -182,13 +184,57 @@ export async function crearTransferencia(params: {
           LIMIT 1`,
         [empresaId, sucursalDestinoId, p.sku]
       );
-      if (!prodDst[0]) {
-        throw new TransferenciaError(
-          400,
-          `El producto "${p.nombre}" (SKU ${p.sku}) no existe en la sucursal de destino. Cargalo en el destino antes de remitirlo.`
+      if (prodDst[0]) {
+        productoDestinoId = prodDst[0].id;
+      } else {
+        // ¿Ya existe ese SKU en el destino pero inactivo / sin control de stock?
+        // No se puede duplicar el SKU (índice único por sucursal): se avisa claro.
+        const { rows: existe } = await client.query<{ id: string }>(
+          `SELECT id FROM ${tP} WHERE empresa_id = $1::uuid AND sucursal_id = $2::uuid AND sku = $3 LIMIT 1`,
+          [empresaId, sucursalDestinoId, p.sku]
         );
+        if (existe[0]) {
+          throw new TransferenciaError(
+            400,
+            `El producto "${p.nombre}" (SKU ${p.sku}) existe en el destino pero está inactivo o no controla stock. Corregilo en el destino para poder remitirlo.`
+          );
+        }
+        // Clonar el producto de origen en el destino (mismas columnas que la
+        // migración de clonado de catálogo: stock 0, categoría/ubicación NULL,
+        // proveedor copiado —es compartido—, código de barras solo si está libre).
+        const { rows: nuevo } = await client.query<{ id: string }>(
+          `INSERT INTO ${tP} (
+             id, empresa_id, sucursal_id, nombre, sku, costo_promedio, precio_venta,
+             stock_actual, stock_minimo, unidad_medida, metodo_valuacion, activo,
+             imagen_url, imagen_path, codigo_barras, codigo_barras_interno,
+             proveedor_principal_id, categoria_principal_id, ubicacion_principal_id,
+             es_insumo, es_vendible, controla_stock, valorizado,
+             unidad_compra, unidad_receta, factor_compra_receta, tiempo_prep_minutos,
+             descripcion, precio_mayorista, cantidad_minima_mayorista,
+             precio_distribuidor, modo_receta, tipo_iva
+           )
+           SELECT gen_random_uuid(), o.empresa_id, $2::uuid, o.nombre, o.sku, o.costo_promedio, o.precio_venta,
+             0, o.stock_minimo, o.unidad_medida, o.metodo_valuacion, o.activo,
+             o.imagen_url, o.imagen_path,
+             CASE WHEN o.codigo_barras IS NOT NULL AND NOT EXISTS (
+               SELECT 1 FROM ${tP} d WHERE d.empresa_id = o.empresa_id
+                 AND d.sucursal_id = $2::uuid AND d.codigo_barras = o.codigo_barras
+             ) THEN o.codigo_barras ELSE NULL END,
+             o.codigo_barras_interno,
+             o.proveedor_principal_id, NULL, NULL,
+             o.es_insumo, o.es_vendible, o.controla_stock, o.valorizado,
+             o.unidad_compra, o.unidad_receta, o.factor_compra_receta, o.tiempo_prep_minutos,
+             o.descripcion, o.precio_mayorista, o.cantidad_minima_mayorista,
+             o.precio_distribuidor, o.modo_receta, o.tipo_iva
+           FROM ${tP} o WHERE o.id = $1::uuid
+           RETURNING id`,
+          [p.id, sucursalDestinoId]
+        );
+        if (!nuevo[0]) {
+          throw new TransferenciaError(500, `No se pudo crear el producto "${p.nombre}" en el destino.`);
+        }
+        productoDestinoId = nuevo[0].id;
       }
-      const productoDestinoId = prodDst[0].id;
 
       await client.query(
         `INSERT INTO ${tI}
