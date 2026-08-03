@@ -148,23 +148,31 @@ export async function crearTransferencia(params: {
       const cant = num(it.cantidad_solicitada);
       if (cant <= 0) throw new TransferenciaError(400, "Las cantidades deben ser mayores a 0.");
 
-      // Producto del ORIGEN (mi depósito): el que se envía. Debe existir, ser de
-      // mi sucursal, estar activo y controlar stock.
+      // Producto del ORIGEN (mi depósito): el que se envía. Se consulta por id y
+      // se diagnostica el MOTIVO EXACTO si no es válido, nombrando el producto.
       const { rows: prodOrg } = await client.query<{
         id: string; sku: string; nombre: string; unidad_medida: string;
+        sucursal_id: string; activo: boolean; controla_stock: boolean;
       }>(
-        `SELECT id, sku, nombre, unidad_medida FROM ${tP}
-          WHERE id = $1::uuid AND empresa_id = $2::uuid AND sucursal_id = $3::uuid
-            AND activo = true AND controla_stock = true`,
-        [it.producto_id, empresaId, sucursalOrigenId]
+        `SELECT id, sku, nombre, unidad_medida, sucursal_id, activo, controla_stock
+           FROM ${tP} WHERE id = $1::uuid AND empresa_id = $2::uuid`,
+        [it.producto_id, empresaId]
       );
-      if (!prodOrg[0]) {
-        throw new TransferenciaError(
-          400,
-          "Un producto seleccionado no pertenece a tu depósito, está inactivo o no controla stock."
-        );
+      const p0 = prodOrg[0];
+      if (!p0) {
+        throw new TransferenciaError(400, "Un producto seleccionado no existe o no pertenece a tu empresa.");
       }
-      const p = prodOrg[0];
+      const nom = `"${p0.nombre}"${p0.sku ? ` (SKU ${p0.sku})` : ""}`;
+      if (p0.sucursal_id !== sucursalOrigenId) {
+        throw new TransferenciaError(400, `El producto ${nom} no pertenece a tu depósito (es de otra sucursal); no podés remitirlo desde acá.`);
+      }
+      if (!p0.activo) {
+        throw new TransferenciaError(400, `El producto ${nom} está inactivo, no se puede remitir.`);
+      }
+      if (!p0.controla_stock) {
+        throw new TransferenciaError(400, `El producto ${nom} no controla stock, por lo que no se puede remitir.`);
+      }
+      const p = p0;
 
       // Equivalente en el DESTINO por MISMO SKU. Obligatorio para poder recibir.
       const { rows: prodDst } = await client.query<{ id: string }>(
