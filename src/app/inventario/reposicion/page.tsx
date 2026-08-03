@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
-import { ArrowLeftRight, Plus, X, Search, Clock, CheckCircle2, Truck, PackageCheck, Loader2, PackageSearch, Check } from "lucide-react";
+import { ArrowLeftRight, Plus, X, Search, Clock, CheckCircle2, Truck, PackageCheck, Loader2, PackageSearch, Check, Printer } from "lucide-react";
 
 // ── Tipos que devuelve la API ────────────────────────────────────────────────
 type Resumen = {
@@ -387,6 +387,9 @@ function ModalCrear({ onClose, onCreada }: { onClose: () => void; onCreada: () =
       .filter((i) => i.cantidad_solicitada > 0);
     if (items.length === 0) return setErr("Agregá al menos un producto con cantidad mayor a 0.");
     setGuardando(true);
+    // Abrimos la pestaña de la remisión con el gesto del click (evita el bloqueo
+    // de pop-ups); recién le ponemos la URL cuando tenemos el id de la remisión.
+    const win = typeof window !== "undefined" ? window.open("", "_blank") : null;
     try {
       const res = await fetchWithSupabaseSession("/api/transferencias", {
         method: "POST",
@@ -395,8 +398,12 @@ function ModalCrear({ onClose, onCreada }: { onClose: () => void; onCreada: () =
       });
       const json = await res.json();
       if (!res.ok) throw new Error(typeof json.error === "string" ? json.error : "No se pudo crear.");
+      const nuevoId: string | undefined = json?.data?.id;
+      if (nuevoId && win) win.location.href = `/api/transferencias/${nuevoId}/remision?auto=1`;
+      else if (win) win.close();
       onCreada();
     } catch (e) {
+      if (win) win.close();
       setGuardando(false);
       setErr(e instanceof Error ? e.message : "Error al crear.");
     }
@@ -753,6 +760,13 @@ function ModalDetalle({
 
           {/* Acciones según rol/lado/estado */}
           <div className="flex flex-wrap justify-end gap-2 pt-1">
+            {/* Imprimir la nota de remisión (siempre disponible). */}
+            <button
+              onClick={() => window.open(`/api/transferencias/${id}/remision?auto=1`, "_blank")}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            >
+              <Printer className="h-4 w-4" /> Imprimir remisión
+            </button>
             {/* Cancelar: la sucursal que envía (origen), pendiente */}
             {esOrigen && estado === "pendiente" && (
               <button
