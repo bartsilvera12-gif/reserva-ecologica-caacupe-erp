@@ -325,10 +325,12 @@ function ModalCrear({ onClose, onCreada }: { onClose: () => void; onCreada: () =
     setBuscando(true);
     const t = setTimeout(async () => {
       try {
-        const res = await fetchWithSupabaseSession(`/api/productos/search?q=${encodeURIComponent(q)}&limit=20`);
+        // Catálogo del depósito de ORIGEN (mi sucursal) — solo productos que
+        // controlan stock (los remitibles). No trae catálogos de otras sucursales.
+        const res = await fetchWithSupabaseSession(`/api/transferencias/productos-origen?q=${encodeURIComponent(q)}`);
         const json = await res.json();
         if (vivo && res.ok) {
-          const items = (json?.data?.items ?? []) as Array<{ id: string; nombre: string; sku: string; stock_actual: number }>;
+          const items = (json?.data?.productos ?? []) as Array<{ id: string; nombre: string; sku: string; stock_actual: number }>;
           setResultados(items.map((p) => ({ id: p.id, nombre: p.nombre, sku: p.sku, stock_actual: p.stock_actual })));
           setActiveIdx(0);
         }
