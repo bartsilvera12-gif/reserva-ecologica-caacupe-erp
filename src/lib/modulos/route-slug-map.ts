@@ -137,6 +137,7 @@ export function pathRequiresModuleSlug(pathname: string): string | null {
   }
   if (p.startsWith("/notas-credito")) return "notas_credito";
   if (p.startsWith("/ventas")) return "ventas";
+  if (p.startsWith("/caja")) return "caja";
   // Más específico primero: NC de proveedor es su propio módulo, no Compras.
   if (p.startsWith("/compras/notas-credito")) return "notas_credito_compra";
   if (p.startsWith("/compras/cuentas-por-pagar")) return "cuentas_por_pagar";

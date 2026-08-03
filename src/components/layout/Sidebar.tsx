@@ -149,6 +149,7 @@ const MENU_STRUCTURE: MenuItem[] = [
   { key: "reposicion", slug: "reposicion", label: "Reposición", href: "/inventario/reposicion", icon: ArrowLeftRight },
   { key: "clientes", slug: "clientes", label: "Clientes", href: "/clientes", icon: Users },
   { key: "pagos", slug: "pagos", label: "Pagos", href: "/pagos", icon: Banknote },
+  { key: "caja", slug: "caja", label: "Caja y arqueo", href: "/caja", icon: Banknote },
   {
     key: "compras",
     slug: "compras",
@@ -217,7 +218,7 @@ const MENU_STRUCTURE: MenuItem[] = [
 const MENU_FAMILIES: { id: string; titulo: string; keys: string[] }[] = [
   { id: "inicio", titulo: "Inicio", keys: ["dashboard"] },
   { id: "comercial", titulo: "Comercial", keys: ["clientes", "crm", "gestion-clientes", "ventas", "presupuestos", "comisiones", "planes"] },
-  { id: "finanzas", titulo: "Finanzas", keys: ["pagos", "gastos", "cuentas_por_pagar", "notas_credito", "reportes"] },
+  { id: "finanzas", titulo: "Finanzas", keys: ["caja", "pagos", "gastos", "cuentas_por_pagar", "notas_credito", "reportes"] },
   { id: "operaciones", titulo: "Operaciones", keys: ["inventario", "reposicion", "compras", "ordenes_compra", "notas_credito_compra", "recetas", "proyectos"] },
   { id: "omnicanal", titulo: "Omnicanal", keys: ["conversaciones", "conversaciones-finalizadas", "historial-omnicanal", "monitoreo", "campanas"] },
   { id: "marketing", titulo: "Marketing y Automatización", keys: ["marketing", "marketing_ops", "sorteos"] },
