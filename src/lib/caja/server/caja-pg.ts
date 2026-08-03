@@ -13,6 +13,7 @@
  */
 import { getChatPostgresPool, quoteSchemaTable } from "@/lib/supabase/chat-pg-pool";
 import { assertAllowedChatDataSchema } from "@/lib/supabase/chat-data-schema";
+import type { ArqueoItem } from "@/lib/caja/denominaciones";
 import type { Pool, PoolClient } from "pg";
 
 function pool() {
@@ -132,6 +133,9 @@ export type CajaRow = {
   abierta_at: string; cerrada_at: string | null;
   abierta_por_nombre: string | null; cerrada_por_nombre: string | null;
   efectivo_esperado: number | null; efectivo_contado: number | null; diferencia: number | null;
+  observacion_apertura: string | null; observacion_cierre: string | null;
+  arqueo_apertura: ArqueoItem[] | null; arqueo_cierre: ArqueoItem[] | null;
+  sucursal_nombre: string | null;
 };
 
 function mapCaja(r: Record<string, unknown>): CajaRow {
@@ -145,6 +149,11 @@ function mapCaja(r: Record<string, unknown>): CajaRow {
     efectivo_esperado: r.efectivo_esperado != null ? num(r.efectivo_esperado) : null,
     efectivo_contado: r.efectivo_contado != null ? num(r.efectivo_contado) : null,
     diferencia: r.diferencia != null ? num(r.diferencia) : null,
+    observacion_apertura: (r.observacion_apertura as string) ?? null,
+    observacion_cierre: (r.observacion_cierre as string) ?? null,
+    arqueo_apertura: (r.arqueo_apertura_json as ArqueoItem[] | null) ?? null,
+    arqueo_cierre: (r.arqueo_cierre_json as ArqueoItem[] | null) ?? null,
+    sucursal_nombre: (r.sucursal_nombre as string) ?? null,
   };
 }
 
@@ -165,16 +174,18 @@ export async function getCajaAbierta(schemaRaw: string, empresaId: string, sucur
 export async function abrirCaja(params: {
   schemaRaw: string; empresaId: string; sucursalId: string; montoApertura: number;
   observacion: string | null; usuarioId: string | null; usuarioNombre: string | null;
+  arqueoApertura?: ArqueoItem[] | null;
 }): Promise<{ id: string }> {
   const schema = assertAllowedChatDataSchema(params.schemaRaw);
   const tCaja = quoteSchemaTable(schema, "cajas");
+  const arqueoJson = params.arqueoApertura && params.arqueoApertura.length ? JSON.stringify(params.arqueoApertura) : null;
   try {
     const { rows } = await pool().query<{ id: string }>(
       `INSERT INTO ${tCaja}
-         (empresa_id, sucursal_id, numero_caja, estado, monto_apertura, observacion_apertura, abierta_por, abierta_por_nombre)
-       VALUES ($1::uuid,$2::uuid,1,'abierta',$3::numeric,$4,$5::uuid,$6)
+         (empresa_id, sucursal_id, numero_caja, estado, monto_apertura, observacion_apertura, abierta_por, abierta_por_nombre, arqueo_apertura_json)
+       VALUES ($1::uuid,$2::uuid,1,'abierta',$3::numeric,$4,$5::uuid,$6,$7::jsonb)
        RETURNING id`,
-      [params.empresaId, params.sucursalId, num(params.montoApertura), params.observacion, params.usuarioId, params.usuarioNombre]
+      [params.empresaId, params.sucursalId, num(params.montoApertura), params.observacion, params.usuarioId, params.usuarioNombre, arqueoJson]
     );
     return { id: rows[0]!.id };
   } catch (e) {
@@ -223,6 +234,7 @@ export async function registrarMovimientoCaja(params: {
 export async function cerrarCaja(params: {
   schemaRaw: string; empresaId: string; sucursalId: string; cajaId: string;
   efectivoContado: number; observacion: string | null; usuarioId: string | null; usuarioNombre: string | null;
+  arqueoCierre?: ArqueoItem[] | null;
 }): Promise<{ efectivo_esperado: number; efectivo_contado: number; diferencia: number }> {
   const schema = assertAllowedChatDataSchema(params.schemaRaw);
   const tCaja = quoteSchemaTable(schema, "cajas");
@@ -245,12 +257,13 @@ export async function cerrarCaja(params: {
     const contado = num(params.efectivoContado);
     const diferencia = contado - esperado;
 
+    const arqueoJson = params.arqueoCierre && params.arqueoCierre.length ? JSON.stringify(params.arqueoCierre) : null;
     await client.query(
       `UPDATE ${tCaja} SET estado='cerrada', cerrada_at=now(), cerrada_por=$2::uuid, cerrada_por_nombre=$3,
               efectivo_esperado=$4::numeric, efectivo_contado=$5::numeric, diferencia=$6::numeric,
-              observacion_cierre=$7, updated_at=now()
+              observacion_cierre=$7, arqueo_cierre_json=$8::jsonb, updated_at=now()
         WHERE id=$1::uuid`,
-      [params.cajaId, params.usuarioId, params.usuarioNombre, esperado, contado, diferencia, params.observacion]
+      [params.cajaId, params.usuarioId, params.usuarioNombre, esperado, contado, diferencia, params.observacion, arqueoJson]
     );
     await client.query("COMMIT");
     return { efectivo_esperado: esperado, efectivo_contado: contado, diferencia };
@@ -276,8 +289,11 @@ export async function getCajaDetalle(schemaRaw: string, empresaId: string, sucur
   const schema = assertAllowedChatDataSchema(schemaRaw);
   const tCaja = quoteSchemaTable(schema, "cajas");
   const tM = quoteSchemaTable(schema, "caja_movimientos");
+  const tS = quoteSchemaTable(schema, "sucursales");
   const { rows } = await pool().query(
-    `SELECT * FROM ${tCaja} WHERE id=$1::uuid AND empresa_id=$2::uuid AND sucursal_id=$3::uuid`,
+    `SELECT c.*, s.nombre AS sucursal_nombre FROM ${tCaja} c
+       JOIN ${tS} s ON s.id = c.sucursal_id
+      WHERE c.id=$1::uuid AND c.empresa_id=$2::uuid AND c.sucursal_id=$3::uuid`,
     [id, empresaId, sucursalId]
   );
   if (!rows[0]) return null;
