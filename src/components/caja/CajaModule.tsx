@@ -310,10 +310,10 @@ function MovIcon({ tipo }: { tipo: string }) {
 // Modales
 // ============================================================
 
-function Overlay({ titulo, onClose, children }: { titulo: string; onClose: () => void; children: React.ReactNode }) {
+function Overlay({ titulo, onClose, children, wide }: { titulo: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
-      <div className="my-8 w-full max-w-md rounded-xl bg-white shadow-xl">
+      <div className={`my-8 w-full rounded-xl bg-white shadow-xl ${wide ? "max-w-2xl" : "max-w-md"}`}>
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
           <h2 className="text-lg font-semibold text-slate-900">{titulo}</h2>
           <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"><X className="h-5 w-5" /></button>
@@ -356,7 +356,7 @@ function ModalAbrir({ onClose, onOk }: { onClose: () => void; onOk: () => void }
   const { busy, err, post } = usePost();
   const efectivo = porDenom ? totalArqueo(cantidades) : Number(monto) || 0;
   return (
-    <Overlay titulo="Abrir caja" onClose={onClose}>
+    <Overlay titulo="Abrir caja" onClose={onClose} wide={porDenom}>
       <div className="space-y-4">
         <label className="flex items-center gap-2 text-sm text-slate-600">
           <input type="checkbox" checked={porDenom} onChange={(e) => setPorDenom(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
@@ -462,7 +462,7 @@ function ModalCerrar({ caja, arqueo, onClose, onOk }: { caja: Caja; arqueo: Arqu
   const contadoDefinido = porDenom || contadoManual !== "";
   const dif = contado - arqueo.efectivo_esperado;
   return (
-    <Overlay titulo={`Cerrar Caja ${caja.numero_caja} (arqueo)`} onClose={onClose}>
+    <Overlay titulo={`Cerrar Caja ${caja.numero_caja} (arqueo)`} onClose={onClose} wide={porDenom}>
       <div className="space-y-4">
         <div className="rounded-lg bg-slate-50 px-3 py-2">
           <Fila label="Efectivo esperado" value={arqueo.efectivo_esperado} fuerte />
