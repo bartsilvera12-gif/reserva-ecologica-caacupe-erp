@@ -196,6 +196,23 @@ export default function NuevaVentaPage() {
   // ── Modal buscador (F3) ────────────────────────────────────────────────────
   const [pickerOpen, setPickerOpen] = useState(false);
 
+  // ── Caja del turno (multi-caja): a qué caja se imputa la venta ──────────────
+  // Con 0 cajas abiertas la venta procede sin caja; con 1 se autoselecciona;
+  // con varias, el cajero elige (obligatorio) antes de cobrar.
+  const [cajasAbiertas, setCajasAbiertas] = useState<{ id: string; numero_caja: number }[]>([]);
+  const [cajaVentaId, setCajaVentaId] = useState<string | null>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch("/api/caja/abiertas", { credentials: "include", cache: "no-store" });
+        const j = await r.json();
+        const cajas = (j?.data?.cajas ?? []) as { id: string; numero_caja: number }[];
+        setCajasAbiertas(cajas);
+        if (cajas.length === 1) setCajaVentaId(cajas[0]!.id);
+      } catch { /* no bloquea la venta */ }
+    })();
+  }, []);
+
   function pickerToProducto(p: ProductoPickerItem): Producto {
     return {
       id: p.id,
@@ -644,6 +661,11 @@ export default function NuevaVentaPage() {
       setErrorVenta(`${motivo} tenés que elegir un cliente. Podés cargarlo rápido desde el buscador de arriba.`);
       return;
     }
+    if (cajasAbiertas.length > 1 && !cajaVentaId) {
+      isSubmittingRef.current = false;
+      setErrorVenta("Hay varias cajas abiertas: elegí en qué caja registrar la venta.");
+      return;
+    }
     setGuardando(true);
     try {
       const resultado = await saveVenta(
@@ -669,7 +691,7 @@ export default function NuevaVentaPage() {
           titular: metodoPago === "transferencia" ? pagoTitular.trim() || null : null,
           observacion: pagoObservacion.trim() || null,
         },
-        { permitirSinStock, pedidoId }
+        { permitirSinStock, pedidoId, cajaId: cajaVentaId }
       );
 
       if (!resultado.success) {
@@ -1034,6 +1056,23 @@ export default function NuevaVentaPage() {
                       <span className="tabular-nums">{formatGs(totalGeneral)}</span>
                     </div>
                   </div>
+
+                  {cajasAbiertas.length > 1 && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1.5">
+                      <p className="text-[11px] font-semibold text-amber-700 uppercase tracking-wider">Caja del turno</p>
+                      <select
+                        value={cajaVentaId ?? ""}
+                        onChange={(e) => setCajaVentaId(e.target.value || null)}
+                        className={inputClass}
+                      >
+                        <option value="">Elegí la caja…</option>
+                        {cajasAbiertas.map((c) => (
+                          <option key={c.id} value={c.id}>Caja {c.numero_caja}</option>
+                        ))}
+                      </select>
+                      <p className="text-[11px] text-amber-600">Hay varias cajas abiertas: la venta se registra en la que elijas.</p>
+                    </div>
+                  )}
 
                   {tipoVenta === "CONTADO" && (
                     <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2.5">
