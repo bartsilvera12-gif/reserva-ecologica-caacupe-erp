@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import PageHeader from "@/components/ui/PageHeader";
 import { ReportCard } from "@/components/reportes/ReportCard";
-import { Wallet, Truck, Package, ShoppingCart, ArrowLeftRight, TrendingDown, PackageX, Banknote } from "lucide-react";
+import { Wallet, Truck, Package, ShoppingCart, ArrowLeftRight, TrendingDown, PackageX, Banknote, ClipboardList } from "lucide-react";
 
 /** Hub de reportería operativa (Fase 1: Estado de cuenta + Proveedores). */
 export default function ReportesPage() {
@@ -80,6 +80,17 @@ export default function ReportesPage() {
               icon={Banknote}
               description="Abrí y cerrá la caja de tu sucursal, registrá movimientos (ingreso/egreso/retiro/ajuste) y controlá el arqueo: efectivo esperado vs. contado."
               href="/caja"
+            />
+          </li>
+        )}
+        {manejaCaja && (
+          <li>
+            <ReportCard
+              title="Cierres de caja"
+              subtitle="Arqueo de turnos por rango de fechas"
+              icon={ClipboardList}
+              description="Detalle de turnos: apertura, cierre, vendido, efectivo esperado vs. contado y diferencias. Con totales del período y exportación a Excel."
+              href="/reportes/cajas"
             />
           </li>
         )}
