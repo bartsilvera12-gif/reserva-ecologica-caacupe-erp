@@ -19,6 +19,28 @@ export const EMPRESA_DOC = {
   logoUrl: "/brand/reservacaacupe-doc-logo.png",
 };
 
+/**
+ * Override de marca por sucursal (logo, teléfono, dirección). El NOMBRE legal y
+ * la actividad NO se sobreescriben (misma empresa/RUC). Cuando una sucursal tiene
+ * su propia identidad visual (p. ej. Reserva Market), sus documentos la usan;
+ * las que no, caen a `EMPRESA_DOC`.
+ */
+export type MembreteMarca = {
+  logoUrl?: string | null;
+  telefono?: string | null;
+  direccion?: string[] | null;
+};
+
+function resolverMarca(marca?: MembreteMarca) {
+  return {
+    nombre: EMPRESA_DOC.nombre,
+    actividad: EMPRESA_DOC.actividad,
+    logoUrl: (marca?.logoUrl && marca.logoUrl.trim()) || EMPRESA_DOC.logoUrl,
+    telefono: (marca?.telefono && marca.telefono.trim()) || EMPRESA_DOC.telefono,
+    direccion: marca?.direccion && marca.direccion.length ? marca.direccion : EMPRESA_DOC.direccion,
+  };
+}
+
 function esc(v: unknown): string {
   return String(v ?? "")
     .replace(/&/g, "&amp;")
@@ -29,11 +51,11 @@ function esc(v: unknown): string {
 
 /**
  * Membrete A4: logo a la izquierda, datos comerciales a la derecha, línea divisoria.
- * `origin` opcional para URL absoluta del logo (útil al imprimir/guardar PDF).
+ * `marca` opcional: override de logo/teléfono/dirección por sucursal.
  */
-export function membreteA4(origin = ""): string {
-  const e = EMPRESA_DOC;
-  const logo = origin ? `${origin}${e.logoUrl}` : e.logoUrl;
+export function membreteA4(marca?: MembreteMarca): string {
+  const e = resolverMarca(marca);
+  const logo = e.logoUrl;
   return `
   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:18px;border-bottom:2px solid #2E7D32;padding-bottom:12px;margin-bottom:16px;">
     <div style="flex:0 0 auto;">
@@ -50,10 +72,11 @@ export function membreteA4(origin = ""): string {
 
 /**
  * Membrete compacto para ticket angosto (58/80mm): logo arriba, datos centrados.
+ * `marca` opcional: override de logo/teléfono/dirección por sucursal.
  */
-export function membreteTicket(origin = ""): string {
-  const e = EMPRESA_DOC;
-  const logo = origin ? `${origin}${e.logoUrl}` : e.logoUrl;
+export function membreteTicket(marca?: MembreteMarca): string {
+  const e = resolverMarca(marca);
+  const logo = e.logoUrl;
   return `
   <div style="text-align:center;padding-bottom:6px;margin-bottom:6px;border-bottom:1px dashed #000;">
     <img src="${esc(logo)}" alt="${esc(e.nombre)}" style="max-width:150px;max-height:72px;width:auto;height:auto;object-fit:contain;display:inline-block;margin:0 auto 4px;" />

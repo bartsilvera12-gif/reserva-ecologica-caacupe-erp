@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
+import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema";
 import { membreteA4 } from "@/lib/documentos/membrete";
+import { getMarcaSucursal } from "@/lib/documentos/marca-sucursal";
 
 /**
  * GET /api/presupuestos/[id]/pdf?auto=1
@@ -68,6 +70,12 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
     return new NextResponse("Presupuesto no encontrado", { status: 404 });
   }
   const p = pq.data as Record<string, unknown>;
+  let marca;
+  try {
+    const schema = await fetchDataSchemaForEmpresaId(ctx.auth.empresa_id);
+    const sucId = (typeof p.sucursal_id === "string" && p.sucursal_id) || ctx.auth.sucursal_id || null;
+    marca = await getMarcaSucursal(schema, ctx.auth.empresa_id, sucId);
+  } catch { marca = undefined; }
 
   const itq = await ctx.supabase
     .from("presupuesto_items")
@@ -198,7 +206,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
 <body>
   <div class="toolbar"><button onclick="window.print()">Imprimir / Guardar PDF</button></div>
   <div class="page">
-    ${membreteA4()}
+    ${membreteA4(marca)}
     <div class="head">
       <div>
         <div class="negocio">PRESUPUESTO</div>

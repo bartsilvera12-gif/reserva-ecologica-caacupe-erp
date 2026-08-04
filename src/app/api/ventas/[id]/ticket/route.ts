@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
-import { membreteA4, membreteTicket } from "@/lib/documentos/membrete";
+import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema";
+import { membreteA4, membreteTicket, type MembreteMarca } from "@/lib/documentos/membrete";
+import { getMarcaSucursal } from "@/lib/documentos/marca-sucursal";
 
 /**
  * GET /api/ventas/[id]/ticket?w=58|80&mode=comandas&auto=1
@@ -137,6 +139,7 @@ function metodoPagoLabel(m: string | null | undefined): string {
 
 interface VentaRow {
   id: string;
+  sucursal_id: string | null;
   numero_control: string;
   fecha: string;
   subtotal: number | string;
@@ -182,8 +185,9 @@ function renderCopia(opts: {
   fontPx: number;
   isLast: boolean;
   negocio: string;
+  marca?: MembreteMarca;
 }): string {
-  const { tipo, venta, items, brief, fontPx, isLast } = opts;
+  const { tipo, venta, items, brief, fontPx, isLast, marca } = opts;
   const showPrices = tipo === "cliente";
   const sectorBadge = tipo === "pizzeria" ? "COMANDA PIZZERÍA" : tipo === "plancha" ? "COMANDA PLANCHA" : "";
   const modalidad = modalidadLabel(brief?.modalidad);
@@ -251,7 +255,7 @@ function renderCopia(opts: {
     : `<div class="footer-cocina">${formatFecha(venta.fecha)}</div>`;
 
   return `<section class="paper ${isLast ? "last" : ""}">
-    ${headerCocina || membreteTicket()}
+    ${headerCocina || membreteTicket(marca)}
     <div class="meta">
       ${escapeHtml(venta.numero_control)}<br>
       ${formatFecha(venta.fecha)}
@@ -283,8 +287,9 @@ function renderNotaRemision(opts: {
   venta: VentaRow;
   items: Array<ItemRow & { unidad: string }>;
   cliente: ClienteRemision | null;
+  marca?: MembreteMarca;
 }): string {
-  const { negocio, venta, items, cliente } = opts;
+  const { negocio, venta, items, cliente, marca } = opts;
   const numeroNota = venta.nota_remision_numero || "—";
   const filas = items
     .map(
@@ -329,7 +334,7 @@ function renderNotaRemision(opts: {
   @media print { body { background:#fff; padding:0; } .doc { box-shadow:none; max-width:none; } }
 </style></head>
 <body><div class="doc">
-  ${membreteA4()}
+  ${membreteA4(marca)}
   <div class="titulo">NOTA DE REMISIÓN</div>
   <div class="row">
     <div class="box"><h3>Documento</h3>
@@ -368,13 +373,21 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   // Venta
   const vQ = await ctx.supabase
     .from("ventas")
-    .select("id, numero_control, fecha, subtotal, monto_iva, total, observaciones, metodo_pago, cliente_id, genera_nota_remision, nota_remision_numero, estado, anulada_at, anulacion_motivo")
+    .select("id, sucursal_id, numero_control, fecha, subtotal, monto_iva, total, observaciones, metodo_pago, cliente_id, genera_nota_remision, nota_remision_numero, estado, anulada_at, anulacion_motivo")
     .eq("id", id)
     .eq("empresa_id", empresaId)
     .maybeSingle();
   if (vQ.error) return new NextResponse(`Error: ${vQ.error.message}`, { status: 500 });
   if (!vQ.data) return new NextResponse("Venta no encontrada", { status: 404 });
   const venta = vQ.data as unknown as VentaRow;
+
+  // Membrete por sucursal: los documentos de Reserva Market llevan su logo,
+  // teléfono y dirección; los de Matriz caen al membrete por defecto.
+  let marca: MembreteMarca | undefined;
+  try {
+    const schema = await fetchDataSchemaForEmpresaId(empresaId);
+    marca = await getMarcaSucursal(schema, empresaId, venta.sucursal_id);
+  } catch { marca = undefined; }
 
   // Nombre del negocio para el encabezado (env → empresa → fallback). Nunca hardcode.
   let nombreEmpresa: string | null = null;
@@ -437,7 +450,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
       }
     }
     const itemsRem = itemsRaw.map((it) => ({ ...it, unidad: unidadByProd.get(it.producto_id) ?? "UNIDAD" }));
-    const htmlRem = renderNotaRemision({ negocio, venta, items: itemsRem, cliente: clienteRem });
+    const htmlRem = renderNotaRemision({ negocio, venta, items: itemsRem, cliente: clienteRem, marca });
     return new NextResponse(htmlRem, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
   }
 
@@ -526,7 +539,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
 
   const seccionesHtml = copias
     .map((tipo, idx) => {
-      const copia = renderCopia({ tipo, venta, items, brief, fontPx, isLast: idx === copias.length - 1, negocio });
+      const copia = renderCopia({ tipo, venta, items, brief, fontPx, isLast: idx === copias.length - 1, negocio, marca });
       // Inyectamos el banner al inicio de cada <section class="paper">.
       return anulada ? copia.replace(/(<section class="paper[^"]*">)/, `$1${anuladaBanner}`) : copia;
     })

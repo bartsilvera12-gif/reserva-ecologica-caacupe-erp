@@ -1,7 +1,9 @@
 import { montoEnLetras } from "@/lib/recibos/numero-a-letras";
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
-import { membreteA4, EMPRESA_DOC } from "@/lib/documentos/membrete";
+import { EMPRESA_DOC } from "@/lib/documentos/membrete";
+import { getMarcaSucursal } from "@/lib/documentos/marca-sucursal";
+import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema";
 
 /**
  * GET /api/recibos-dinero/[id]/pdf?auto=1
@@ -71,6 +73,21 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
     .maybeSingle();
   if (rq.error || !rq.data) return new NextResponse("Recibo no encontrado", { status: 404 });
   const r = rq.data as Record<string, unknown>;
+
+  // Membrete por sucursal (logo/teléfono/dirección de Reserva Market; Matriz cae
+  // al membrete por defecto).
+  let marcaLogo = EMPRESA_DOC.logoUrl;
+  let marcaTel = EMPRESA_DOC.telefono;
+  let marcaDir = EMPRESA_DOC.direccion;
+  try {
+    const schema = await fetchDataSchemaForEmpresaId(ctx.auth.empresa_id);
+    const m = await getMarcaSucursal(schema, ctx.auth.empresa_id, r.sucursal_id ? String(r.sucursal_id) : ctx.auth.sucursal_id ?? null);
+    if (m) {
+      if (m.logoUrl) marcaLogo = m.logoUrl;
+      if (m.telefono) marcaTel = m.telefono;
+      if (m.direccion && m.direccion.length) marcaDir = m.direccion;
+    }
+  } catch { /* usa defaults */ }
 
   // El punto de expedición sale de la SUCURSAL que emitió el recibo, no de una
   // constante: cada sucursal lleva su propia serie desde 000001 y se distinguen
@@ -259,11 +276,11 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   <div class="marco">
     <div class="cab">
       <div class="cab-izq">
-        <img src="${esc(EMPRESA_DOC.logoUrl)}" alt="${esc(EMPRESA_DOC.nombre)}" />
+        <img src="${esc(marcaLogo)}" alt="${esc(EMPRESA_DOC.nombre)}" />
         <div class="emisor">
           <div class="nom">${esc(EMPRESA_DOC.nombre)}</div>
           <div class="act">${EMPRESA_DOC.actividad.map(esc).join(" · ")}</div>
-          <div class="lin"><b>Tel.:</b> ${esc(EMPRESA_DOC.telefono)} &nbsp;·&nbsp; ${EMPRESA_DOC.direccion.map(esc).join(" · ")}</div>
+          <div class="lin"><b>Tel.:</b> ${esc(marcaTel)} &nbsp;·&nbsp; ${marcaDir.map(esc).join(" · ")}</div>
         </div>
       </div>
       <div class="cab-der">

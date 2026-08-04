@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolverCtx } from "../../_ctx";
 import { getOrdenCompra } from "@/lib/ordenes-compra/server/oc-pg";
 import { membreteA4, EMPRESA_DOC } from "@/lib/documentos/membrete";
+import { getMarcaSucursal } from "@/lib/documentos/marca-sucursal";
 
 /**
  * GET /api/ordenes-compra/[id]/pdf?auto=1
@@ -34,6 +35,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params;
   const det = await getOrdenCompra(r.ctx.schema, r.ctx.empresaId, r.ctx.sucursalId, id);
   if (!det) return new NextResponse("Orden no encontrada", { status: 404 });
+  const marca = await getMarcaSucursal(r.ctx.schema, r.ctx.empresaId, r.ctx.sucursalId);
 
   const c = det.cabecera as Record<string, unknown>;
   const items = det.items as Array<Record<string, unknown>>;
@@ -84,7 +86,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 </style></head>
 <body>
   <div class="wrap">
-    ${membreteA4()}
+    ${membreteA4(marca)}
     <h1>Orden de compra <span style="font-family:ui-monospace,monospace">${esc(c.numero)}</span> <span class="badge">${esc(ESTADO_LBL[String(c.estado)] ?? c.estado)}</span></h1>
     <div class="meta">Documento interno · no fiscal — pedido de mercadería al proveedor</div>
     <div class="grid">

@@ -1,7 +1,9 @@
 import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
+import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema";
 import { membreteA4 } from "@/lib/documentos/membrete";
+import { getMarcaSucursal } from "@/lib/documentos/marca-sucursal";
 
 /**
  * GET /api/clientes/[id]/estado-cuenta/pdf?auto=1
@@ -36,6 +38,11 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   if (!ctx) return new NextResponse("No autorizado", { status: 401 });
   const empresaId = ctx.auth.empresa_id;
   const hoy = new Date().toISOString().slice(0, 10);
+  let marca;
+  try {
+    const schema = await fetchDataSchemaForEmpresaId(empresaId);
+    marca = await getMarcaSucursal(schema, empresaId, ctx.auth.sucursal_id ?? null);
+  } catch { marca = undefined; }
 
   const cq = await ctx.supabase
     .from("clientes")
@@ -131,7 +138,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
 </style></head><body>
 <div class="toolbar"><button onclick="window.print()">Imprimir / Guardar PDF</button></div>
 <div class="page">
-  ${membreteA4()}
+  ${membreteA4(marca)}
   <div class="head">
     <div><div class="negocio">ESTADO DE CUENTA</div><div class="tag">${esc(negocio)}</div></div>
     <div class="meta">Emitido: ${fmtFecha(hoy)}</div>

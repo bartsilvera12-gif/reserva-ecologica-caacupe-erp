@@ -3,6 +3,7 @@ import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema";
 import { getTransferenciaDetalle } from "@/lib/transferencias/server/transferencias-queries";
 import { membreteA4, EMPRESA_DOC } from "@/lib/documentos/membrete";
+import { getMarcaSucursal } from "@/lib/documentos/marca-sucursal";
 
 /**
  * GET /api/transferencias/[id]/remision?auto=1
@@ -47,6 +48,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const schema = await fetchDataSchemaForEmpresaId(empresaId);
   const det = await getTransferenciaDetalle({ schemaRaw: schema, empresaId, sucursalId, transferenciaId: id });
   if (!det) return new NextResponse("Remisión no encontrada", { status: 404 });
+  const marca = await getMarcaSucursal(schema, empresaId, sucursalId);
 
   const c = det.cabecera;
   const items = det.items;
@@ -103,7 +105,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 <body>
 <div class="toolbar"><button onclick="window.print()">Imprimir / Guardar PDF</button></div>
 <div class="page">
-  ${membreteA4()}
+  ${membreteA4(marca)}
   <div class="titublo">
     <div>
       <h1>NOTA DE REMISIÓN</h1>

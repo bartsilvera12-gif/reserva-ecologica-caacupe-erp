@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolverCtx } from "../../_ctx";
 import { getCajaDetalle } from "@/lib/caja/server/caja-pg";
 import { membreteA4, EMPRESA_DOC } from "@/lib/documentos/membrete";
+import { getMarcaSucursal } from "@/lib/documentos/marca-sucursal";
 import type { ArqueoItem } from "@/lib/caja/denominaciones";
 
 /**
@@ -30,6 +31,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params;
   const det = await getCajaDetalle(r.ctx.schema, r.ctx.empresaId, r.ctx.sucursalId, id);
   if (!det) return new NextResponse("Caja no encontrada", { status: 404 });
+  const marca = await getMarcaSucursal(r.ctx.schema, r.ctx.empresaId, r.ctx.sucursalId);
 
   const c = det.caja;
   const a = det.arqueo;
@@ -87,7 +89,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 <body>
 <div class="toolbar"><button onclick="window.print()">Imprimir / Guardar PDF</button></div>
 <div class="page">
-  ${membreteA4()}
+  ${membreteA4(marca)}
   <h1>ARQUEO / CIERRE DE CAJA</h1>
   <div class="sub">${esc(c.sucursal_nombre ?? "")} · Turno ${cerrada ? "cerrado" : "abierto"}</div>
 
