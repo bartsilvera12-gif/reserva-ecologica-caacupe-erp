@@ -106,14 +106,18 @@ export async function crearOrdenCompra(params: {
       const cant = num(it.cantidad_solicitada);
       if (cant <= 0) throw new OrdenCompraError(400, "Las cantidades deben ser mayores a 0.");
       const costo = num(it.costo_estimado);
-      const subtotal = cant * costo;
+      // IVA INCLUIDO (modelo PY): el costo ya contiene el IVA; se desglosa el
+      // gravado hacia adentro para poblar subtotal (neto) y total (bruto).
+      const total = cant * costo;
+      const factor = it.iva_tipo === "5" ? 1.05 : it.iva_tipo === "exenta" ? 1 : 1.1;
+      const subtotal = total / factor;
       await client.query(
         `INSERT INTO ${tI}
            (orden_compra_id, empresa_id, producto_id, producto_nombre, sku_snapshot, descripcion,
             cantidad_solicitada, costo_estimado, iva_tipo, subtotal, total)
          VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7::numeric,$8::numeric,$9,$10::numeric,$11::numeric)`,
         [ocId, params.empresaId, it.producto_id, it.producto_nombre, it.sku, it.descripcion ?? null,
-         cant, costo, it.iva_tipo, subtotal, subtotal]
+         cant, costo, it.iva_tipo, Math.round(subtotal), Math.round(total)]
       );
     }
     await client.query("COMMIT");
