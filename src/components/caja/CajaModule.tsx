@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { Banknote, X, Loader2, LockOpen, Lock, Plus, ArrowDownCircle, ArrowUpCircle, Printer } from "lucide-react";
-import { DENOMINACIONES, type ArqueoItem } from "@/lib/caja/denominaciones";
+import ArqueoDenominaciones, {
+  arqueoVacio,
+  cantidadesAArqueo,
+  totalArqueo,
+  type ArqueoCantidades,
+} from "@/components/caja/ArqueoDenominaciones";
 
 type Arqueo = {
   monto_apertura: number; ventas_efectivo: number; ventas_tarjeta: number; ventas_transferencia: number;
@@ -213,52 +218,13 @@ function usePost() {
 }
 
 /** Conteo físico por denominaciones (billetes y monedas). Total en vivo. */
-function ArqueoContador({ onChange }: { onChange: (items: ArqueoItem[], total: number) => void }) {
-  const [cant, setCant] = useState<Record<number, string>>({});
-  function update(valor: number, raw: string) {
-    const next = { ...cant, [valor]: raw };
-    setCant(next);
-    const items: ArqueoItem[] = [];
-    let total = 0;
-    for (const d of DENOMINACIONES) {
-      const q = Math.max(0, Math.floor(Number(next[d.valor]) || 0));
-      const v = q * d.valor;
-      if (q > 0) items.push({ tipo: d.tipo, denominacion: d.valor, cantidad: q, valor: v });
-      total += v;
-    }
-    onChange(items, total);
-  }
-  const total = DENOMINACIONES.reduce((s, d) => s + Math.max(0, Math.floor(Number(cant[d.valor]) || 0)) * d.valor, 0);
-  return (
-    <div className="max-h-64 overflow-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
-      {[...DENOMINACIONES].reverse().map((d) => {
-        const q = Math.max(0, Math.floor(Number(cant[d.valor]) || 0));
-        return (
-          <div key={d.valor} className="flex items-center gap-2 px-3 py-1.5 text-sm">
-            <span className="w-20 tabular-nums text-slate-700">{fmtGs(d.valor)}</span>
-            <span className="w-12 text-[10px] uppercase tracking-wide text-slate-400">{d.tipo}</span>
-            <span className="text-slate-300">×</span>
-            <input type="number" min={0} step={1} value={cant[d.valor] ?? ""} onChange={(e) => update(d.valor, e.target.value)}
-              className="w-16 rounded border border-slate-200 px-2 py-1 text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-            <span className="ml-auto w-24 text-right tabular-nums text-slate-600">{fmtGs(q * d.valor)}</span>
-          </div>
-        );
-      })}
-      <div className="flex items-center justify-between bg-slate-50 px-3 py-2 text-sm font-bold">
-        <span>Total contado</span><span className="tabular-nums text-slate-900">{fmtGs(total)}</span>
-      </div>
-    </div>
-  );
-}
-
 function ModalAbrir({ onClose, onOk }: { onClose: () => void; onOk: () => void }) {
   const [monto, setMonto] = useState("0");
   const [obs, setObs] = useState("");
   const [porDenom, setPorDenom] = useState(false);
-  const [arqueo, setArqueo] = useState<ArqueoItem[]>([]);
-  const [arqueoTotal, setArqueoTotal] = useState(0);
+  const [cantidades, setCantidades] = useState<ArqueoCantidades>(arqueoVacio);
   const { busy, err, post } = usePost();
-  const efectivo = porDenom ? arqueoTotal : Number(monto) || 0;
+  const efectivo = porDenom ? totalArqueo(cantidades) : Number(monto) || 0;
   return (
     <Overlay titulo="Abrir caja" onClose={onClose}>
       <div className="space-y-4">
@@ -267,7 +233,7 @@ function ModalAbrir({ onClose, onOk }: { onClose: () => void; onOk: () => void }
           Contar por billetes y monedas
         </label>
         {porDenom ? (
-          <ArqueoContador onChange={(items, total) => { setArqueo(items); setArqueoTotal(total); }} />
+          <ArqueoDenominaciones value={cantidades} onChange={setCantidades} />
         ) : (
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">Monto de apertura (efectivo)</label>
@@ -285,7 +251,7 @@ function ModalAbrir({ onClose, onOk }: { onClose: () => void; onOk: () => void }
             <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-slate-500 hover:text-slate-700">Cancelar</button>
             <button disabled={busy} onClick={async () => {
               const body = porDenom
-                ? { arqueo_apertura: arqueo, observacion: obs.trim() || undefined }
+                ? { arqueo_apertura: cantidadesAArqueo(cantidades), observacion: obs.trim() || undefined }
                 : { monto_apertura: Number(monto) || 0, observacion: obs.trim() || undefined };
               if (await post("/api/caja/abrir", body)) onOk();
             }} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">{busy ? "Abriendo…" : "Abrir caja"}</button>
@@ -339,10 +305,9 @@ function ModalCerrar({ caja, arqueo, onClose, onOk }: { caja: Caja; arqueo: Arqu
   const [contadoManual, setContadoManual] = useState("");
   const [obs, setObs] = useState("");
   const [porDenom, setPorDenom] = useState(false);
-  const [arqueoItems, setArqueoItems] = useState<ArqueoItem[]>([]);
-  const [arqueoTotal, setArqueoTotal] = useState(0);
+  const [cantidades, setCantidades] = useState<ArqueoCantidades>(arqueoVacio);
   const { busy, err, post } = usePost();
-  const contado = porDenom ? arqueoTotal : Number(contadoManual) || 0;
+  const contado = porDenom ? totalArqueo(cantidades) : Number(contadoManual) || 0;
   const contadoDefinido = porDenom || contadoManual !== "";
   const dif = contado - arqueo.efectivo_esperado;
   return (
@@ -356,7 +321,7 @@ function ModalCerrar({ caja, arqueo, onClose, onOk }: { caja: Caja; arqueo: Arqu
           Contar por billetes y monedas
         </label>
         {porDenom ? (
-          <ArqueoContador onChange={(items, total) => { setArqueoItems(items); setArqueoTotal(total); }} />
+          <ArqueoDenominaciones value={cantidades} onChange={setCantidades} />
         ) : (
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">Efectivo físico contado</label>
@@ -377,7 +342,7 @@ function ModalCerrar({ caja, arqueo, onClose, onOk }: { caja: Caja; arqueo: Arqu
           <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-slate-500 hover:text-slate-700">Cancelar</button>
           <button disabled={busy || !contadoDefinido} onClick={async () => {
             const body = porDenom
-              ? { arqueo_cierre: arqueoItems, observacion: obs.trim() || undefined }
+              ? { arqueo_cierre: cantidadesAArqueo(cantidades), observacion: obs.trim() || undefined }
               : { efectivo_contado: Number(contadoManual) || 0, observacion: obs.trim() || undefined };
             if (await post(`/api/caja/${caja.id}/cerrar`, body)) onOk();
           }} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">{busy ? "Cerrando…" : "Cerrar caja"}</button>
