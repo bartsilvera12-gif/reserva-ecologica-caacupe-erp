@@ -88,10 +88,11 @@ export default function OrdenesCompraPage() {
         <p className="mt-0.5 text-xs text-slate-500">Órdenes de compra a proveedores (sin factura, sin impacto en stock)</p>
       </div>
 
-      {/* Navegación Compras / Órdenes de compra */}
-      <div className="flex items-center gap-1 border-b border-slate-200">
+      {/* Navegación del módulo Compras */}
+      <div className="flex flex-wrap items-center gap-1 border-b border-slate-200">
         <Link href="/compras" className="border-b-2 border-transparent px-4 py-2 text-sm font-medium text-slate-500 transition-colors hover:text-[#3F8E91]">Compras</Link>
         <span className="border-b-2 border-[#4FAEB2] px-4 py-2 text-sm font-semibold text-[#3F8E91]">Órdenes de compra</span>
+        <Link href="/compras/notas-credito" className="border-b-2 border-transparent px-4 py-2 text-sm font-medium text-slate-500 transition-colors hover:text-[#3F8E91]">NC Proveedor</Link>
       </div>
 
       {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}

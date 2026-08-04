@@ -138,8 +138,7 @@ export function pathRequiresModuleSlug(pathname: string): string | null {
   if (p.startsWith("/notas-credito")) return "notas_credito";
   if (p.startsWith("/ventas")) return "ventas";
   if (p.startsWith("/caja")) return "caja";
-  // Más específico primero: NC de proveedor es su propio módulo, no Compras.
-  if (p.startsWith("/compras/notas-credito")) return "notas_credito_compra";
+  // NC de proveedor es una pestaña de Compras: hereda el gate 'compras'.
   if (p.startsWith("/compras/cuentas-por-pagar")) return "cuentas_por_pagar";
   // /compras/ordenes es una pestaña del módulo Compras (no un módulo aparte):
   // cae en el gate 'compras' de más abajo.

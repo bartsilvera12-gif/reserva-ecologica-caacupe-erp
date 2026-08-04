@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
-import { ScrollText, Plus, X, Search, Loader2, Paperclip } from "lucide-react";
+import { Plus, X, Search, Loader2, Paperclip } from "lucide-react";
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 type Resumen = {
@@ -93,16 +94,25 @@ export default function NotasCreditoCompraPage() {
   }, [cargar]);
 
   return (
-    <div className="space-y-6 max-w-6xl">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900">
-            <ScrollText className="h-6 w-6 text-[#4FAEB2]" /> Notas de crédito de proveedor
-          </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Registrá las NC que te emiten tus proveedores (devolución de mercadería o descuento), vinculadas a una compra.
-          </p>
+    <div className="space-y-8">
+      <div>
+        <div className="flex items-center gap-2">
+          <span aria-hidden="true" className="inline-block h-1.5 w-1.5 rounded-full bg-[#4FAEB2]" style={{ boxShadow: "0 0 0 3px rgba(79, 174, 178, 0.18)" }} />
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#4FAEB2]">Zentra · Adquisiciones</p>
         </div>
+        <h1 className="mt-1 text-lg font-semibold tracking-tight text-slate-900">Compras</h1>
+        <p className="mt-0.5 text-xs text-slate-500">Notas de crédito de proveedor (devolución de mercadería o descuento), vinculadas a una compra</p>
+      </div>
+
+      {/* Navegación del módulo Compras */}
+      <div className="flex flex-wrap items-center gap-1 border-b border-slate-200">
+        <Link href="/compras" className="border-b-2 border-transparent px-4 py-2 text-sm font-medium text-slate-500 transition-colors hover:text-[#3F8E91]">Compras</Link>
+        <Link href="/compras/ordenes" className="border-b-2 border-transparent px-4 py-2 text-sm font-medium text-slate-500 transition-colors hover:text-[#3F8E91]">Órdenes de compra</Link>
+        <span className="border-b-2 border-[#4FAEB2] px-4 py-2 text-sm font-semibold text-[#3F8E91]">NC Proveedor</span>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-xl font-semibold">Notas de crédito de proveedor</h2>
         <button
           onClick={() => setCrearAbierto(true)}
           className="inline-flex items-center gap-2 rounded-lg bg-[#4FAEB2] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#3F8E91] active:scale-95"
