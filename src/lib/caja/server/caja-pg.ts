@@ -213,6 +213,20 @@ function cajaCore(c: CajaRow): CajaCore {
   };
 }
 
+/** ¿La sucursal opera caja? (flag `sucursales.maneja_caja`). */
+export async function sucursalManejaCaja(
+  schemaRaw: string, empresaId: string, sucursalId: string
+): Promise<boolean> {
+  const schema = assertAllowedChatDataSchema(schemaRaw);
+  const tS = quoteSchemaTable(schema, "sucursales");
+  const { rows } = await pool().query<{ maneja_caja: boolean }>(
+    `SELECT maneja_caja FROM ${tS} WHERE id=$1::uuid AND empresa_id=$2::uuid`,
+    [sucursalId, empresaId]
+  );
+  // Sin fila (o flag nulo) → por defecto opera caja (no bloquear de más).
+  return rows[0] ? rows[0].maneja_caja !== false : true;
+}
+
 /** IDs de números de caja activos (abierta/en_cierre) en la sucursal. */
 async function numerosActivos(
   q: Querier, schema: string, empresaId: string, sucursalId: string
@@ -273,6 +287,9 @@ export async function abrirCaja(params: {
   const schema = assertAllowedChatDataSchema(params.schemaRaw);
   const tCaja = quoteSchemaTable(schema, "cajas");
   const arqueoJson = params.arqueoApertura && params.arqueoApertura.length ? JSON.stringify(params.arqueoApertura) : null;
+  if (!(await sucursalManejaCaja(params.schemaRaw, params.empresaId, params.sucursalId))) {
+    throw new CajaError(409, "Esta sucursal no opera caja.");
+  }
   const client = await pool().connect();
   try {
     await client.query("BEGIN");

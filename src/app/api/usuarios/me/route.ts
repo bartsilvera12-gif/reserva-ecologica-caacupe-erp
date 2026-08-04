@@ -5,7 +5,7 @@ type UsuarioMeRow = {
   nombre: string | null;
   email: string | null;
   rol: string | null;
-  sucursales: { nombre: string | null } | { nombre: string | null }[] | null;
+  sucursales: { nombre: string | null; maneja_caja: boolean | null } | { nombre: string | null; maneja_caja: boolean | null }[] | null;
 };
 
 function pickAuthMetadataName(authUser: { user_metadata?: Record<string, unknown> | null }): string | null {
@@ -36,7 +36,7 @@ export async function GET(request: Request) {
     if (catalogUsuario?.id) {
       const { data, error } = await supabaseSr
         .from("usuarios")
-        .select("nombre, email, rol, sucursales:sucursal_predeterminada_id(nombre)")
+        .select("nombre, email, rol, sucursales:sucursal_predeterminada_id(nombre, maneja_caja)")
         .eq("id", catalogUsuario.id)
         .maybeSingle();
 
@@ -55,8 +55,10 @@ export async function GET(request: Request) {
     const sucRaw = row?.sucursales ?? null;
     const sucObj = Array.isArray(sucRaw) ? sucRaw[0] ?? null : sucRaw;
     const sucursal = (sucObj?.nombre ?? "").trim() || null;
+    // Sin fila o flag nulo → por defecto opera caja.
+    const sucursalManejaCaja = sucObj ? sucObj.maneja_caja !== false : true;
 
-    return NextResponse.json({ usuario: { nombre, rol, email, sucursal } });
+    return NextResponse.json({ usuario: { nombre, rol, email, sucursal, sucursal_maneja_caja: sucursalManejaCaja } });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error al obtener el usuario actual";
     return NextResponse.json({ error: message }, { status: 500 });

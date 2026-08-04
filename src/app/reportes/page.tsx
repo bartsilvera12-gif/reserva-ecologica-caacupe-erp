@@ -1,11 +1,23 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import PageHeader from "@/components/ui/PageHeader";
 import { ReportCard } from "@/components/reportes/ReportCard";
 import { Wallet, Truck, Package, ShoppingCart, ArrowLeftRight, TrendingDown, PackageX, Banknote } from "lucide-react";
 
 /** Hub de reportería operativa (Fase 1: Estado de cuenta + Proveedores). */
 export default function ReportesPage() {
+  // La tarjeta de Caja solo se muestra en sucursales que operan caja.
+  const [manejaCaja, setManejaCaja] = useState(true);
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch("/api/usuarios/me", { credentials: "include", cache: "no-store" });
+        const j = await r.json();
+        setManejaCaja(j?.usuario?.sucursal_maneja_caja !== false);
+      } catch { /* por defecto se muestra */ }
+    })();
+  }, []);
   return (
     <div className="space-y-8">
       <PageHeader
@@ -60,15 +72,17 @@ export default function ReportesPage() {
             href="/reportes/conciliacion"
           />
         </li>
-        <li>
-          <ReportCard
-            title="Caja y arqueo"
-            subtitle="Apertura, movimientos y cierre por turno"
-            icon={Banknote}
-            description="Abrí y cerrá la caja de tu sucursal, registrá movimientos (ingreso/egreso/retiro/ajuste) y controlá el arqueo: efectivo esperado vs. contado."
-            href="/caja"
-          />
-        </li>
+        {manejaCaja && (
+          <li>
+            <ReportCard
+              title="Caja y arqueo"
+              subtitle="Apertura, movimientos y cierre por turno"
+              icon={Banknote}
+              description="Abrí y cerrá la caja de tu sucursal, registrá movimientos (ingreso/egreso/retiro/ajuste) y controlá el arqueo: efectivo esperado vs. contado."
+              href="/caja"
+            />
+          </li>
+        )}
         <li>
           <ReportCard
             title="Proyección de inventario"

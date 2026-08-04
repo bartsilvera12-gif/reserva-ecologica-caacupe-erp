@@ -154,6 +154,17 @@ export default function VentasPage() {
   // Panel de turno de caja embebido en el POS (colapsado por defecto para no
   // distraer al cajero) — patrón Ferretería República.
   const [showCaja, setShowCaja] = useState(false);
+  // ¿La sucursal del cajero opera caja? (Casa Matriz no; solo Reserva Market).
+  const [manejaCaja, setManejaCaja] = useState(true);
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch("/api/usuarios/me", { credentials: "include", cache: "no-store" });
+        const j = await r.json();
+        setManejaCaja(j?.usuario?.sucursal_maneja_caja !== false);
+      } catch { /* por defecto se muestra */ }
+    })();
+  }, []);
   const [todas,      setTodas]      = useState<Venta[]>([]);
   const [busqueda,   setBusqueda]   = useState("");
   const [filtroTipo, setFiltroTipo] = useState<TipoVenta | "">("");
@@ -262,28 +273,30 @@ export default function VentasPage() {
         <p className="mt-0.5 text-xs text-slate-500">Cobro, facturación y cierre de pedidos</p>
       </div>
 
-      {/* ── Turno de caja embebido (colapsable) ──────────────────────────────── */}
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-emerald-500/15">
-        <button
-          type="button"
-          onClick={() => setShowCaja((v) => !v)}
-          aria-expanded={showCaja}
-          className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left"
-        >
-          <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-800">
-            <Banknote className="h-4 w-4 text-emerald-600" /> Turno de caja
-            <span className="text-xs font-normal text-slate-400">
-              {showCaja ? "(tocá para ocultar)" : "(abrir · movimientos · cierre y arqueo)"}
+      {/* ── Turno de caja embebido (colapsable) — solo sucursales con caja ────── */}
+      {manejaCaja && (
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-emerald-500/15">
+          <button
+            type="button"
+            onClick={() => setShowCaja((v) => !v)}
+            aria-expanded={showCaja}
+            className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left"
+          >
+            <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-800">
+              <Banknote className="h-4 w-4 text-emerald-600" /> Turno de caja
+              <span className="text-xs font-normal text-slate-400">
+                {showCaja ? "(tocá para ocultar)" : "(abrir · movimientos · cierre y arqueo)"}
+              </span>
             </span>
-          </span>
-          <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${showCaja ? "rotate-180" : ""}`} />
-        </button>
-        {showCaja && (
-          <div className="border-t border-slate-100 p-4">
-            <CajaModule compact />
-          </div>
-        )}
-      </div>
+            <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${showCaja ? "rotate-180" : ""}`} />
+          </button>
+          {showCaja && (
+            <div className="border-t border-slate-100 p-4">
+              <CajaModule compact />
+            </div>
+          )}
+        </div>
+      )}
 
       <PedidosPendientesCaja />
 

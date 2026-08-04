@@ -50,6 +50,7 @@ function fmtFechaHora(iso: string | null) {
 export default function CajaModule({ compact = false }: { compact?: boolean }) {
   const [activas, setActivas] = useState<CajaResumen[]>([]);
   const [historial, setHistorial] = useState<Caja[]>([]);
+  const [manejaCaja, setManejaCaja] = useState(true);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<null | "abrir" | "movimiento" | "cerrar" | "en_cierre">(null);
@@ -61,6 +62,7 @@ export default function CajaModule({ compact = false }: { compact?: boolean }) {
       const res = await fetchWithSupabaseSession("/api/caja", { cache: "no-store" });
       const json = await res.json();
       if (!res.ok) throw new Error(typeof json.error === "string" ? json.error : "No se pudo cargar.");
+      setManejaCaja(json?.data?.maneja_caja !== false);
       setActivas(json?.data?.activas ?? []);
       setHistorial(json?.data?.historial ?? []);
     } catch (e) { setError(e instanceof Error ? e.message : "Error."); }
@@ -70,6 +72,21 @@ export default function CajaModule({ compact = false }: { compact?: boolean }) {
 
   const cerrarModal = () => { setModal(null); setTarget(null); };
   const refrescar = () => { cerrarModal(); cargar(); };
+
+  // Sucursal sin caja (p. ej. Casa Matriz): en el POS no se muestra nada; en la
+  // página completa, un aviso claro.
+  if (!cargando && !manejaCaja) {
+    if (compact) return null;
+    return (
+      <div className="w-full">
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-white px-6 py-14 text-center">
+          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400"><Lock className="h-7 w-7" /></span>
+          <p className="text-sm font-semibold text-slate-700">Esta sucursal no opera caja</p>
+          <p className="max-w-sm text-sm text-slate-500">El módulo de caja está disponible solo en las sucursales que manejan turno y arqueo.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`w-full ${compact ? "space-y-4" : "space-y-6"}`}>
