@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { successResponse } from "@/lib/api/response";
 import { resolverCtx, respError } from "./_ctx";
-import { getCajaAbierta, listCajas } from "@/lib/caja/server/caja-pg";
+import { listarCajasActivas, listCajasCerradas } from "@/lib/caja/server/caja-pg";
 
-/** GET /api/caja — caja abierta (con arqueo en vivo) + historial de la sucursal. */
+/** GET /api/caja — cajas activas (con arqueo en vivo) + historial de la sucursal. */
 export async function GET(request: NextRequest) {
   const r = await resolverCtx(request);
   if (!r.ok) return r.response;
   try {
-    const [abierta, historial] = await Promise.all([
-      getCajaAbierta(r.ctx.schema, r.ctx.empresaId, r.ctx.sucursalId),
-      listCajas(r.ctx.schema, r.ctx.empresaId, r.ctx.sucursalId),
+    const [activas, historial] = await Promise.all([
+      listarCajasActivas(r.ctx.schema, r.ctx.empresaId, r.ctx.sucursalId),
+      listCajasCerradas(r.ctx.schema, r.ctx.empresaId, r.ctx.sucursalId),
     ]);
-    return NextResponse.json(successResponse({ abierta, historial }));
+    return NextResponse.json(successResponse({ activas, historial }));
   } catch (e) {
     return respError(e);
   }

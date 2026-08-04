@@ -23,11 +23,12 @@ export async function POST(request: NextRequest) {
   const monto = arqueoApertura ? calcularTotalArqueo(arqueoApertura) : Number(body.monto_apertura) || 0;
   if (monto < 0) return NextResponse.json(errorResponse("El monto de apertura no puede ser negativo."), { status: 400 });
   const obs = body.observacion != null && String(body.observacion).trim() !== "" ? String(body.observacion).trim() : null;
+  const numeroCaja = body.numero_caja != null && Number(body.numero_caja) > 0 ? Math.floor(Number(body.numero_caja)) : null;
   try {
     const out = await abrirCaja({
       schemaRaw: r.ctx.schema, empresaId: r.ctx.empresaId, sucursalId: r.ctx.sucursalId,
       montoApertura: monto, observacion: obs, usuarioId: r.ctx.usuarioId, usuarioNombre: r.ctx.usuarioNombre,
-      arqueoApertura,
+      arqueoApertura, numeroCaja,
     });
     return NextResponse.json(successResponse(out));
   } catch (e) {

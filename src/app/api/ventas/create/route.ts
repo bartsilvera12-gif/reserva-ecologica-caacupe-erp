@@ -10,6 +10,7 @@ import { API_ERRORS } from "@/lib/api/errors";
 import type { Venta, LineaVenta } from "@/lib/ventas/types";
 import { createServiceRoleClientWithDbSchema } from "@/lib/supabase/empresa-data-schema";
 import { estaFacturado, marcarFacturado } from "@/lib/caja/facturacion";
+import { resolverCajaParaVenta, CajaError } from "@/lib/caja/server/caja-pg";
 
 /** Error tipado: el pedido que se intenta facturar ya tiene venta. */
 class PedidoYaFacturadoError extends Error {
@@ -257,10 +258,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Caja del turno: resuelve a qué caja abierta se imputa la venta (0→null,
+    // 1→esa, varias→exige elegir). No bloquea la venta si no hay caja abierta.
+    const sucursalIdVenta = exigirSucursal(auth.sucursal_id);
+    let cajaIdVenta: string | null = null;
+    try {
+      const cajaPedida = o.caja_id != null && String(o.caja_id).trim() !== "" ? String(o.caja_id).trim() : null;
+      cajaIdVenta = await resolverCajaParaVenta(schema, auth.empresa_id, sucursalIdVenta, cajaPedida);
+    } catch (e) {
+      if (e instanceof CajaError) return NextResponse.json(errorResponse(e.message), { status: e.status });
+      throw e;
+    }
+
     const { ventaId, numeroControl, fechaIso, notaRemisionNumero, facturaId, numeroFactura, facturaWarning } = await createVentaTransaccionalPg({
       schema,
       empresaId: auth.empresa_id,
-      sucursalId: exigirSucursal(auth.sucursal_id),
+      sucursalId: sucursalIdVenta,
       clienteId,
       observaciones,
       moneda,
@@ -280,6 +293,7 @@ export async function POST(request: NextRequest) {
       emitirFactura: emitirFacturaFlag,
       createdBy: auth.usuarioCatalogId ?? null,
       usuarioNombre: auth.user?.email ?? null,
+      cajaId: cajaIdVenta,
     });
 
     // Vincular el pedido facturado con la venta creada (Caja). Trazabilidad:

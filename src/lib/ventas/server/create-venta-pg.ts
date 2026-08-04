@@ -86,6 +86,9 @@ export interface CreateVentaPgParams {
    *  para que /inventario/movimientos muestre quién hizo la salida de stock. */
   createdBy?: string | null;
   usuarioNombre?: string | null;
+  /** Caja (turno) a la que se imputa la venta. Resuelto en la ruta API según las
+   *  cajas abiertas de la sucursal (null = sin caja abierta; la venta igual procede). */
+  cajaId?: string | null;
 }
 
 function recalcTotals(items: CreateVentaItemInput[]) {
@@ -445,6 +448,7 @@ export async function createVentaTransaccionalPg(
         nota_remision_numero: notaRemisionNumero,
         fecha: fechaIso,
         observaciones: observacionesFinal,
+        caja_id: params.cajaId ?? null,
       })
       .select("id")
       .single();

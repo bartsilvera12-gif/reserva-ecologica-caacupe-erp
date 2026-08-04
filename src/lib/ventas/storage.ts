@@ -79,7 +79,7 @@ export async function saveVenta(
   },
   pedidoCocina?: PedidoCocinaInput,
   pagoDetalle?: PagoDetalleInput | null,
-  opts?: { permitirSinStock?: boolean; pedidoId?: string | null }
+  opts?: { permitirSinStock?: boolean; pedidoId?: string | null; cajaId?: string | null }
 ): Promise<ResultadoGuardarVenta> {
   if (!datos.items || datos.items.length === 0) {
     return { success: false, error: "La venta debe tener al menos un producto." };
@@ -107,6 +107,7 @@ export async function saveVenta(
         genera_nota_remision: datos.genera_nota_remision === true,
         emitir_factura: datos.emitir_factura !== false,
         pedido_id: opts?.pedidoId ?? null,
+        caja_id: opts?.cajaId ?? null,
       }),
     });
 
