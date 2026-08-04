@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { getCompras } from "@/lib/compras/storage";
+import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import ExportExcelButton from "@/components/ui/ExportExcelButton";
 import EdgeScrollArea from "@/components/ui/EdgeScrollArea";
 import { FancySelect } from "@/components/ui/FancySelect";
@@ -109,6 +110,9 @@ export default function ComprasPage() {
   const [filtroTipoPago, setFiltroTipoPago] = useState<TipoPago | "">("");
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
   const [anularTarget, setAnularTarget] = useState<{ numero: string; proveedor: string } | null>(null);
+  const [ocPorConfirmar, setOcPorConfirmar] = useState<
+    Array<{ id: string; numero: string; proveedor_nombre: string; fecha: string; estado: string; items: number; totalPendiente: number }>
+  >([]);
 
   async function recargar() {
     const data = await getCompras();
@@ -121,6 +125,19 @@ export default function ComprasPage() {
       if (cancel) return;
       setTodas(data);
     });
+    // Órdenes de compra pendientes de recibir (para el bloque "por confirmar").
+    fetchWithSupabaseSession("/api/ordenes-compra", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancel || !j?.success) return;
+        const rows = (j.data?.ordenes ?? []) as Array<{ id: string; numero: string; proveedor_nombre: string; fecha: string; estado: string; items_count: number; total_pendiente: number }>;
+        setOcPorConfirmar(
+          rows
+            .filter((o) => ["emitida", "aprobada", "parcialmente_recibida"].includes(o.estado))
+            .map((o) => ({ id: o.id, numero: o.numero, proveedor_nombre: o.proveedor_nombre, fecha: o.fecha, estado: o.estado, items: o.items_count, totalPendiente: o.total_pendiente })),
+        );
+      })
+      .catch(() => {});
     return () => { cancel = true; };
   }, []);
 
@@ -161,15 +178,78 @@ export default function ComprasPage() {
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#4FAEB2]">Zentra · Adquisiciones</p>
         </div>
         <h1 className="mt-1 text-lg font-semibold tracking-tight text-slate-900">Compras</h1>
-        <p className="mt-0.5 text-xs text-slate-500">Registro de órdenes de compra a proveedores</p>
+        <p className="mt-0.5 text-xs text-slate-500">Facturas de proveedor registradas (impactan stock)</p>
+      </div>
+
+      {/* Navegación Compras / Órdenes de compra */}
+      <div className="flex items-center gap-1 border-b border-slate-200">
+        <span className="border-b-2 border-[#4FAEB2] px-4 py-2 text-sm font-semibold text-[#3F8E91]">Compras</span>
+        <Link href="/compras/ordenes" className="border-b-2 border-transparent px-4 py-2 text-sm font-medium text-slate-500 transition-colors hover:text-[#3F8E91]">Órdenes de compra</Link>
+      </div>
+
+      {/* Órdenes de compra por confirmar (revisar + recibir) */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-[#4FAEB2]/15 sm:p-5 lg:p-6">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 text-base font-semibold text-slate-800">
+              <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-[#4FAEB2] px-1.5 text-xs font-bold text-white">{ocPorConfirmar.length}</span>
+              Órdenes de compra por confirmar
+            </h2>
+            <p className="mt-0.5 text-xs text-slate-500">Pedidos al proveedor pendientes de recibir. Revisá cada uno y confirmá lo que llegó.</p>
+          </div>
+          <Link href="/compras/ordenes" className="rounded-lg border border-[#4FAEB2]/40 bg-[#4FAEB2]/[0.08] px-3 py-1.5 text-xs font-semibold text-[#3F8E91] transition-colors hover:bg-[#4FAEB2]/[0.16] active:scale-95">
+            + Nueva orden de compra
+          </Link>
+        </div>
+        {ocPorConfirmar.length === 0 ? (
+          <p className="py-4 text-center text-sm text-slate-400">No hay órdenes de compra pendientes de confirmar. Las órdenes recibidas por completo pasan a “Compras registradas”.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead className="border-b-2 border-[#4FAEB2]/40 bg-[#E5F4F4]">
+                <tr>
+                  {["N° OC", "Fecha", "Proveedor", "Ítems", "Pendiente (Gs.)", "Estado", ""].map((h, i) => (
+                    <th key={h || i} className={`px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-[#3F8E91] ${i === 3 || i === 4 ? "text-right" : i === 5 || i === 6 ? "text-center" : "text-left"}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {ocPorConfirmar.map((o) => (
+                  <tr key={o.id} className="transition-colors hover:bg-[#4FAEB2]/5">
+                    <td className="px-3 py-2.5 font-mono text-xs font-semibold text-[#3F8E91]">{o.numero}</td>
+                    <td className="px-3 py-2.5 text-xs tabular-nums text-slate-600">{formatFecha(o.fecha)}</td>
+                    <td className="px-3 py-2.5 text-xs font-medium text-slate-800">{o.proveedor_nombre || "—"}</td>
+                    <td className="px-3 py-2.5 text-right text-xs tabular-nums text-slate-600">{o.items}</td>
+                    <td className="px-3 py-2.5 text-right text-xs tabular-nums font-bold text-slate-900">{formatGs(o.totalPendiente)}</td>
+                    <td className="px-3 py-2.5 text-center">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${o.estado === "parcialmente_recibida" ? "bg-sky-100 text-sky-700" : "bg-amber-100 text-amber-800"}`}>
+                        {o.estado === "parcialmente_recibida" ? "Recibida parcial" : "Pendiente"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-center">
+                      <div className="inline-flex items-center gap-3">
+                        <Link href={`/compras/ordenes?abrir=${encodeURIComponent(o.id)}`} className="text-xs font-semibold text-slate-500 hover:text-[#3F8E91] hover:underline">Revisar</Link>
+                        <Link href={`/compras/ordenes?abrir=${encodeURIComponent(o.id)}`} className="rounded-lg bg-[#4FAEB2] px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-[#3F8E91]">Confirmar recepción</Link>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-[#4FAEB2]/15 sm:p-5 lg:p-6">
 
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-xl font-semibold">Órdenes de compra</h2>
+          <h2 className="text-xl font-semibold">Compras registradas</h2>
           <div className="flex items-center gap-3">
             <ExportExcelButton url="/api/compras/export" />
+            <Link href="/compras/ordenes"
+              className="rounded-lg border border-[#4FAEB2]/40 bg-[#4FAEB2]/[0.08] px-3 py-1.5 text-xs font-semibold text-[#3F8E91] transition-colors hover:bg-[#4FAEB2]/[0.16] active:scale-95">
+              Desde Orden de Compra
+            </Link>
             <Link href="/compras/nueva"
               className="rounded-lg bg-[#4FAEB2] px-3 py-1.5 text-xs font-semibold text-white shadow-sm shadow-[#4FAEB2]/25 transition-colors hover:bg-[#3F8E91] active:scale-95">
               + Nueva compra

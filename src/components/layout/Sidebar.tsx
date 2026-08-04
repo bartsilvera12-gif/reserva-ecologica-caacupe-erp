@@ -37,7 +37,6 @@ import {
   Banknote,
   ArrowLeftRight,
   Wallet,
-  ClipboardList,
 } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
@@ -165,7 +164,7 @@ const MENU_STRUCTURE: MenuItem[] = [
   // NC de proveedor (lado compra). Gate por slug 'notas_credito_compra'.
   { key: "notas_credito_compra", slug: "notas_credito_compra", label: "NC Proveedor", href: "/compras/notas-credito", icon: ScrollText },
   { key: "cuentas_por_pagar", slug: "cuentas_por_pagar", label: "Cuentas por pagar", href: "/compras/cuentas-por-pagar", icon: Wallet },
-  { key: "ordenes_compra", slug: "ordenes_compra", label: "Órdenes de compra", href: "/compras/ordenes", icon: ClipboardList },
+  // Órdenes de compra NO es un ítem aparte: es una pestaña dentro de Compras.
   { key: "gastos", slug: "gastos", label: "Gastos", href: "/gastos", icon: Receipt },
   { key: "reportes", slug: "reportes", label: "Reportes", href: "/reportes", icon: BarChart3 },
   // Pagos oculto en instancia En lo de Mari (no usa este módulo).
@@ -220,7 +219,7 @@ const MENU_FAMILIES: { id: string; titulo: string; keys: string[] }[] = [
   { id: "inicio", titulo: "Inicio", keys: ["dashboard"] },
   { id: "comercial", titulo: "Comercial", keys: ["clientes", "crm", "gestion-clientes", "ventas", "presupuestos", "comisiones", "planes"] },
   { id: "finanzas", titulo: "Finanzas", keys: ["pagos", "gastos", "cuentas_por_pagar", "notas_credito", "reportes"] },
-  { id: "operaciones", titulo: "Operaciones", keys: ["inventario", "reposicion", "compras", "ordenes_compra", "notas_credito_compra", "recetas", "proyectos"] },
+  { id: "operaciones", titulo: "Operaciones", keys: ["inventario", "reposicion", "compras", "notas_credito_compra", "recetas", "proyectos"] },
   { id: "omnicanal", titulo: "Omnicanal", keys: ["conversaciones", "conversaciones-finalizadas", "historial-omnicanal", "monitoreo", "campanas"] },
   { id: "marketing", titulo: "Marketing y Automatización", keys: ["marketing", "marketing_ops", "sorteos"] },
   { id: "administracion", titulo: "Administración", keys: ["usuarios", "configuracion"] },

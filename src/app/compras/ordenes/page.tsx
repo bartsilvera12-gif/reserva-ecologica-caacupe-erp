@@ -1,15 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { getProveedores } from "@/lib/proveedores/storage";
 import type { Proveedor } from "@/lib/proveedores/types";
-import { ClipboardList, Plus, X, Search, Loader2, Truck } from "lucide-react";
+import { X, Search, Loader2, Truck } from "lucide-react";
 
 type OcRow = {
   id: string; numero: string; proveedor_nombre: string; estado: string; moneda: string;
   fecha: string; llegada_estimada: string | null; tipo_pago: string; plazo_dias: number | null;
-  items_count: number; total: number;
+  items_count: number; total: number; total_pendiente: number;
 };
 type OcItem = {
   id: string; producto_id: string; producto_nombre: string; sku_snapshot: string | null;
@@ -20,12 +21,14 @@ type ProductoBusq = { id: string; nombre: string; sku: string };
 
 const ESTADO: Record<string, { label: string; cls: string }> = {
   borrador: { label: "Borrador", cls: "bg-slate-100 text-slate-600" },
-  emitida: { label: "Emitida", cls: "bg-sky-100 text-sky-800" },
+  emitida: { label: "Pendiente", cls: "bg-amber-100 text-amber-800" },
   aprobada: { label: "Aprobada", cls: "bg-indigo-100 text-indigo-800" },
-  parcialmente_recibida: { label: "Parcial", cls: "bg-amber-100 text-amber-800" },
-  recibida: { label: "Recibida", cls: "bg-emerald-100 text-emerald-700" },
+  parcialmente_recibida: { label: "Recibida parcial", cls: "bg-sky-100 text-sky-700" },
+  recibida: { label: "Recibida total", cls: "bg-emerald-100 text-emerald-700" },
   cancelada: { label: "Cancelada", cls: "bg-slate-100 text-slate-500" },
 };
+/** Estados de OC que están pendientes de recibir (aparecen en "por confirmar"). */
+const RECEPTIBLES = ["emitida", "aprobada", "parcialmente_recibida"];
 
 function fmtGs(n: number, m = "PYG") { return (m === "USD" ? "USD " : "Gs. ") + Math.round(Number(n) || 0).toLocaleString("es-PY"); }
 function fmtNum(n: number) { return (Number(n) || 0).toLocaleString("es-PY", { maximumFractionDigits: 2 }); }
@@ -45,6 +48,8 @@ export default function OrdenesCompraPage() {
   const [error, setError] = useState<string | null>(null);
   const [crear, setCrear] = useState(false);
   const [detalle, setDetalle] = useState<string | null>(null);
+  const [busqueda, setBusqueda] = useState("");
+  const [filtroEstado, setFiltroEstado] = useState("");
 
   const cargar = useCallback(async () => {
     setCargando(true); setError(null);
@@ -58,56 +63,103 @@ export default function OrdenesCompraPage() {
   }, []);
   useEffect(() => { cargar(); }, [cargar]);
 
+  // Abrir el detalle directo por ?abrir=<id> (desde la card "por confirmar").
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("abrir");
+    if (id) setDetalle(id);
+  }, []);
+
+  const filtradas = useMemo(() => {
+    const t = busqueda.trim().toLowerCase();
+    return ordenes.filter((o) =>
+      (filtroEstado === "" || o.estado === filtroEstado) &&
+      (t === "" || o.numero.toLowerCase().includes(t) || o.proveedor_nombre.toLowerCase().includes(t))
+    );
+  }, [ordenes, busqueda, filtroEstado]);
+
   return (
-    <div className="w-full space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2.5 text-2xl font-bold text-slate-900">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#4FAEB2]/10 text-[#4FAEB2]"><ClipboardList className="h-5 w-5" /></span>
-            Órdenes de compra
-          </h1>
-          <p className="mt-1 text-sm text-slate-500">Pedidos a proveedores. Crear/emitir no mueve stock: eso ocurre al recibir.</p>
+    <div className="space-y-8">
+      <div>
+        <div className="flex items-center gap-2">
+          <span aria-hidden="true" className="inline-block h-1.5 w-1.5 rounded-full bg-[#4FAEB2]" style={{ boxShadow: "0 0 0 3px rgba(79, 174, 178, 0.18)" }} />
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#4FAEB2]">Zentra · Adquisiciones</p>
         </div>
-        <button onClick={() => setCrear(true)} className="inline-flex items-center gap-2 rounded-xl bg-[#4FAEB2] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#3F8E91] active:scale-95">
-          <Plus className="h-4 w-4" /> Nueva orden
-        </button>
+        <h1 className="mt-1 text-lg font-semibold tracking-tight text-slate-900">Compras</h1>
+        <p className="mt-0.5 text-xs text-slate-500">Órdenes de compra a proveedores (sin factura, sin impacto en stock)</p>
+      </div>
+
+      {/* Navegación Compras / Órdenes de compra */}
+      <div className="flex items-center gap-1 border-b border-slate-200">
+        <Link href="/compras" className="border-b-2 border-transparent px-4 py-2 text-sm font-medium text-slate-500 transition-colors hover:text-[#3F8E91]">Compras</Link>
+        <span className="border-b-2 border-[#4FAEB2] px-4 py-2 text-sm font-semibold text-[#3F8E91]">Órdenes de compra</span>
       </div>
 
       {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
-      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-        {cargando ? (
-          <div className="flex items-center justify-center gap-2 px-4 py-16 text-sm text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /> Cargando…</div>
-        ) : ordenes.length === 0 ? (
-          <div className="px-4 py-16 text-center text-sm text-slate-400">Todavía no hay órdenes de compra.</div>
-        ) : (
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50/80 text-xs uppercase tracking-wide text-slate-500">
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-[#4FAEB2]/15 sm:p-5 lg:p-6">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-xl font-semibold">Órdenes de compra</h2>
+          <button onClick={() => setCrear(true)} className="rounded-lg bg-[#4FAEB2] px-3 py-1.5 text-xs font-semibold text-white shadow-sm shadow-[#4FAEB2]/25 transition-colors hover:bg-[#3F8E91] active:scale-95">
+            + Nueva orden de compra
+          </button>
+        </div>
+
+        <div className="mb-5 flex flex-wrap items-center gap-3 border-b border-gray-100 pb-5">
+          <div className="relative min-w-0 flex-1 sm:min-w-72">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Buscar por N° OC o proveedor…"
+              className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-[#4FAEB2]/40" />
+          </div>
+          <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#4FAEB2]/40">
+            <option value="">Todos los estados</option>
+            <option value="borrador">Borrador</option>
+            <option value="emitida">Pendiente</option>
+            <option value="aprobada">Aprobada</option>
+            <option value="parcialmente_recibida">Recibida parcial</option>
+            <option value="recibida">Recibida total</option>
+            <option value="cancelada">Cancelada</option>
+          </select>
+          <span className="ml-auto text-sm text-gray-400">{filtradas.length} de {ordenes.length} órdenes</span>
+        </div>
+
+        <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <table className="w-full min-w-[720px] text-sm">
+            <thead className="border-b-2 border-[#4FAEB2]/40 bg-[#E5F4F4]">
               <tr>
-                <th className="px-4 py-3 font-semibold">Número</th>
-                <th className="px-4 py-3 font-semibold">Proveedor</th>
-                <th className="px-4 py-3 font-semibold text-center">Ítems</th>
-                <th className="px-4 py-3 font-semibold text-right">Total est.</th>
-                <th className="px-4 py-3 font-semibold">Llegada</th>
-                <th className="px-4 py-3 font-semibold">Estado</th>
-                <th className="px-4 py-3" />
+                {["N° OC", "Fecha", "Proveedor", "Ítems", "Total", "Estado", ""].map((h, i) => (
+                  <th key={h || i} className={`px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-[#3F8E91] ${i === 3 || i === 4 ? "text-right" : i === 5 || i === 6 ? "text-center" : "text-left"}`}>{h}</th>
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {ordenes.map((o) => (
-                <tr key={o.id} className="cursor-pointer hover:bg-slate-50" onClick={() => setDetalle(o.id)}>
-                  <td className="px-4 py-3 font-semibold tabular-nums text-slate-800">{o.numero}</td>
-                  <td className="px-4 py-3 text-slate-600">{o.proveedor_nombre || "—"}</td>
-                  <td className="px-4 py-3 text-center tabular-nums text-slate-600">{o.items_count}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-slate-700">{fmtGs(o.total, o.moneda)}</td>
-                  <td className="px-4 py-3 text-slate-500">{fmtFecha(o.llegada_estimada)}</td>
-                  <td className="px-4 py-3"><Badge estado={o.estado} /></td>
-                  <td className="px-4 py-3 text-right"><span className="text-sm font-medium text-[#4FAEB2] hover:underline">Ver</span></td>
-                </tr>
-              ))}
+              {cargando ? (
+                <tr><td colSpan={7} className="px-3 py-14 text-center text-sm text-slate-400"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
+              ) : filtradas.length === 0 ? (
+                <tr><td colSpan={7} className="px-3 py-14 text-center text-sm text-slate-400">{ordenes.length === 0 ? "Todavía no hay órdenes de compra." : "Ninguna orden coincide con los filtros."}</td></tr>
+              ) : (
+                filtradas.map((o) => (
+                  <tr key={o.id} className="transition-colors hover:bg-[#4FAEB2]/5">
+                    <td className="px-3 py-2.5 font-mono text-xs font-semibold text-[#3F8E91]">{o.numero}</td>
+                    <td className="px-3 py-2.5 text-xs tabular-nums text-slate-600">{fmtFecha(o.fecha)}</td>
+                    <td className="px-3 py-2.5 text-xs font-medium text-slate-800">{o.proveedor_nombre || "—"}</td>
+                    <td className="px-3 py-2.5 text-right text-xs tabular-nums text-slate-600">{o.items_count}</td>
+                    <td className="px-3 py-2.5 text-right text-xs tabular-nums font-bold text-slate-900">{fmtGs(o.total, o.moneda)}</td>
+                    <td className="px-3 py-2.5 text-center"><Badge estado={o.estado} /></td>
+                    <td className="px-3 py-2.5 text-center">
+                      <div className="inline-flex items-center gap-3">
+                        <button onClick={() => setDetalle(o.id)} className="text-xs font-semibold text-slate-500 hover:text-[#3F8E91] hover:underline">Ver</button>
+                        {RECEPTIBLES.includes(o.estado) && (
+                          <button onClick={() => setDetalle(o.id)} className="rounded-lg bg-[#4FAEB2] px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-[#3F8E91]">Recibir</button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
-        )}
+        </div>
       </div>
 
       {crear && <ModalCrear onClose={() => setCrear(false)} onCreada={() => { setCrear(false); cargar(); }} />}

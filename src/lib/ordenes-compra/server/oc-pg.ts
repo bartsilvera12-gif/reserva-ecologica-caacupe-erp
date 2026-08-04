@@ -169,7 +169,9 @@ export async function listOrdenesCompra(schemaRaw: string, empresaId: string, su
     `SELECT o.id, o.numero, o.proveedor_nombre, o.estado, o.moneda, o.fecha, o.llegada_estimada,
             o.tipo_pago, o.plazo_dias,
             (SELECT count(*) FROM ${tI} i WHERE i.orden_compra_id=o.id)::int AS items_count,
-            (SELECT COALESCE(SUM(i.total),0) FROM ${tI} i WHERE i.orden_compra_id=o.id) AS total
+            (SELECT COALESCE(SUM(i.total),0) FROM ${tI} i WHERE i.orden_compra_id=o.id) AS total,
+            (SELECT COALESCE(SUM(GREATEST(0, i.cantidad_solicitada - i.cantidad_recibida) * i.costo_estimado),0)
+               FROM ${tI} i WHERE i.orden_compra_id=o.id) AS total_pendiente
        FROM ${tO} o
       WHERE o.empresa_id=$1::uuid AND o.sucursal_id=$2::uuid
       ORDER BY o.created_at DESC LIMIT 500`,
@@ -180,6 +182,7 @@ export async function listOrdenesCompra(schemaRaw: string, empresaId: string, su
     fecha: r.fecha,
     llegada_estimada: r.llegada_estimada ? String(r.llegada_estimada).slice(0, 10) : null,
     total: num(r.total),
+    total_pendiente: num(r.total_pendiente),
     items_count: Number(r.items_count) || 0,
   }));
 }
