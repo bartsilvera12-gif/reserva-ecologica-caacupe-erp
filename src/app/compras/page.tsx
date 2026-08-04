@@ -229,7 +229,7 @@ export default function ComprasPage() {
                     <td className="px-3 py-2.5 text-center">
                       <div className="inline-flex items-center gap-3">
                         <Link href={`/compras/ordenes?abrir=${encodeURIComponent(o.id)}`} className="text-xs font-semibold text-slate-500 hover:text-[#3F8E91] hover:underline">Revisar</Link>
-                        <Link href={`/compras/ordenes?abrir=${encodeURIComponent(o.id)}`} className="rounded-lg bg-[#4FAEB2] px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-[#3F8E91]">Confirmar recepción</Link>
+                        <Link href={`/compras/desde-orden/${encodeURIComponent(o.numero)}`} className="rounded-lg bg-[#4FAEB2] px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-[#3F8E91]">Confirmar recepción</Link>
                       </div>
                     </td>
                   </tr>
@@ -246,7 +246,7 @@ export default function ComprasPage() {
           <h2 className="text-xl font-semibold">Compras registradas</h2>
           <div className="flex items-center gap-3">
             <ExportExcelButton url="/api/compras/export" />
-            <Link href="/compras/ordenes"
+            <Link href="/compras/desde-orden"
               className="rounded-lg border border-[#4FAEB2]/40 bg-[#4FAEB2]/[0.08] px-3 py-1.5 text-xs font-semibold text-[#3F8E91] transition-colors hover:bg-[#4FAEB2]/[0.16] active:scale-95">
               Desde Orden de Compra
             </Link>

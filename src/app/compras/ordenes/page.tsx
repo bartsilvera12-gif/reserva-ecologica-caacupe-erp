@@ -150,7 +150,7 @@ export default function OrdenesCompraPage() {
                       <div className="inline-flex items-center gap-3">
                         <button onClick={() => setDetalle(o.id)} className="text-xs font-semibold text-slate-500 hover:text-[#3F8E91] hover:underline">Ver</button>
                         {RECEPTIBLES.includes(o.estado) && (
-                          <button onClick={() => setDetalle(o.id)} className="rounded-lg bg-[#4FAEB2] px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-[#3F8E91]">Recibir</button>
+                          <Link href={`/compras/desde-orden/${encodeURIComponent(o.numero)}`} className="rounded-lg bg-[#4FAEB2] px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-[#3F8E91]">Recibir</Link>
                         )}
                       </div>
                     </td>
