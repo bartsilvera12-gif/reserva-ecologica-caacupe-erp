@@ -327,7 +327,19 @@ export async function loadValidatedNotaCreditoSifenPayload(
       })(),
       monto: Number((nc as { monto: unknown }).monto),
       motivo: String((nc as { motivo: string }).motivo ?? "").trim(),
-      fecha_emision: String((factura as { fecha: string }).fecha).trim(),
+      // Fecha de emisión de la NOTA DE CRÉDITO = su propia fecha (creación), NO
+      // la de la factura origen. Si se usa la fecha de la factura (que puede ser
+      // de semanas atrás), el `dFeEmiDE`/CDC quedan atrasados y SET rechaza el DE
+      // por "fecha y hora de emisión inválida por retraso". Se toma la fecha
+      // calendario en hora civil de Paraguay a partir de `nc.created_at`.
+      fecha_emision: (() => {
+        const ca = (nc as { created_at?: string | null }).created_at;
+        const d = ca ? new Date(ca) : new Date();
+        // en-CA → "YYYY-MM-DD"; zona Asunción evita corrimiento de día por UTC.
+        return new Intl.DateTimeFormat("en-CA", {
+          timeZone: "America/Asuncion", year: "numeric", month: "2-digit", day: "2-digit",
+        }).format(d);
+      })(),
       items: ncItems,
     },
     facturaOrigen: {
