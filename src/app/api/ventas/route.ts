@@ -61,23 +61,34 @@ export async function GET(request: NextRequest) {
     if (!ctx) return NextResponse.json(errorResponse(API_ERRORS.UNAUTHORIZED), { status: 401 });
     const empresaId = ctx.auth.empresa_id;
 
-    const ventasQ = await ctx.supabase
-      .from("ventas")
-      .select(
-        "id, empresa_id, numero_control, moneda, tipo_cambio, subtotal, monto_iva, total, tipo_venta, plazo_dias, metodo_pago, fecha, genera_nota_remision, nota_remision_numero, estado, anulada_at, anulacion_motivo, factura_id, cliente_id"
-      )
-      .eq("empresa_id", empresaId)
-      .eq("sucursal_id", exigirSucursal(ctx.auth.sucursal_id))
-      .order("fecha", { ascending: false })
-      .limit(500);
-    if (ventasQ.error) throw new Error(ventasQ.error.message);
+    // Sin tope: se traen TODAS las ventas de la sucursal paginando con .range()
+    // (mismo patrón que clientes/facturas más abajo). Un .limit(N) grande lo
+    // recorta el gateway/PostgREST; el bucle no depende de ese tope.
+    const sucursalIdVentas = exigirSucursal(ctx.auth.sucursal_id);
+    const PAGE_VENTAS = 1000;
+    const ventasData: Array<Record<string, unknown>> = [];
+    for (let desde = 0; ; desde += PAGE_VENTAS) {
+      const pageQ = await ctx.supabase
+        .from("ventas")
+        .select(
+          "id, empresa_id, numero_control, moneda, tipo_cambio, subtotal, monto_iva, total, tipo_venta, plazo_dias, metodo_pago, fecha, genera_nota_remision, nota_remision_numero, estado, anulada_at, anulacion_motivo, factura_id, cliente_id"
+        )
+        .eq("empresa_id", empresaId)
+        .eq("sucursal_id", sucursalIdVentas)
+        .order("fecha", { ascending: false })
+        .range(desde, desde + PAGE_VENTAS - 1);
+      if (pageQ.error) throw new Error(pageQ.error.message);
+      const rows = (pageQ.data ?? []) as Array<Record<string, unknown>>;
+      ventasData.push(...rows);
+      if (rows.length < PAGE_VENTAS) break;
+    }
 
     // Cargar nombre del cliente para las ventas asociadas a un cliente.
     // Batch por eficiencia; si el join falla se degrada silenciosamente
     // (el UI muestra "Consumidor final" cuando no hay cliente).
     const clienteIds = [
       ...new Set(
-        ((ventasQ.data ?? []) as Array<{ cliente_id?: string | null }>)
+        (ventasData as Array<{ cliente_id?: string | null }>)
           .map((v) => v.cliente_id)
           .filter((v): v is string => !!v)
       ),
@@ -136,7 +147,7 @@ export async function GET(request: NextRequest) {
     // por eficiencia; si el join falla, degradamos a solo id (la UI muestra "Facturada").
     const facturaIds = [
       ...new Set(
-        ((ventasQ.data ?? []) as Array<{ factura_id?: string | null }>)
+        (ventasData as Array<{ factura_id?: string | null }>)
           .map((v) => v.factura_id)
           .filter((v): v is string => !!v)
       ),
@@ -202,7 +213,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const ventasRows = (ventasQ.data ?? []) as VentaRow[];
+    const ventasRows = ventasData as unknown as VentaRow[];
 
     // Ítems de la empresa, PAGINADO. Antes se traían sin límite: PostgREST corta
     // en 1000 filas por defecto, así que al superar las 1000 líneas (histórico
