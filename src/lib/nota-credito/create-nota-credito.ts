@@ -383,74 +383,9 @@ export async function createNotaCreditoBorrador(p: CreateNotaCreditoParams): Pro
       };
     }
   } else {
-    // NC total: acredita el saldo disponible en un solo tramo.
+    // NC total: acredita todo el saldo disponible en un solo tramo.
     montoNc = round2(saldoDisponibleParaNc);
     itemsNormalizados = [];
-
-    // Cuando la factura YA tiene NC aprobadas, la devolución "total" se declara
-    // a SET como un único ítem genérico cuya base de IVA se redondea distinto a
-    // como la factura la declaró (suma de ítems). Eso hace que la BASE GRAVADA
-    // acumulada de las NC supere por 1–3 Gs la base de la factura y SET rechace
-    // con el código 2417 ("sumatoria de los documentos asociados supera…").
-    // Se ALINEA el monto a la base gravada que realmente queda libre en la
-    // factura (base factura − base NC aprobadas), por tasa de IVA. La diferencia
-    // con el saldo es de pocos guaraníes (redondeo de IVA, por debajo de la
-    // moneda mínima). Sin NC previas se mantiene el saldo completo (el builder
-    // desglosa los ítems reales de la factura y la base ya cuadra).
-    if (sumaAprobadas > 0) {
-      try {
-        const factorDe = (iva: string) => (iva === "10%" ? 1.1 : iva === "5%" ? 1.05 : 1);
-        const esGrav = (iva: string) => iva === "10%" || iva === "5%";
-        const baseDe = (t: number, iva: string) => (esGrav(iva) ? Math.round(t / factorDe(iva)) : Math.round(t));
-        const norm = (v: unknown) => {
-          const s = String(v ?? "10%").trim();
-          return s === "5%" || s === "exenta" || s === "EXENTA" ? (s === "EXENTA" ? "exenta" : s) : "10%";
-        };
-
-        const facItemsQ = await p.supabase
-          .from("factura_items").select("total, tipo_iva")
-          .eq("factura_id", p.facturaId).eq("empresa_id", p.empresaId);
-        const facBase: Record<string, number> = {};
-        for (const r of (facItemsQ.data ?? []) as Array<{ total?: unknown; tipo_iva?: unknown }>) {
-          const iva = norm(r.tipo_iva);
-          facBase[iva] = (facBase[iva] ?? 0) + baseDe(num(r.total), iva);
-        }
-
-        const aprQ = await p.supabase
-          .from("nota_credito").select("id")
-          .eq("factura_id", p.facturaId).eq("empresa_id", p.empresaId).eq("estado_erp", "aprobada");
-        const aprIds = ((aprQ.data ?? []) as Array<{ id: string }>).map((r) => String(r.id));
-        const aprBase: Record<string, number> = {};
-        let aprItemsTotal = 0;
-        if (aprIds.length > 0) {
-          const aiQ = await p.supabase
-            .from("nota_credito_items").select("total_linea, tipo_iva")
-            .eq("empresa_id", p.empresaId).in("nota_credito_id", aprIds);
-          for (const r of (aiQ.data ?? []) as Array<{ total_linea?: unknown; tipo_iva?: unknown }>) {
-            const iva = norm(r.tipo_iva);
-            const t = num(r.total_linea);
-            aprBase[iva] = (aprBase[iva] ?? 0) + baseDe(t, iva);
-            aprItemsTotal += t;
-          }
-        }
-        // NC aprobadas sin líneas (legado "total"): se aproxima su base al 10%.
-        const sinItems = Math.max(0, sumaAprobadas - aprItemsTotal);
-        if (sinItems > 0.5) aprBase["10%"] = (aprBase["10%"] ?? 0) + baseDe(sinItems, "10%");
-
-        let alineado = 0;
-        for (const iva of Object.keys(facBase)) {
-          const rem = Math.max(0, (facBase[iva] ?? 0) - (aprBase[iva] ?? 0));
-          if (rem <= 0) continue;
-          alineado += esGrav(iva) ? rem + Math.round(rem * (factorDe(iva) - 1)) : rem;
-        }
-        // Solo se aplica si es un valor válido y no supera el saldo disponible.
-        if (alineado > 0 && alineado <= round2(saldoDisponibleParaNc) + 0.5) {
-          montoNc = alineado;
-        }
-      } catch {
-        // Ante cualquier problema se mantiene el saldo (comportamiento previo).
-      }
-    }
   }
 
   const feId = String((feRow as { id: string }).id);
