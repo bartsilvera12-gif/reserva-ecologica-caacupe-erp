@@ -1,7 +1,7 @@
 import { montoEnLetras } from "@/lib/recibos/numero-a-letras";
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
-import { EMPRESA_DOC, membreteTicket, type MembreteMarca } from "@/lib/documentos/membrete";
+import { EMPRESA_DOC } from "@/lib/documentos/membrete";
 import { getMarcaSucursal } from "@/lib/documentos/marca-sucursal";
 import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema";
 
@@ -61,10 +61,7 @@ const METODO_LBL: Record<string, string> = { efectivo: "Efectivo", transferencia
 
 export async function GET(request: NextRequest, ctxParams: { params: Promise<{ id: string }> }) {
   const { id } = await ctxParams.params;
-  const sp = new URL(request.url).searchParams;
-  const auto = sp.get("auto") === "1";
-  const esTicket = sp.get("formato") === "ticket";
-  const widthMm = sp.get("w") === "58" ? 58 : 80;
+  const auto = new URL(request.url).searchParams.get("auto") === "1";
   const ctx = await getTenantSupabaseFromAuth(request);
   if (!ctx) return new NextResponse("No autorizado", { status: 401 });
 
@@ -79,14 +76,18 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
 
   // Membrete por sucursal (logo/teléfono/dirección de Reserva Market; Matriz cae
   // al membrete por defecto).
-  let marca: MembreteMarca | undefined;
+  let marcaLogo = EMPRESA_DOC.logoUrl;
+  let marcaTel = EMPRESA_DOC.telefono;
+  let marcaDir = EMPRESA_DOC.direccion;
   try {
     const schema = await fetchDataSchemaForEmpresaId(ctx.auth.empresa_id);
-    marca = await getMarcaSucursal(schema, ctx.auth.empresa_id, r.sucursal_id ? String(r.sucursal_id) : ctx.auth.sucursal_id ?? null);
+    const m = await getMarcaSucursal(schema, ctx.auth.empresa_id, r.sucursal_id ? String(r.sucursal_id) : ctx.auth.sucursal_id ?? null);
+    if (m) {
+      if (m.logoUrl) marcaLogo = m.logoUrl;
+      if (m.telefono) marcaTel = m.telefono;
+      if (m.direccion && m.direccion.length) marcaDir = m.direccion;
+    }
   } catch { /* usa defaults */ }
-  const marcaLogo = (marca?.logoUrl && marca.logoUrl.trim()) || EMPRESA_DOC.logoUrl;
-  const marcaTel = (marca?.telefono && marca.telefono.trim()) || EMPRESA_DOC.telefono;
-  const marcaDir = marca?.direccion && marca.direccion.length ? marca.direccion : EMPRESA_DOC.direccion;
 
   // El punto de expedición sale de la SUCURSAL que emitió el recibo, no de una
   // constante: cada sucursal lleva su propia serie desde 000001 y se distinguen
@@ -191,65 +192,6 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
       concepto: String(r.concepto ?? "Cobro"),
       importe: fmtMonto(r.monto, moneda),
     });
-  }
-
-  // ── Ticket térmico (58/80mm) ────────────────────────────────────────────────
-  // Ambos locales imprimen solo en impresora de tickets, así que el recibo se
-  // ofrece en formato angosto. El membrete se resuelve por sucursal (marca).
-  if (esTicket) {
-    const fontPx = widthMm === 58 ? 11 : 12;
-    const filasHtml = filasTabla.map((f) => `
-      <tr><td class="d">${esc(f.doc)}${f.venc ? `<div class="v">Vence: ${esc(f.venc)}</div>` : ""}</td><td class="a">${esc(f.importe)}</td></tr>`).join("");
-    const ticketHtml = `<!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(r.numero_recibo)} — Recibo</title>
-<style>
-  :root{color-scheme:light} *{box-sizing:border-box}
-  body{font-family:ui-monospace,"Courier New",monospace;font-size:${fontPx}px;color:#000;background:#f1f1f1;margin:0;padding:20px}
-  .paper{background:#fff;width:${widthMm}mm;margin:0 auto;padding:6mm 4mm;box-shadow:0 1px 4px rgba(0,0,0,.1)}
-  hr{border:none;border-top:1px dashed #000;margin:2mm 0}
-  .tit{text-align:center;font-weight:700;font-size:${fontPx + 1}px;letter-spacing:.05em;margin:1mm 0}
-  .meta{font-size:${fontPx - 1}px;text-align:center;margin:1mm 0 2mm}
-  .row{display:flex;justify-content:space-between;gap:6px;margin:.6mm 0}
-  .row .k{color:#333}
-  table{width:100%;border-collapse:collapse;margin-top:1mm}
-  td{vertical-align:top;padding:.5mm 0}
-  td.a{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
-  td.d .v{font-size:${fontPx - 2}px;color:#555}
-  .total{display:flex;justify-content:space-between;font-weight:700;font-size:${fontPx + 2}px;border-top:1px solid #000;margin-top:1mm;padding-top:1mm}
-  .letras{font-size:${fontPx - 1}px;margin-top:2mm}
-  .letras .et{color:#555}
-  .footer{font-size:${fontPx - 2}px;text-align:center;margin-top:3mm;font-style:italic}
-  .actions{max-width:${widthMm}mm;margin:8mm auto 0;text-align:center}
-  .actions button{padding:8px 16px;font-size:13px;cursor:pointer;border:1px solid #333;background:#fff;border-radius:6px}
-  @media print{body{background:#fff;padding:0}.paper{width:${widthMm}mm;box-shadow:none;padding:2mm;margin:0}.actions{display:none}@page{margin:0;size:${widthMm}mm auto}}
-</style></head><body>
-  <div class="paper">
-    ${membreteTicket(marca)}
-    <div class="tit">RECIBO DE DINERO</div>
-    <div class="meta">N&ordm; ${esc(puntoRecibo)} - ${esc(numeroCorto(r.numero_recibo))}<br>${esc(fmtFecha(r.fecha))}</div>
-    <hr>
-    <div class="row"><span class="k">Recibimos de:</span></div>
-    <div><b>${esc(r.cliente_nombre)}</b></div>
-    ${r.cliente_documento ? `<div class="row"><span class="k">RUC/CI:</span><span>${esc(r.cliente_documento)}</span></div>` : ""}
-    <hr>
-    <table><tbody>${filasHtml}</tbody></table>
-    <div class="total"><span>TOTAL</span><span>${fmtMonto(r.monto, moneda)}</span></div>
-    <div class="letras"><span class="et">Son:</span> ${esc(montoEnLetras(Number(r.monto) || 0, moneda))}</div>
-    <hr>
-    <div class="row"><span class="k">Forma de pago:</span><span>${esc(metodo)}</span></div>
-    ${r.usuario_nombre ? `<div class="row"><span class="k">Cobrador:</span><span>${esc(r.usuario_nombre)}</span></div>` : ""}
-    ${r.referencia ? `<div class="row"><span class="k">Ref.:</span><span>${esc(r.referencia)}</span></div>` : ""}
-    <hr>
-    <div class="footer">Comprobante interno — no válido como factura legal.<br>${esc(EMPRESA_DOC.nombre)} · RUC ${esc(RUC_EMPRESA)}</div>
-  </div>
-  <div class="actions">
-    <button type="button" onclick="window.print()">Imprimir</button>
-    <a href="?formato=ticket&w=${widthMm === 80 ? 58 : 80}" style="margin-left:12px;font-size:13px;color:#444">Cambiar a ${widthMm === 80 ? 58 : 80}mm</a>
-  </div>
-  <script>try{ if (${auto ? "true" : "false"}) setTimeout(function(){window.print();},250);}catch(e){}</script>
-</body></html>`;
-    return new NextResponse(ticketHtml, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8", "cache-control": "no-store" } });
   }
 
   const html = `<!doctype html>

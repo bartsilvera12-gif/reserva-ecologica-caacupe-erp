@@ -28,9 +28,7 @@ export async function generarYAbrirRecibo(input: GenerarReciboInput): Promise<{ 
       return { ok: false, error: body?.error ?? "No se pudo generar el recibo." };
     }
     const id = String(body.data.recibo.id);
-    // Ambos locales imprimen en impresora de tickets → se abre el recibo en
-    // formato ticket térmico (80mm). El A4 sigue disponible quitando el formato.
-    const url = `/api/recibos-dinero/${id}/pdf?auto=1&formato=ticket&w=80`;
+    const url = `/api/recibos-dinero/${id}/pdf?auto=1`;
     if (tab && !tab.closed) {
       tab.location.href = url;
     } else {
