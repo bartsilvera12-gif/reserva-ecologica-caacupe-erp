@@ -6,7 +6,7 @@ import type { NotaCreditoGlobalListItemDTO } from "@/lib/nota-credito/types";
 import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
 
 const SELECT_LIST =
-  "id, monto, motivo, observacion_interna, estado_erp, created_at, factura_id, cliente_id, moneda_snapshot, created_by_user_id, created_by_email_snapshot, created_by_nombre_snapshot, clientes(id, empresa, nombre_contacto, ruc), facturas(id, numero_factura), nota_credito_electronica(estado_sifen, cdc, cdc_factura_origen, last_error, error)";
+  "id, numero, monto, motivo, observacion_interna, estado_erp, created_at, factura_id, cliente_id, moneda_snapshot, created_by_user_id, created_by_email_snapshot, created_by_nombre_snapshot, clientes(id, empresa, nombre_contacto, ruc), facturas(id, numero_factura), nota_credito_electronica(estado_sifen, cdc, cdc_factura_origen, last_error, error)";
 
 function mapClienteDisplay(c: Record<string, unknown> | null | undefined): string {
   if (!c) return "—";
@@ -30,6 +30,7 @@ function mapRow(r: Record<string, unknown>): NotaCreditoGlobalListItemDTO {
   const facObj = Array.isArray(fac) ? fac[0] : fac;
   return {
     id: String(r.id),
+    numero: r.numero == null ? null : Number(r.numero),
     monto: Number(r.monto),
     motivo: String(r.motivo ?? ""),
     observacion_interna: r.observacion_interna == null ? null : String(r.observacion_interna),

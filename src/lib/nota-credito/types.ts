@@ -119,6 +119,8 @@ export type SifenPrevueloFacturaNcDTO = {
 /** Fila del listado global `/notas-credito`. */
 export type NotaCreditoGlobalListItemDTO = {
   id: string;
+  /** Correlativo real de la NC (dNumDoc del CDC). Null solo en NC de legado. */
+  numero: number | null;
   monto: number;
   motivo: string;
   observacion_interna: string | null;

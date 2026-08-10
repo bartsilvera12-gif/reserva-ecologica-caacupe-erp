@@ -7,12 +7,12 @@ import { getClientes } from "@/lib/clientes/storage";
 import { getUsuariosActivosEmpresa, type UsuarioEmpresa } from "@/lib/usuarios/empresa";
 import type { NotaCreditoGlobalListItemDTO } from "@/lib/nota-credito/types";
 
-/** Número visible de la NC. La tabla `nota_credito` no persiste un correlativo
- *  tipo NC-XXXXXX (a diferencia de facturas/ventas); mostramos un derivado
- *  estable del UUID como identificador humano. Los primeros 6 hex del uuid son
- *  únicos en la práctica dentro de una empresa. */
-function ncNumeroCorto(id: string): string {
-  return `NC-${id.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
+/** Número visible de la NC: el correlativo REAL (dNumDoc del CDC), como
+ *  NC-0000055. Solo las NC de legado (sin `numero`) caen a un derivado estable
+ *  del UUID como identificador humano. */
+function ncNumeroCorto(nc: { numero: number | null; id: string }): string {
+  if (nc.numero != null) return `NC-${String(nc.numero).padStart(7, "0")}`;
+  return `NC-${nc.id.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
 }
 
 const inputClass =
@@ -331,7 +331,7 @@ export default function NotasCreditoListClient() {
                   <tr key={nc.id} className="hover:bg-slate-50/80">
                     <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-slate-700">
                       <Link href={`/notas-credito/${nc.id}`} className="hover:underline">
-                        {ncNumeroCorto(nc.id)}
+                        {ncNumeroCorto(nc)}
                       </Link>
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap text-slate-600">
