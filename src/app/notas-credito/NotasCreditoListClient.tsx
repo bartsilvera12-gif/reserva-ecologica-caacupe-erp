@@ -226,7 +226,7 @@ export default function NotasCreditoListClient() {
             <label className={labelClass}>Número NC</label>
             <input
               className={inputClass}
-              placeholder="NC-XXXXXX o fragmento"
+              placeholder="N° (ej. 55) o NC-0000055"
               value={numeroNc}
               onChange={(e) => setNumeroNc(e.target.value)}
             />

@@ -127,12 +127,17 @@ export async function GET(request: NextRequest) {
     if (buscar.length >= 2) {
       q = q.ilike("motivo", `%${buscar.replace(/%/g, "")}%`);
     }
-    if (numeroFragmento.length >= 2) {
-      // uuid no acepta ilike directo. Usamos el operator PostgREST `ilike` sobre
-      // el cast `id::text` (Postgres normaliza el uuid a formato con guiones).
-      // Filtramos por el fragmento en cualquier posición para que el operador
-      // pueda pegar 6-8 chars del código NC-XXXXXX visible en la UI.
-      q = q.filter("id::text", "ilike", `%${numeroFragmento}%`);
+    if (numeroFragmento.length >= 1) {
+      // Si el término es numérico, es el CORRELATIVO real (ej. "55" o "0000055"
+      // → numero = 55). Si trae letras, es un fragmento hex del UUID (NC de
+      // legado sin correlativo): se filtra por `id::text ilike` (uuid no acepta
+      // ilike directo; el cast normaliza al formato con guiones).
+      const asNum = /^\d+$/.test(numeroFragmento) ? Number.parseInt(numeroFragmento, 10) : null;
+      if (asNum != null && Number.isFinite(asNum)) {
+        q = q.eq("numero", asNum);
+      } else if (numeroFragmento.length >= 2) {
+        q = q.filter("id::text", "ilike", `%${numeroFragmento}%`);
+      }
     }
 
     const { data: rows, error: errQ, count } = await q.range(offset, offset + limit - 1);
