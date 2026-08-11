@@ -997,6 +997,15 @@ export function FacturaElectronicaPanel({
                 >
                   Imprimir KUDE
                 </a>
+                <a
+                  href={`/api/facturas/${facturaId}/sifen/documento`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-2 text-xs font-semibold rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 inline-flex items-center"
+                  title="Descarga el XML firmado tal como se envió a la DNIT"
+                >
+                  Descargar XML
+                </a>
               </div>
             )}
             {fe && estado === "aprobado" && resumen.cancelacion && (
