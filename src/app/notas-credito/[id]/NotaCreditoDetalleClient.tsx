@@ -108,6 +108,17 @@ export default function NotaCreditoDetalleClient() {
               Imprimir KUDE
             </a>
           ) : null}
+          {ne ? (
+            <a
+              href={`/api/notas-credito/${nc.id}/sifen/documento`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50"
+              title="Descarga el XML firmado tal como se envió a la DNIT"
+            >
+              Descargar XML
+            </a>
+          ) : null}
           <Link
             href={`/facturas/${data.factura.id}`}
             className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800"
