@@ -122,7 +122,7 @@ export async function GET(
 
     const { data: fac, error: errFac } = await supabase
       .from("facturas")
-      .select("id, numero_factura")
+      .select("id, numero_factura, sucursal_id")
       .eq("id", fid)
       .eq("empresa_id", auth.empresa_id)
       .maybeSingle();
@@ -299,23 +299,42 @@ export async function GET(
 
     const numeroFactura = fac.numero_factura == null ? "" : String(fac.numero_factura);
 
-    // Formato de impresión: el query param manda; si no, la config de la empresa
-    // (empresa_facturacion_modo.impresion_tipo_default); default A4. Cuando es
-    // ticket térmico, el KuDE se sirve como HTML angosto (58/80mm) con QR.
+    // Formato de impresión (representación gráfica). Orden de prioridad:
+    //   1) query param (?formato=ticket|a4, ?w=58|80) — override manual;
+    //   2) formato de la SUCURSAL de la factura (sucursales.kude_formato) —
+    //      p. ej. Reserva Market en ticket, Casa Matriz en A4;
+    //   3) config de la empresa (empresa_facturacion_modo.impresion_tipo_default);
+    //   4) default A4.
     const formatoParam = request.nextUrl.searchParams.get("formato");
     const wParam = request.nextUrl.searchParams.get("w");
-    let esTicket = false;
-    let widthMm: 58 | 80 = 80;
-    try {
-      const { data: modoRow } = await supabase
-        .from("empresa_facturacion_modo")
-        .select("impresion_tipo_default")
-        .eq("empresa_id", auth.empresa_id)
-        .maybeSingle();
-      const imp = String((modoRow as { impresion_tipo_default?: string } | null)?.impresion_tipo_default ?? "");
-      if (imp === "ticket_58mm") { esTicket = true; widthMm = 58; }
-      else if (imp === "ticket_80mm") { esTicket = true; widthMm = 80; }
-    } catch { /* cae a A4 */ }
+
+    let formatoBase = "";
+    const sucId = (fac as { sucursal_id?: string | null }).sucursal_id ?? null;
+    if (sucId) {
+      try {
+        const { data: sucRow } = await supabase
+          .from("sucursales")
+          .select("kude_formato")
+          .eq("id", String(sucId))
+          .eq("empresa_id", auth.empresa_id)
+          .maybeSingle();
+        const kf = String((sucRow as { kude_formato?: string | null } | null)?.kude_formato ?? "").trim();
+        if (kf) formatoBase = kf;
+      } catch { /* sigue con config de empresa */ }
+    }
+    if (!formatoBase) {
+      try {
+        const { data: modoRow } = await supabase
+          .from("empresa_facturacion_modo")
+          .select("impresion_tipo_default")
+          .eq("empresa_id", auth.empresa_id)
+          .maybeSingle();
+        formatoBase = String((modoRow as { impresion_tipo_default?: string } | null)?.impresion_tipo_default ?? "").trim();
+      } catch { /* cae a A4 */ }
+    }
+
+    let esTicket = formatoBase === "ticket_58mm" || formatoBase === "ticket_80mm";
+    let widthMm: 58 | 80 = formatoBase === "ticket_58mm" ? 58 : 80;
     if (formatoParam === "ticket") esTicket = true;
     else if (formatoParam === "a4") esTicket = false;
     if (wParam === "58") widthMm = 58;
