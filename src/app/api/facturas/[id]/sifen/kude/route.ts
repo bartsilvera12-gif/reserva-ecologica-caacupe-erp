@@ -4,6 +4,7 @@ import { errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { downloadSifenObject } from "@/lib/sifen/sifen-storage";
 import { buildKudePdfBuffer, type KudeBranding } from "@/lib/sifen/kude-pdf";
+import { buildKudeTicketHtml } from "@/lib/sifen/kude-ticket-html";
 import {
   kudeFallbackQrUrl,
   parseKudeFromSignedRdeXml,
@@ -297,6 +298,46 @@ export async function GET(
     }
 
     const numeroFactura = fac.numero_factura == null ? "" : String(fac.numero_factura);
+
+    // Formato de impresión: el query param manda; si no, la config de la empresa
+    // (empresa_facturacion_modo.impresion_tipo_default); default A4. Cuando es
+    // ticket térmico, el KuDE se sirve como HTML angosto (58/80mm) con QR.
+    const formatoParam = request.nextUrl.searchParams.get("formato");
+    const wParam = request.nextUrl.searchParams.get("w");
+    let esTicket = false;
+    let widthMm: 58 | 80 = 80;
+    try {
+      const { data: modoRow } = await supabase
+        .from("empresa_facturacion_modo")
+        .select("impresion_tipo_default")
+        .eq("empresa_id", auth.empresa_id)
+        .maybeSingle();
+      const imp = String((modoRow as { impresion_tipo_default?: string } | null)?.impresion_tipo_default ?? "");
+      if (imp === "ticket_58mm") { esTicket = true; widthMm = 58; }
+      else if (imp === "ticket_80mm") { esTicket = true; widthMm = 80; }
+    } catch { /* cae a A4 */ }
+    if (formatoParam === "ticket") esTicket = true;
+    else if (formatoParam === "a4") esTicket = false;
+    if (wParam === "58") widthMm = 58;
+    else if (wParam === "80") widthMm = 80;
+
+    if (esTicket) {
+      const html = await buildKudeTicketHtml({
+        parsed,
+        numeroFactura,
+        dProtAut,
+        qrUrl,
+        widthMm,
+        emisorTelefonoOverride,
+        emisorEmailOverride,
+        auto: request.nextUrl.searchParams.get("auto") !== "0",
+      });
+      return new NextResponse(html, {
+        status: 200,
+        headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "private, no-store" },
+      });
+    }
+
     let pdf: Buffer;
     try {
       pdf = await buildKudePdfBuffer({
