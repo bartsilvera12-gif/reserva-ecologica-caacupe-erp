@@ -10,6 +10,7 @@
  */
 import QRCode from "qrcode";
 import type { KudeParsedFromXml } from "@/lib/sifen/parse-kude-from-signed-xml";
+import type { MembreteMarca } from "@/lib/documentos/membrete";
 
 function esc(v: unknown): string {
   return String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -37,16 +38,26 @@ export async function buildKudeTicketHtml(input: {
   widthMm: 58 | 80;
   emisorTelefonoOverride?: string | null;
   emisorEmailOverride?: string | null;
+  /** Branding de la sucursal (logo/teléfono/dirección) para el encabezado. */
+  marca?: MembreteMarca;
   auto?: boolean;
 }): Promise<string> {
-  const { parsed, dProtAut, qrUrl, widthMm, auto } = input;
+  const { parsed, dProtAut, qrUrl, widthMm, auto, marca } = input;
   const fontPx = widthMm === 58 ? 11 : 12;
   const moneda = parsed.monedaCodigo || "PYG";
   const t = parsed.timbrado;
   const e = parsed.emisor;
   const r = parsed.receptor;
   const to = parsed.totales;
-  const tel = (input.emisorTelefonoOverride && input.emisorTelefonoOverride.trim()) || e.dTelEmi;
+  // Encabezado: branding de la sucursal si existe (logo + tel/dirección de la
+  // sucursal), manteniendo el NOMBRE legal y el RUC del emisor (dato fiscal).
+  const logoUrl = (marca?.logoUrl && marca.logoUrl.trim()) || "";
+  const tel = (marca?.telefono && marca.telefono.trim())
+    || (input.emisorTelefonoOverride && input.emisorTelefonoOverride.trim())
+    || e.dTelEmi;
+  const dirLineas = marca?.direccion && marca.direccion.length
+    ? marca.direccion
+    : (e.dDirEmi ? [e.dDirEmi] : []);
   const condicionVenta = parsed.operacion?.condicionVenta ?? "";
   const numeroDoc = `${t.dEst}-${t.dPunExp}-${t.dNumDoc}`;
   const tipoDoc = parsed.iTiDE === "5" ? "NOTA DE CRÉDITO ELECTRÓNICA" : "FACTURA ELECTRÓNICA";
@@ -80,6 +91,7 @@ export async function buildKudeTicketHtml(input: {
   .c{text-align:center}
   .b{font-weight:700}
   .emis{text-align:center;margin-bottom:1mm}
+  .emis .logo{max-width:${widthMm === 58 ? 36 : 46}mm;max-height:${widthMm === 58 ? 18 : 22}mm;width:auto;height:auto;object-fit:contain;display:inline-block;margin:0 auto 1mm}
   .emis .nom{font-weight:700;font-size:${fontPx + 1}px}
   .tit{text-align:center;font-weight:700;font-size:${fontPx + 1}px;letter-spacing:.03em;margin:1mm 0}
   .small{font-size:${fontPx - 1}px}
@@ -101,9 +113,10 @@ export async function buildKudeTicketHtml(input: {
 </style></head><body>
   <div class="paper">
     <div class="emis">
+      ${logoUrl ? `<img class="logo" src="${esc(logoUrl)}" alt="${esc(e.dNomEmi)}" />` : ""}
       <div class="nom">${esc(e.dNomEmi)}</div>
       <div class="small">RUC: ${esc(e.dRucEm)}-${esc(e.dDVEmi)}</div>
-      <div class="small">${esc(e.dDirEmi)}</div>
+      ${dirLineas.map((l) => `<div class="small">${esc(l)}</div>`).join("")}
       ${tel ? `<div class="small">Tel: ${esc(tel)}</div>` : ""}
     </div>
     <hr>

@@ -5,6 +5,8 @@ import { API_ERRORS } from "@/lib/api/errors";
 import { downloadSifenObject } from "@/lib/sifen/sifen-storage";
 import { buildKudePdfBuffer, type KudeBranding } from "@/lib/sifen/kude-pdf";
 import { buildKudeTicketHtml } from "@/lib/sifen/kude-ticket-html";
+import { getMarcaSucursal } from "@/lib/documentos/marca-sucursal";
+import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema";
 import {
   kudeFallbackQrUrl,
   parseKudeFromSignedRdeXml,
@@ -341,6 +343,13 @@ export async function GET(
     else if (wParam === "80") widthMm = 80;
 
     if (esTicket) {
+      // Branding de la sucursal (logo/tel/dirección) para el encabezado del
+      // ticket; abajo se mantienen RUC/timbrado/CDC/QR fiscales.
+      let marca;
+      try {
+        const schema = await fetchDataSchemaForEmpresaId(auth.empresa_id);
+        marca = await getMarcaSucursal(schema, auth.empresa_id, sucId);
+      } catch { marca = undefined; }
       const html = await buildKudeTicketHtml({
         parsed,
         numeroFactura,
@@ -349,6 +358,7 @@ export async function GET(
         widthMm,
         emisorTelefonoOverride,
         emisorEmailOverride,
+        marca,
         auto: request.nextUrl.searchParams.get("auto") !== "0",
       });
       return new NextResponse(html, {
