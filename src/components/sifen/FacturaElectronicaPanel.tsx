@@ -1009,18 +1009,20 @@ export function FacturaElectronicaPanel({
                 )}
               </div>
             )}
-            {fe && estado === "cancelado" && fe.sifen_cancelado_at && (
+            {fe && estado === "cancelado" && (
               <div className="pt-1 space-y-2">
-                <p className="text-xs text-slate-600">
-                  <span className="font-semibold text-slate-700">Cancelado en ERP:</span>{" "}
-                  {formatLimiteCancelacion(fe.sifen_cancelado_at)}
-                  {fe.sifen_cancelacion_motivo?.trim() ? (
-                    <>
-                      {" "}
-                      — <span className="text-slate-500">Motivo:</span> {fe.sifen_cancelacion_motivo.trim()}
-                    </>
-                  ) : null}
-                </p>
+                {fe.sifen_cancelado_at && (
+                  <p className="text-xs text-slate-600">
+                    <span className="font-semibold text-slate-700">Cancelado en ERP:</span>{" "}
+                    {formatLimiteCancelacion(fe.sifen_cancelado_at)}
+                    {fe.sifen_cancelacion_motivo?.trim() ? (
+                      <>
+                        {" "}
+                        — <span className="text-slate-500">Motivo:</span> {fe.sifen_cancelacion_motivo.trim()}
+                      </>
+                    ) : null}
+                  </p>
+                )}
                 {/* Reconciliación con SET: para facturas canceladas en el ERP pero
                     aún ACTIVAS en Marangatú (la cancelación era solo local). */}
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
