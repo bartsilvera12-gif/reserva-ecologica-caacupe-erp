@@ -50,6 +50,10 @@ export async function POST(
       return NextResponse.json(errorResponse("Cuerpo JSON inválido"), { status: 400 });
     }
     const b = body != null && typeof body === "object" ? (body as Record<string, unknown>) : {};
+    // Reintento de conciliación con SET: para facturas ya marcadas canceladas
+    // localmente pero que NO se cancelaron en SET (bug histórico). Salta el
+    // chequeo de "ya cancelado / ventana" local y reenvía el evento a la SET.
+    const reintentarSet = b.reintentar_set === true;
     const motivo = trimMotivo(b.motivo);
     if (motivo == null || motivo.length < 5) {
       return NextResponse.json(
@@ -115,7 +119,7 @@ export async function POST(
       nowMs: Date.now(),
     });
 
-    if (!preview.puede_cancelar) {
+    if (!preview.puede_cancelar && !reintentarSet) {
       return NextResponse.json(
         errorResponse(preview.motivo_bloqueo ?? "No se puede cancelar el documento electrónico."),
         { status: 409 }

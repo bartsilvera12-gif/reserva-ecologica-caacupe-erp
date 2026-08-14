@@ -285,6 +285,43 @@ export function FacturaElectronicaPanel({
     }
   };
 
+  /**
+   * Conciliación con SET: reenvía el evento de cancelación para facturas que
+   * quedaron marcadas «canceladas» en el ERP pero NUNCA se cancelaron en la SET
+   * (bug histórico: la cancelación era solo local). No cambia el estado local
+   * (ya está cancelada); solo hace que la SET coincida. Si SET rechaza (fuera de
+   * las 48h), hay que ir por Nota de Crédito.
+   */
+  const ejecutarReintentoSet = async () => {
+    setFlash(null);
+    const motivo = fe?.sifen_cancelacion_motivo?.trim() || "Cancelación de documento electrónico";
+    setAction("cancelar-de");
+    try {
+      const res = await fetchWithSupabaseSession(`/api/facturas/${facturaId}/sifen/cancelar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ motivo, reintentar_set: true }),
+      });
+      const j = (await res.json()) as { success?: boolean; error?: string };
+      if (!res.ok || !j.success) {
+        setFlash({
+          kind: "err",
+          text:
+            (j.error ?? `Error ${res.status}`) +
+            " — Si la SET la rechaza por plazo, hay que anular con Nota de Crédito.",
+        });
+        return;
+      }
+      setFlash({ kind: "ok", text: "Cancelación registrada en la SET. La factura quedó anulada también en Marangatú." });
+      await refresh();
+      await onComercialUpdated?.();
+    } catch (e) {
+      setFlash({ kind: "err", text: e instanceof Error ? e.message : "Error de red" });
+    } finally {
+      setAction(null);
+    }
+  };
+
   const run = async (kind: "borrador" | "xml" | "firmar") => {
     setFlash(null);
     setAction(kind);
@@ -973,16 +1010,35 @@ export function FacturaElectronicaPanel({
               </div>
             )}
             {fe && estado === "cancelado" && fe.sifen_cancelado_at && (
-              <p className="text-xs text-slate-600 pt-1">
-                <span className="font-semibold text-slate-700">Cancelado en ERP:</span>{" "}
-                {formatLimiteCancelacion(fe.sifen_cancelado_at)}
-                {fe.sifen_cancelacion_motivo?.trim() ? (
-                  <>
-                    {" "}
-                    — <span className="text-slate-500">Motivo:</span> {fe.sifen_cancelacion_motivo.trim()}
-                  </>
-                ) : null}
-              </p>
+              <div className="pt-1 space-y-2">
+                <p className="text-xs text-slate-600">
+                  <span className="font-semibold text-slate-700">Cancelado en ERP:</span>{" "}
+                  {formatLimiteCancelacion(fe.sifen_cancelado_at)}
+                  {fe.sifen_cancelacion_motivo?.trim() ? (
+                    <>
+                      {" "}
+                      — <span className="text-slate-500">Motivo:</span> {fe.sifen_cancelacion_motivo.trim()}
+                    </>
+                  ) : null}
+                </p>
+                {/* Reconciliación con SET: para facturas canceladas en el ERP pero
+                    aún ACTIVAS en Marangatú (la cancelación era solo local). */}
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                  <p className="text-[11px] text-amber-900">
+                    ¿Sigue <span className="font-semibold">activa en Marangatú</span>? Reenviá la cancelación a la SET.
+                    Solo funciona dentro de las 48&nbsp;h de la aprobación; pasado ese plazo hay que anular con Nota de
+                    Crédito.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={action !== null}
+                    onClick={() => void ejecutarReintentoSet()}
+                    className="mt-2 px-3 py-1.5 text-[11px] font-semibold rounded-md bg-amber-700 text-white hover:bg-amber-800 disabled:opacity-40"
+                  >
+                    {action === "cancelar-de" ? "Enviando a la SET…" : "Reintentar cancelación en SET"}
+                  </button>
+                </div>
+              </div>
             )}
             {fe && estado === "aprobado" && (
               <div className="flex flex-wrap gap-2 pt-2">
