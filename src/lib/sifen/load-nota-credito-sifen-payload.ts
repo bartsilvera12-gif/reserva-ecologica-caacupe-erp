@@ -4,6 +4,8 @@ import type { SifenNotaCreditoPayload } from "./types";
 import type { AmbienteSifen } from "./types";
 import { MSG_CONFIG_TIMBRADO_INVALIDA } from "./validar-timbrado-origen-nc";
 import { validarXmlFirmadoFacturaOrigenParaNc } from "./validar-factura-origen-xml-para-nc";
+import { downloadSifenObject } from "./sifen-storage";
+import { parseKudeFromSignedRdeXml } from "./parse-kude-from-signed-xml";
 
 export type LoadNotaCreditoSifenPayloadOpts = {
   /** Si se define, el XML rDE usa este ambiente (p. ej. test con ALLOW_TEST_MODE + pipeline *-test). */
@@ -353,6 +355,45 @@ export async function loadValidatedNotaCreditoSifenPayload(
       estado_sifen: String((ne as { estado_sifen?: string }).estado_sifen ?? "sin_envio"),
     },
   };
+
+  // ── Receptor IDÉNTICO al de la factura origen ────────────────────────────────
+  // SIFEN rechaza la NC ("El CDC asociado no corresponde al receptor del documento
+  // electrónico") si el receptor declarado no coincide EXACTAMENTE con el de la
+  // factura que corrige. Esto ocurre con facturas emitidas antes de cambios en la
+  // lógica de armado del receptor (p. ej. commit del 8/7/2026 que empezó a respetar
+  // `es_contribuyente`): la factura quedó en la SET con un iNatRec/número que la
+  // lógica actual del cliente ya no reproduce (típico: cédula "4370980-0" que la
+  // factura mandó como "4370980" y la NC ahora manda como "43709800").
+  //
+  // Para que coincida sí o sí, tomamos el receptor DIRECTO del XML firmado de la
+  // factura. Best-effort: si no se puede descargar/parsear, se mantiene el receptor
+  // armado con los datos actuales del cliente (comportamiento previo).
+  const facturaSignedPath =
+    feOrigen.xml_firmado_path == null ? null : String(feOrigen.xml_firmado_path).trim() || null;
+  if (facturaSignedPath) {
+    try {
+      const bin = await downloadSifenObject(supabase, facturaSignedPath);
+      if (bin.ok) {
+        const parsedFactura = parseKudeFromSignedRdeXml(bin.data.toString("utf-8"));
+        const recFactura = parsedFactura.receptor;
+        const docValue = String(recFactura?.docValue ?? "").trim();
+        if (docValue) {
+          if (String(recFactura?.docLabel ?? "").toUpperCase() === "RUC") {
+            payload.receptor.ruc = docValue;
+            payload.receptor.documento = null;
+          } else {
+            payload.receptor.documento = docValue;
+            payload.receptor.ruc = null;
+          }
+        }
+        const nombreFactura = String(recFactura?.nombre ?? "").trim();
+        if (nombreFactura) payload.receptor.nombre = nombreFactura;
+      }
+    } catch {
+      // best-effort: si el XML de la factura no se puede leer/parsear, se mantiene
+      // el receptor por datos actuales del cliente (no rompemos la generación).
+    }
+  }
 
   if (!payload.emisor.ruc || !payload.emisor.razon_social) {
     return { ok: false, error: { status: 400, message: "Configuración SIFEN incompleta (RUC / razón social)." } };
