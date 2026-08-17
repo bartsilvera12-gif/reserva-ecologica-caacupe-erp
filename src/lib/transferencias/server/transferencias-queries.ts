@@ -245,9 +245,12 @@ export async function buscarProductosDeSucursal(params: {
   const q = (params.q ?? "").trim().slice(0, 60);
   const like = `%${q.replace(/[%_\\]/g, (m) => "\\" + m)}%`;
   const { rows } = await pool().query(
+    // Remitibles = Reventa (controla_stock) + Menú (vendible sin control de stock).
+    // Se excluye solo la Materia prima (es_insumo). Antes filtraba `controla_stock=true`,
+    // que dejaba fuera los productos de menú.
     `SELECT id, sku, nombre, stock_actual FROM ${tP}
       WHERE empresa_id = $1::uuid AND sucursal_id = $2::uuid
-        AND activo = true AND controla_stock = true
+        AND activo = true AND es_insumo IS NOT TRUE AND es_vendible IS NOT FALSE
         AND ($3 = '' OR nombre ILIKE $4 OR sku ILIKE $4 OR codigo_barras ILIKE $4)
       ORDER BY nombre LIMIT 30`,
     [params.empresaId, params.sucursalId, q, like]
