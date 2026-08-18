@@ -260,7 +260,50 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json(successResponse({ producto: rowToApi(row), warning: movWarning }));
+    // Opción "crear en ambas sucursales": clona el producto (mismo catálogo,
+    // stock 0) en cada OTRA sucursal activa de la empresa. El SKU es único por
+    // sucursal, así que el mismo SKU convive en ambas. El código de barras se
+    // omite en el clon para no chocar con un índice único; se puede cargar luego
+    // en la otra sucursal. Best-effort: si un clon falla (p. ej. SKU ya existe
+    // allá), se logea y sigue, sin romper la creación principal.
+    let creadoEnSucursales = 1;
+    if (body.crear_en_ambas === true) {
+      const currentSucursal = exigirSucursal(ctx.auth.sucursal_id);
+      const { data: otras } = await sb
+        .from("sucursales")
+        .select("id")
+        .eq("empresa_id", empresaId)
+        .eq("activa", true)
+        .neq("id", currentSucursal);
+      for (const s of (otras ?? []) as Array<{ id: string }>) {
+        const clonePayload: Record<string, unknown> = {
+          ...insertPayload,
+          sucursal_id: s.id,
+          stock_actual: 0,
+          codigo_barras: null,
+          codigo_barras_interno: false,
+        };
+        const cl = await sb.from("productos").insert(clonePayload).select("id").single();
+        if (cl.error) {
+          console.error("[/api/productos POST] clon otra sucursal", s.id, cl.error.message);
+          continue;
+        }
+        creadoEnSucursales += 1;
+        if (categoriaPrincipalId) {
+          await sb.from("producto_categorias").insert({
+            empresa_id: empresaId,
+            sucursal_id: s.id,
+            producto_id: String((cl.data as { id: string }).id),
+            categoria_id: categoriaPrincipalId,
+            es_principal: true,
+          });
+        }
+      }
+    }
+
+    return NextResponse.json(
+      successResponse({ producto: rowToApi(row), warning: movWarning, creado_en_sucursales: creadoEnSucursales })
+    );
   } catch (err) {
     const rSuc = respuestaSucursalNoAsignada(err);
     if (rSuc) return rSuc;

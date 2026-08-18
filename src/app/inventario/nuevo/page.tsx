@@ -48,6 +48,10 @@ export default function NuevoProductoPage() {
     tipo_iva: "10%" as TipoIvaProducto,
   });
   const [submitting, setSubmitting] = useState(false);
+  // Alta en una o ambas sucursales. Se muestra el toggle solo si la empresa
+  // tiene más de una sucursal.
+  const [sucursales, setSucursales] = useState<{ id: string; nombre: string }[]>([]);
+  const [crearEnAmbas, setCrearEnAmbas] = useState(false);
   const [generandoCodigo, setGenerandoCodigo] = useState(false);
   const [generandoSku, setGenerandoSku] = useState(false);
   const [skuPatrones, setSkuPatrones] = useState<{ prefix: string; siguiente: string }[]>([]);
@@ -105,15 +109,17 @@ export default function NuevoProductoPage() {
       } catch { return null; }
     }
     (async () => {
-      const [cats, ubis, provs] = await Promise.all([
+      const [cats, ubis, provs, sucs] = await Promise.all([
         load("/api/inventario/categorias"),
         load("/api/inventario/ubicaciones"),
         load("/api/proveedores"),
+        load("/api/sucursales"),
       ]);
       if (cancel) return;
       if (cats?.categorias) setCategorias(cats.categorias as CatRow[]);
       if (ubis?.ubicaciones) setUbicaciones(ubis.ubicaciones as UbiRow[]);
       if (provs?.proveedores) setProveedores(provs.proveedores as ProvRow[]);
+      if (sucs?.sucursales) setSucursales(sucs.sucursales as { id: string; nombre: string }[]);
     })();
     return () => { cancel = true; };
   }, []);
@@ -345,7 +351,7 @@ export default function NuevoProductoPage() {
           factor_compra_receta: Math.max(parseFloat(factorCompraReceta) || 1, 0.0001),
           tiempo_prep_minutos: Math.max(parseInt(tiempoPrepMinutos) || 0, 0),
           tipo_iva: form.tipo_iva,
-        });
+        }, { crearEnAmbas });
       } catch (err) {
         console.error("[inventario/nuevo] saveProducto error:", err);
         showErr(err instanceof Error ? err.message : "No se pudo guardar el producto.");
@@ -1033,6 +1039,37 @@ export default function NuevoProductoPage() {
               <option value="LIFO">LIFO — Último en entrar, primero en salir</option>
             </select>
           </div>
+
+          {/* Alcance de sucursales — solo si la empresa es multisucursal */}
+          {sucursales.length > 1 && (
+            <div className="pt-2">
+              <span className="block text-sm font-medium text-slate-700 mb-2">¿Dónde crear el producto?</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCrearEnAmbas(false)}
+                  className={`text-left rounded-lg border px-4 py-3 transition-colors ${
+                    !crearEnAmbas ? "border-[#0EA5E9] bg-sky-50 ring-1 ring-[#0EA5E9]" : "border-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  <span className="block text-sm font-semibold text-slate-800">Solo esta sucursal</span>
+                  <span className="block text-xs text-slate-500 mt-0.5">Se crea únicamente en la sucursal en la que estás.</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCrearEnAmbas(true)}
+                  className={`text-left rounded-lg border px-4 py-3 transition-colors ${
+                    crearEnAmbas ? "border-[#0EA5E9] bg-sky-50 ring-1 ring-[#0EA5E9]" : "border-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  <span className="block text-sm font-semibold text-slate-800">En ambas sucursales</span>
+                  <span className="block text-xs text-slate-500 mt-0.5">
+                    Se crea en {sucursales.map((s) => s.nombre).join(" y ")} (la otra arranca con stock 0).
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Acciones */}
           <div className="flex gap-4 pt-2">

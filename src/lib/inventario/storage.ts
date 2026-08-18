@@ -190,9 +190,11 @@ export type NuevoProductoData = Omit<Producto, "id">;
  * se hace server-side dentro del mismo handler.
  */
 export async function saveProducto(
-  datos: NuevoProductoData
+  datos: NuevoProductoData,
+  opts?: { crearEnAmbas?: boolean }
 ): Promise<Producto | null> {
   const body = {
+    crear_en_ambas: opts?.crearEnAmbas === true,
     nombre: datos.nombre,
     sku: datos.sku,
     costo_promedio: datos.costo_promedio,

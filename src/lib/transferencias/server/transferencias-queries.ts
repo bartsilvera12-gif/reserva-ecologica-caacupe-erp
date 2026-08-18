@@ -252,7 +252,7 @@ export async function buscarProductosDeSucursal(params: {
       WHERE empresa_id = $1::uuid AND sucursal_id = $2::uuid
         AND activo = true AND es_insumo IS NOT TRUE AND es_vendible IS NOT FALSE
         AND ($3 = '' OR nombre ILIKE $4 OR sku ILIKE $4 OR codigo_barras ILIKE $4)
-      ORDER BY nombre LIMIT 30`,
+      ORDER BY nombre LIMIT 500`,
     [params.empresaId, params.sucursalId, q, like]
   );
   return rows.map((r) => ({ id: r.id, sku: r.sku, nombre: r.nombre, stock_actual: n(r.stock_actual) }));
