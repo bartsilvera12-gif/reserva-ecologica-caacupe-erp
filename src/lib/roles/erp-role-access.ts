@@ -25,6 +25,9 @@ export const SLUGS_PERMITIDOS_ROL_USUARIO_LIMITADO: ReadonlySet<string> = new Se
   "presupuestos",
   // Alta y consulta de clientes.
   "clientes",
+  // Reposición / transferencia de mercadería entre sucursales: tarea operativa
+  // de un cajero/repositor. Solo se muestra si además tiene el módulo asignado.
+  "reposicion",
   // Recetario: TODOS los roles pueden FABRICAR desde una receta. La edición del
   // recetario (crear/editar/eliminar) queda restringida a admin/supervisor —
   // ver `puedeEditarRecetas` y los guards de /api/recetas/*.
