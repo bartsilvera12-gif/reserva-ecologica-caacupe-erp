@@ -245,11 +245,17 @@ export async function GET(
           const productoIds = Array.from(
             new Set(items.map((it) => it.producto_id).filter((v): v is string => !!v))
           );
-          const codigoByProdId = new Map<string, string>();
+          // Match por NOMBRE del producto (= descripción del ítem en el XML), NO
+          // por posición. El match posicional se desalineaba cuando ventas_items
+          // se insertaba en batch (todos con el mismo created_at → `ORDER BY
+          // created_at` no determinístico ≠ orden del XML), y el código de barras
+          // terminaba pegado al producto de al lado.
+          const norm = (s: string) => s.trim().toUpperCase().replace(/\s+/g, " ");
+          const codigoByNombre = new Map<string, string | null>();
           if (productoIds.length > 0) {
             const { data: prods, error: errProds } = await supabase
               .from("productos")
-              .select("id, codigo_barras")
+              .select("id, nombre, codigo_barras")
               .eq("empresa_id", auth.empresa_id)
               .in("id", productoIds);
             if (errProds) {
@@ -257,18 +263,22 @@ export async function GET(
                 message: errProds.message,
               });
             } else {
-              for (const p of (prods ?? []) as Array<{ id: string; codigo_barras?: string | null }>) {
-                const cb = (p.codigo_barras ?? "").trim();
-                if (cb) codigoByProdId.set(p.id, cb);
+              for (const p of (prods ?? []) as Array<{ id: string; nombre?: string | null; codigo_barras?: string | null }>) {
+                const nombre = norm(String(p.nombre ?? ""));
+                if (!nombre) continue;
+                const cb = (p.codigo_barras ?? "").trim() || null;
+                // Nombre ambiguo (dos productos, códigos distintos): no arriesgar
+                // un código equivocado → se deja null (no se muestra código).
+                if (codigoByNombre.has(nombre) && codigoByNombre.get(nombre) !== cb) {
+                  codigoByNombre.set(nombre, null);
+                } else {
+                  codigoByNombre.set(nombre, cb);
+                }
               }
             }
           }
-          // Match posicional con parsed.items (mismo orden que emisión).
-          codigosBarrasPorItem = parsed.items.map((_it, idx) => {
-            const vi = items[idx];
-            if (!vi?.producto_id) return null;
-            return codigoByProdId.get(vi.producto_id) ?? null;
-          });
+          // La descripción del ítem del XML (dDesProSer) es el nombre del producto.
+          codigosBarrasPorItem = parsed.items.map((it) => codigoByNombre.get(norm(String(it.descripcion ?? ""))) ?? null);
         }
       }
     } catch (e) {
