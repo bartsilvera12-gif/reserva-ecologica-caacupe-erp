@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { successResponse } from "@/lib/api/response";
 import { resolverCtx, respError, respProhibido, cargarLado } from "../../_ctx";
 import { recibirTransferencia } from "@/lib/transferencias/server/transferencias-pg";
-import { esRolAprobador, esDestino } from "@/lib/transferencias/permisos";
+import { puedeRecibirTransferencia, esDestino } from "@/lib/transferencias/permisos";
 
 /** POST /api/transferencias/[id]/recibir — admin/supervisor de la sucursal DESTINO. */
 export async function POST(request: NextRequest, ctxParams: { params: Promise<{ id: string }> }) {
@@ -10,7 +10,7 @@ export async function POST(request: NextRequest, ctxParams: { params: Promise<{ 
   if (!r.ok) return r.response;
   try {
     const { id } = await ctxParams.params;
-    if (!esRolAprobador(r.ctx.rol)) return respProhibido("Requiere rol administrador o supervisor.");
+    if (!puedeRecibirTransferencia(r.ctx.rol)) return respProhibido("No tenés permiso para confirmar recepciones.");
 
     const lado = await cargarLado(r.ctx.schema, r.ctx.empresaId, id);
     if (!lado) return respProhibido("Transferencia no encontrada.");

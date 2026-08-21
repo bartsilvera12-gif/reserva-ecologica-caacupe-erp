@@ -48,9 +48,11 @@ export default function RecepcionDetallePage({ params }: { params: Promise<{ id:
   const [confirmando, setConfirmando] = useState(false);
   const [ok, setOk] = useState(false);
 
-  const esAprobador = useMemo(() => {
+  // Confirmar recepción: admin/supervisor + el rol operativo "usuario"
+  // (cajero/repositor de la sucursal destino). Mismo criterio que el backend.
+  const puedeRecibir = useMemo(() => {
     const r = rol.trim().toLowerCase();
-    return r === "admin" || r === "administrador" || r === "supervisor" || r === "super_admin";
+    return r === "admin" || r === "administrador" || r === "supervisor" || r === "super_admin" || r === "usuario";
   }, [rol]);
 
   const cargar = useCallback(async () => {
@@ -309,8 +311,8 @@ export default function RecepcionDetallePage({ params }: { params: Promise<{ id:
               )}
             </div>
             <div className="flex items-center gap-3">
-              {!esAprobador && <span className="text-xs text-slate-400">Solo admin/supervisor confirma.</span>}
-              <button onClick={confirmar} disabled={confirmando || ok || !esAprobador}
+              {!puedeRecibir && <span className="text-xs text-slate-400">No tenés permiso para confirmar recepciones.</span>}
+              <button onClick={confirmar} disabled={confirmando || ok || !puedeRecibir}
                 className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-emerald-600/20 transition-all hover:bg-emerald-700 hover:shadow-md active:scale-95 disabled:opacity-50">
                 {confirmando ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
                 Confirmar recepción

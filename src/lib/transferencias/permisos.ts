@@ -13,6 +13,17 @@ export function esRolAprobador(rol: string | null | undefined): boolean {
   return r === "admin" || r === "administrador" || r === "supervisor" || r === "super_admin";
 }
 
+/**
+ * Confirmar la RECEPCIÓN en la sucursal destino. Además del rol aprobador
+ * (admin/supervisor), lo puede hacer el rol operativo `usuario` (cajero/
+ * repositor de la sucursal que recibe la mercadería). La ruta/UI ya restringen
+ * la acción a la sucursal destino, así que no expone nada de otras sucursales.
+ */
+export function puedeRecibirTransferencia(rol: string | null | undefined): boolean {
+  if (esRolAprobador(rol)) return true;
+  return (rol ?? "").trim().toLowerCase() === "usuario";
+}
+
 export type LadoTransferencia = {
   estado: string;
   sucursal_origen_id: string;
