@@ -252,7 +252,9 @@ export async function POST(
           factura_id: fid,
           motivo,
           cancelado_en: canceladoEn,
-          resultado: "registrado_set",
+          // 4003 → el CDC ya tenía el evento en la SET (reintento / doble clic):
+          // el documento está cancelado igual, pero no se registró nada nuevo.
+          resultado: resp.yaEstabaCancelado ? "ya_cancelado_set" : "registrado_set",
           dCodRes: resp.dCodRes,
           dMsgRes: resp.dMsgRes,
           response_soap: resp.cuerpoSoapCrudo,

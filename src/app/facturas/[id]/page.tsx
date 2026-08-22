@@ -35,6 +35,7 @@ type SifenResumen = {
   factura_electronica: FacturaElectronicaDTO | null;
   cancelacion: SifenCancelacionPreviewDTO | null;
   sifen_job: SifenJobDTO | null;
+  cancelacion_confirmada_set?: boolean;
 };
 
 function formatFecha(str: string) {

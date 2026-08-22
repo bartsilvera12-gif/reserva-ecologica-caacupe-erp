@@ -23,6 +23,8 @@ type Resumen = {
   cancelacion: SifenCancelacionPreviewDTO | null;
   /** Fase 2: último Job de la cola async para este DE. */
   sifen_job: SifenJobDTO | null;
+  /** La SET confirmó la cancelación (evento 0600, o 4003 "ya tenía el evento"). */
+  cancelacion_confirmada_set?: boolean;
 };
 
 /**
@@ -1023,23 +1025,36 @@ export function FacturaElectronicaPanel({
                     ) : null}
                   </p>
                 )}
-                {/* Reconciliación con SET: para facturas canceladas en el ERP pero
-                    aún ACTIVAS en Marangatú (la cancelación era solo local). */}
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                  <p className="text-[11px] text-amber-900">
-                    ¿Sigue <span className="font-semibold">activa en Marangatú</span>? Reenviá la cancelación a la SET.
-                    Solo funciona dentro de las 48&nbsp;h de la aprobación; pasado ese plazo hay que anular con Nota de
-                    Crédito.
-                  </p>
-                  <button
-                    type="button"
-                    disabled={action !== null}
-                    onClick={() => void ejecutarReintentoSet()}
-                    className="mt-2 px-3 py-1.5 text-[11px] font-semibold rounded-md bg-amber-700 text-white hover:bg-amber-800 disabled:opacity-40"
-                  >
-                    {action === "cancelar-de" ? "Enviando a la SET…" : "Reintentar cancelación en SET"}
-                  </button>
-                </div>
+                {/* Si la SET ya confirmó la cancelación (0600 / 4003) no hay nada
+                    que reintentar: se muestra la confirmación en vez del aviso. */}
+                {resumen.cancelacion_confirmada_set ? (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                    <p className="text-[11px] font-semibold text-emerald-900">
+                      Cancelación confirmada por la SET
+                    </p>
+                    <p className="text-[11px] text-emerald-800 mt-0.5">
+                      El documento figura anulado también en Marangatú. No hace falta ninguna acción adicional.
+                    </p>
+                  </div>
+                ) : (
+                  /* Reconciliación con SET: para facturas canceladas en el ERP pero
+                     aún ACTIVAS en Marangatú (la cancelación era solo local). */
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                    <p className="text-[11px] text-amber-900">
+                      ¿Sigue <span className="font-semibold">activa en Marangatú</span>? Reenviá la cancelación a la SET.
+                      Solo funciona dentro de las 48&nbsp;h de la aprobación; pasado ese plazo hay que anular con Nota de
+                      Crédito.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={action !== null}
+                      onClick={() => void ejecutarReintentoSet()}
+                      className="mt-2 px-3 py-1.5 text-[11px] font-semibold rounded-md bg-amber-700 text-white hover:bg-amber-800 disabled:opacity-40"
+                    >
+                      {action === "cancelar-de" ? "Enviando a la SET…" : "Reintentar cancelación en SET"}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
             {fe && estado === "aprobado" && (

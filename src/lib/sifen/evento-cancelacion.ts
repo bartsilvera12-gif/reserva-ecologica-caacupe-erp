@@ -179,8 +179,11 @@ export type EventoCancelacionRespuesta = {
   dCodRes: string | null;
   dMsgRes: string | null;
   dFecProc: string | null;
-  /** true solo si la SET registró efectivamente la cancelación. */
+  /** true si el documento queda cancelado en la SET (registrado ahora o ya lo estaba). */
   cancelado: boolean;
+  /** true cuando la SET responde que el CDC YA tenía el evento (4003): no se registró
+   *  nada nuevo, pero el documento está cancelado igual. */
+  yaEstabaCancelado: boolean;
   soapFault: boolean;
   cuerpoSoapCrudo: string;
   /** SOAP enviado a la SET (diagnóstico ante rechazos como "XML mal formado"). */
@@ -189,6 +192,13 @@ export type EventoCancelacionRespuesta = {
 
 /** La SET responde 0600 cuando el evento de cancelación queda registrado. */
 const COD_EVENTO_REGISTRADO = "0600";
+/**
+ * 4003 = "CDC ya se encuentra con el mismo evento solicitado": el documento YA está
+ * cancelado en la SET (típico al reintentar / doble clic). Es un resultado de ÉXITO
+ * idempotente, no un rechazo: tratarlo como error confundía al operador ("parece que
+ * no se canceló") cuando en Marangatú ya figuraba anulado.
+ */
+const COD_EVENTO_YA_REGISTRADO = "4003";
 
 function parsearRespuestaEvento(
   httpStatus: number,
@@ -199,12 +209,14 @@ function parsearRespuestaEvento(
   const dCodRes = extraerTexto(xml, "dCodRes");
   const dMsgRes = extraerTexto(xml, "dMsgRes");
   const dFecProc = extraerTexto(xml, "dFecProc");
+  const yaEstabaCancelado = !soapFault && dCodRes === COD_EVENTO_YA_REGISTRADO;
   return {
     httpStatus,
     dCodRes,
     dMsgRes,
     dFecProc,
-    cancelado: !soapFault && dCodRes === COD_EVENTO_REGISTRADO,
+    cancelado: !soapFault && (dCodRes === COD_EVENTO_REGISTRADO || yaEstabaCancelado),
+    yaEstabaCancelado,
     soapFault,
     cuerpoSoapCrudo: xml,
     requestSoap,
