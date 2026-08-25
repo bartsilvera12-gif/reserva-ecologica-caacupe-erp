@@ -13,6 +13,8 @@ import { decodeXmlNumericEntities } from "@/lib/sifen/decode-xml-entities";
 import { friendlyErrorMsg } from "@/lib/sifen/friendly-error-msg";
 import { SifenEstadoBadge } from "./SifenEstadoBadge";
 import { FacturaCorreccionFiscalNC } from "@/components/facturas/FacturaCorreccionFiscalNC";
+import { useRolErp } from "@/lib/auth/use-rol-erp";
+import { esAdminErp } from "@/lib/roles/erp-role-access";
 
 type Resumen = {
   sifen_config_exists: boolean;
@@ -231,6 +233,11 @@ export function FacturaElectronicaPanel({
     | null
   >(null);
   const [flash, setFlash] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const { rol: rolErp } = useRolErp();
+  const esAdmin = esAdminErp(rolErp);
+  /** Herramienta admin: reimportar el XML aprobado descargado de Marangatú. */
+  const [reimportando, setReimportando] = useState(false);
+  const reimportFileRef = useRef<HTMLInputElement | null>(null);
   /** true cuando el polling se cortó por timeout (90s sin cambios). Fase 3.1. */
   const [pollingCortadoPorTimeout, setPollingCortadoPorTimeout] = useState(false);
   const [cancelModal, setCancelModal] = useState<"cancelar" | "reemitir" | null>(null);
@@ -321,6 +328,41 @@ export function FacturaElectronicaPanel({
       setFlash({ kind: "err", text: e instanceof Error ? e.message : "Error de red" });
     } finally {
       setAction(null);
+    }
+  };
+
+  /**
+   * Reimporta el XML firmado APROBADO (descargado de Marangatú) para una factura
+   * que quedó con un CDC rechazado en el ERP. Corrige el CDC y repone el XML, así
+   * la Nota de Crédito referencia el documento correcto y deja de fallar con "CDC
+   * inexistente". No re-firma ni reenvía nada.
+   */
+  const reimportarFirmado = async (file: File) => {
+    setFlash(null);
+    setReimportando(true);
+    try {
+      const xml = await file.text();
+      const res = await fetchWithSupabaseSession(`/api/facturas/${facturaId}/sifen/reimportar-firmado`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ xml }),
+      });
+      const j = (await res.json()) as { success?: boolean; error?: string; data?: { cdc?: string } };
+      if (!res.ok || !j.success) {
+        setFlash({ kind: "err", text: j.error ?? `Error ${res.status}` });
+        return;
+      }
+      setFlash({
+        kind: "ok",
+        text: `Documento aprobado reimportado. CDC corregido (${j.data?.cdc ?? ""}). Ya podés emitir la Nota de Crédito.`,
+      });
+      await refresh();
+      await onComercialUpdated?.();
+    } catch (e) {
+      setFlash({ kind: "err", text: e instanceof Error ? e.message : "Error de red" });
+    } finally {
+      setReimportando(false);
+      if (reimportFileRef.current) reimportFileRef.current.value = "";
     }
   };
 
@@ -940,6 +982,41 @@ export function FacturaElectronicaPanel({
                   </button>
                 ) : null}
               </div>
+
+              {esAdmin && fe ? (
+                <details className="group rounded-lg border border-dashed border-slate-300 bg-slate-50/70">
+                  <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-slate-600 select-none list-none flex items-center gap-2 [&::-webkit-details-marker]:hidden">
+                    <span className="text-slate-400 transition-transform group-open:rotate-90 inline-block">▸</span>
+                    Recuperar documento aprobado (SET)
+                  </summary>
+                  <div className="px-3 pb-3 pt-1 space-y-2 border-t border-slate-200/80">
+                    <p className="text-[11px] text-slate-600 leading-snug">
+                      Usá esto si la factura está <span className="font-semibold">aprobada en Marangatú</span> pero el
+                      sistema quedó con un CDC rechazado (la Nota de Crédito falla con &quot;CDC inexistente&quot;).
+                      Descargá el XML del comprobante desde Marangatú y subilo acá: se corrige el CDC y la NC vuelve a
+                      funcionar. No re-firma ni reenvía nada.
+                    </p>
+                    <input
+                      ref={reimportFileRef}
+                      type="file"
+                      accept=".xml,text/xml,application/xml"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void reimportarFirmado(f);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={reimportando}
+                      onClick={() => reimportFileRef.current?.click()}
+                      className="px-3 py-1.5 text-[11px] font-semibold rounded-md border border-slate-300 bg-white text-slate-800 hover:bg-slate-50 disabled:opacity-40"
+                    >
+                      {reimportando ? "Subiendo…" : "Subir XML aprobado de Marangatú"}
+                    </button>
+                  </div>
+                </details>
+              ) : null}
 
               {debugUi ? (
                 <details className="group rounded-lg border border-dashed border-amber-200 bg-amber-50/30">
