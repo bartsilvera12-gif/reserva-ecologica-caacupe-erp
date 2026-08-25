@@ -93,14 +93,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       });
     }
 
-    // RUC del emisor debe ser el de la empresa.
+    // RUC del emisor debe ser el de la empresa. La config guarda el RUC con
+    // dígito verificador ("80131562-0"); el XML trae el RUC base (dRucEm, sin
+    // DV) y el DV aparte (dDVEmi). Comparamos solo el RUC base para no rechazar
+    // por el DV.
     const { data: cfg } = await supabase
       .from("empresa_sifen_config")
       .select("ruc")
       .eq("empresa_id", auth.empresa_id)
       .maybeSingle();
-    const rucCfg = String((cfg as { ruc?: string } | null)?.ruc ?? "").replace(/\D/g, "");
-    const rucXml = String(orig.emisor.dRucEm ?? "").replace(/\D/g, "");
+    const rucBase = (v: unknown) => String(v ?? "").split("-")[0].replace(/\D/g, "");
+    const rucCfg = rucBase((cfg as { ruc?: string } | null)?.ruc);
+    const rucXml = rucBase(orig.emisor.dRucEm);
     if (rucCfg && rucXml && rucCfg !== rucXml) {
       return NextResponse.json(
         errorResponse(`El XML es de otro RUC emisor (${rucXml}); no corresponde a esta empresa.`),
