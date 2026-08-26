@@ -1,6 +1,7 @@
 import { montoEnLetras } from "@/lib/recibos/numero-a-letras";
 import { NextRequest, NextResponse } from "next/server";
-import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
+import { getTenantSupabaseFromAuthWithRol } from "@/lib/supabase/tenant-api";
+import { esAdminErp } from "@/lib/roles/erp-role-access";
 import { EMPRESA_DOC } from "@/lib/documentos/membrete";
 import { getMarcaSucursal } from "@/lib/documentos/marca-sucursal";
 import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema";
@@ -62,8 +63,9 @@ const METODO_LBL: Record<string, string> = { efectivo: "Efectivo", transferencia
 export async function GET(request: NextRequest, ctxParams: { params: Promise<{ id: string }> }) {
   const { id } = await ctxParams.params;
   const auto = new URL(request.url).searchParams.get("auto") === "1";
-  const ctx = await getTenantSupabaseFromAuth(request);
+  const ctx = await getTenantSupabaseFromAuthWithRol(request);
   if (!ctx) return new NextResponse("No autorizado", { status: 401 });
+  const puedeAnular = esAdminErp(ctx.auth.rol);
 
   const rq = await ctx.supabase
     .from("recibos_dinero")
@@ -292,13 +294,34 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   .firma .ln{border-top:1.5px solid var(--tinta);padding-top:5px;font-size:10.5px;font-weight:800;color:var(--verde-osc);letter-spacing:.02em}
   .firma .orig{margin-top:4px;font-size:8.5px;color:var(--suave);letter-spacing:.02em}
 
-  .toolbar{position:sticky;top:0;background:#111827;padding:10px;text-align:center}
+  .toolbar{position:sticky;top:0;background:#111827;padding:10px;text-align:center;display:flex;justify-content:center;gap:10px;z-index:10}
   .toolbar button{background:#4FAEB2;color:#fff;border:0;padding:8px 16px;border-radius:6px;font-size:14px;cursor:pointer}
+  .toolbar button.danger{background:#dc2626}
+  .toolbar button.danger:hover{background:#b91c1c}
+  .toolbar button:disabled{opacity:.5;cursor:not-allowed}
+  .toolbar .anulado-tag{background:#fee2e2;color:#7f1d1d;border:1px solid #fecaca;padding:6px 14px;border-radius:6px;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+
+  /* Sello ANULADO cuando r.anulado === true: watermark diagonal en el marco. */
+  .marco{position:relative}
+  .sello-anulado{position:absolute;inset:0;pointer-events:none;display:flex;align-items:center;justify-content:center;z-index:5}
+  .sello-anulado span{font-size:120px;font-weight:900;color:rgba(220,38,38,.28);letter-spacing:.08em;transform:rotate(-24deg);border:8px solid rgba(220,38,38,.4);padding:12px 40px;border-radius:14px}
+  .anulado-motivo{margin-top:6px;text-align:center;font-size:11px;color:#7f1d1d}
+  .anulado-motivo b{font-weight:700}
   @media print{body{background:#fff}.toolbar{display:none}.page{width:auto;min-height:auto;margin:0;padding:10mm}@page{size:A4 landscape;margin:10mm}}
 </style></head><body>
-<div class="toolbar"><button onclick="window.print()">Imprimir / Guardar PDF</button></div>
+<div class="toolbar">
+  <button onclick="window.print()">Imprimir / Guardar PDF</button>
+  ${r.anulado
+    ? `<span class="anulado-tag">⛔ Recibo anulado</span>`
+    : puedeAnular
+      ? `<button class="danger" id="btnAnular" onclick="anularRecibo()">Anular recibo</button>`
+      : ""}
+</div>
 <div class="page">
   <div class="marco">
+    ${r.anulado
+      ? `<div class="sello-anulado"><span>ANULADO</span></div>`
+      : ""}
     <div class="cab">
       <div class="cab-izq">
         <img src="${esc(marcaLogo)}" alt="${esc(EMPRESA_DOC.nombre)}" />
@@ -374,9 +397,70 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
       </div>
     </div>
   </div>
+  ${r.anulado
+    ? `<div class="anulado-motivo">
+        Anulado ${r.anulado_at ? "el " + esc(fechaLarga(r.anulado_at)) : ""}
+        ${r.anulado_by_nombre ? "por <b>" + esc(r.anulado_by_nombre) + "</b>" : ""}
+        ${r.anulado_motivo ? `&mdash; motivo: <b>${esc(r.anulado_motivo)}</b>` : ""}
+      </div>`
+    : ""}
 </div>
 
-<script>try{ if (${auto ? "true" : "false"}) window.print(); }catch(e){}</script>
+<script>
+try{ if (${auto ? "true" : "false"}) window.print(); }catch(e){}
+
+// Anulación de recibo (solo admin: el botón se pinta condicionalmente).
+async function anularRecibo(){
+  const btn = document.getElementById("btnAnular");
+  const motivo = window.prompt("Anular este recibo. Escribí el motivo (mínimo 5 caracteres):", "");
+  if (motivo === null) return; // canceló
+  const m = String(motivo).trim();
+  if (m.length < 5) { alert("El motivo debe tener al menos 5 caracteres."); return; }
+  if (!window.confirm("¿Confirmás anular este recibo? Esta acción no se puede deshacer.")) return;
+
+  if (btn) { btn.disabled = true; btn.textContent = "Anulando…"; }
+
+  // Recuperar el JWT de Supabase (mismo criterio que fetchWithSupabaseSession
+  // usa en el bundle): buscar en localStorage la key sb-<projectRef>-auth-token.
+  let token = null;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("sb-") && k.endsWith("-auth-token")) {
+        const raw = localStorage.getItem(k);
+        if (!raw) continue;
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed.access_token === "string") { token = parsed.access_token; break; }
+        } catch(_) { /* value no-JSON: ignorar */ }
+      }
+    }
+  } catch(_) { /* localStorage bloqueado: intentar sin token */ }
+
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = "Bearer " + token;
+
+  try {
+    const res = await fetch(${JSON.stringify(`/api/recibos-dinero/${id}/anular`)}, {
+      method: "POST",
+      credentials: "include",
+      headers: headers,
+      body: JSON.stringify({ motivo: m }),
+    });
+    const body = await res.json().catch(function(){ return {}; });
+    if (!res.ok || body.success === false) {
+      alert("No se pudo anular: " + (body.error || res.status));
+      if (btn) { btn.disabled = false; btn.textContent = "Anular recibo"; }
+      return;
+    }
+    // Refrescar para mostrar la marca ANULADO.
+    window.location.reload();
+  } catch(e) {
+    alert("Error de red al anular el recibo.");
+    if (btn) { btn.disabled = false; btn.textContent = "Anular recibo"; }
+  }
+}
+</script>
 </body></html>`;
 
   return new NextResponse(html, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
