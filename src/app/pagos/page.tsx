@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Banknote, Loader2 } from "lucide-react";
+import { Banknote, Loader2, Layers } from "lucide-react";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { generarYAbrirRecibo } from "@/lib/recibos/client";
 import { RegistrarCobroModalCxc } from "@/components/cobros/RegistrarCobroModalCxc";
+import { CobrarMultipleModal } from "@/components/cobros/CobrarMultipleModal";
 
 type Cuenta = {
   id: string;
@@ -72,6 +73,12 @@ export default function PagosPage() {
 
   const [cobrando, setCobrando] = useState<Cuenta | null>(null);
   const [reciboBusy, setReciboBusy] = useState<string | null>(null);
+  /** Modal de cobro múltiple. Puede abrirse en blanco (elegir cliente) o con
+   *  cliente preseleccionado desde una fila del listado. */
+  const [multipleOpen, setMultipleOpen] = useState(false);
+  const [multipleClienteInicial, setMultipleClienteInicial] = useState<
+    { id: string; display: string; ruc?: string | null } | null
+  >(null);
 
   const cargar = useCallback(async () => {
     setLoading(true);
@@ -148,8 +155,15 @@ export default function PagosPage() {
             <p className="text-sm text-gray-500">Cuentas por cobrar de ventas a crédito y registro de cobros.</p>
           </div>
         </div>
-        {/* Filtro de fechas */}
+        {/* Acciones + Filtro de fechas */}
         <div className="flex flex-wrap items-end gap-2">
+          <button
+            type="button"
+            onClick={() => { setMultipleClienteInicial(null); setMultipleOpen(true); }}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-[#4FAEB2] px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#3F8E91]"
+          >
+            <Layers className="h-4 w-4" /> Cobro múltiple
+          </button>
           <div>
             <label className="block text-[11px] font-medium text-slate-500 mb-1">Desde</label>
             <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} className={inputClass} />
@@ -235,7 +249,27 @@ export default function PagosPage() {
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right">
-                        <button onClick={() => abrirCobro(c)} className="rounded-lg bg-[#4FAEB2] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#3F8E91]">Registrar pago</button>
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            onClick={() => abrirCobro(c)}
+                            className="rounded-lg bg-[#4FAEB2] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#3F8E91]"
+                          >
+                            Registrar pago
+                          </button>
+                          <button
+                            onClick={() => {
+                              setMultipleClienteInicial({
+                                id: c.cliente_id,
+                                display: c.cliente_nombre,
+                              });
+                              setMultipleOpen(true);
+                            }}
+                            title="Cobrar varias facturas de este cliente"
+                            className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            + varias
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -338,6 +372,18 @@ export default function PagosPage() {
         cuenta={cobrando ? { id: cobrando.id, numero_venta: cobrando.numero_venta, saldo: cobrando.saldo, moneda: cobrando.moneda, cliente_nombre: cobrando.cliente_nombre } : null}
         onClose={() => setCobrando(null)}
         onExito={async () => { setToast("Pago registrado"); setTimeout(() => setToast(null), 2800); await cargar(); }}
+      />
+
+      {/* Modal de cobro múltiple: varias facturas del mismo cliente en un solo movimiento con recibo REC-XXXXXX */}
+      <CobrarMultipleModal
+        open={multipleOpen}
+        clienteInicial={multipleClienteInicial}
+        onClose={() => setMultipleOpen(false)}
+        onExito={async () => {
+          setToast("Cobro múltiple registrado");
+          setTimeout(() => setToast(null), 2800);
+          await cargar();
+        }}
       />
     </div>
   );
