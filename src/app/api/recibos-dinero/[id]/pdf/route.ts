@@ -162,6 +162,26 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   const moneda = String(r.moneda ?? "PYG");
   const metodo = METODO_LBL[String(r.metodo_pago ?? "")] ?? (r.metodo_pago ?? "—");
 
+  // Datos adicionales del receptor para paridad con el KUDE de facturas
+  // (dirección y teléfono). El nombre y documento ya vienen en el snapshot
+  // guardado en `recibos_dinero`; estos dos son opcionales y solo se traen si
+  // existe cliente vinculado en la BD.
+  let clienteDireccion = "";
+  let clienteTelefono = "";
+  if (r.cliente_id) {
+    try {
+      const cq = await ctx.supabase
+        .from("clientes")
+        .select("direccion, telefono, celular")
+        .eq("empresa_id", ctx.auth.empresa_id)
+        .eq("id", String(r.cliente_id))
+        .maybeSingle();
+      const cli = cq.data as { direccion?: string | null; telefono?: string | null; celular?: string | null } | null;
+      clienteDireccion = (cli?.direccion ?? "").trim();
+      clienteTelefono = (cli?.telefono ?? cli?.celular ?? "").trim();
+    } catch { /* opcional, no bloquea impresion */ }
+  }
+
   // En el talonario los documentos cobrados se escriben a mano en la línea
   // "en concepto de" (ej. "Pago de factura # 001-001-0005519 y 001-001-0005565").
   // Se arma igual desde el detalle; si no hay líneas, se cae al concepto guardado.
@@ -226,11 +246,16 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   .cab-der .nro small{font-size:10px;font-weight:600;color:var(--suave)}
   .cab-der .nro b{font-size:19px;font-weight:800;color:var(--verde-osc);font-variant-numeric:tabular-nums;letter-spacing:.02em}
 
-  /* Franja: cliente + fecha */
-  .montofranja{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:12px 26px;background:var(--crema)}
-  .montofranja .recibi{font-size:12px;color:#4b5563}
-  .montofranja .recibi b{color:var(--tinta);font-weight:700}
-  .montofranja .fecha{font-size:10.5px;color:var(--suave);flex:0 0 auto}
+  /* Franja: cliente + fecha (formato paridad con KUDE de facturas) */
+  .montofranja{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:14px 26px;background:var(--crema)}
+  .montofranja .cli{min-width:0;flex:1}
+  .montofranja .cli .tt{text-transform:uppercase;letter-spacing:.08em;font-size:8.5px;color:var(--suave);font-weight:700;margin-bottom:4px}
+  .montofranja .cli .razon{font-size:13.5px;font-weight:700;color:var(--tinta);line-height:1.25}
+  .montofranja .cli .razon .lb{color:var(--suave);font-weight:600;margin-right:4px}
+  .montofranja .cli .meta{margin-top:5px;font-size:10.5px;color:#4b5563;line-height:1.55}
+  .montofranja .cli .meta .lb{color:var(--suave);font-weight:600;margin-right:3px}
+  .montofranja .cli .meta .sep{margin:0 8px;color:#cbd5e1}
+  .montofranja .fecha{font-size:10.5px;color:var(--suave);flex:0 0 auto;text-align:right;padding-top:14px}
 
   /* Monto final: cifra en asteriscos + monto en letras */
   .montofinal{margin-top:20px;border-top:1px solid var(--linea);padding-top:16px}
@@ -291,7 +316,15 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
     </div>
 
     <div class="montofranja">
-      <div class="recibi">Recibimos de: <b>${esc(r.cliente_nombre)}</b>${r.cliente_documento ? ` &nbsp;&middot;&nbsp; R.U.C./C.I.: <b>${esc(r.cliente_documento)}</b>` : ""}</div>
+      <div class="cli">
+        <div class="tt">Recibimos de</div>
+        <div class="razon"><span class="lb">Razón social:</span>${esc(r.cliente_nombre)}</div>
+        <div class="meta">
+          <span class="lb">R.U.C./C.I.:</span>${esc(r.cliente_documento ?? "—")}
+          ${clienteDireccion ? `<span class="sep">·</span><span class="lb">Dirección:</span>${esc(clienteDireccion)}` : ""}
+          ${clienteTelefono ? `<span class="sep">·</span><span class="lb">Tel.:</span>${esc(clienteTelefono)}` : ""}
+        </div>
+      </div>
       <div class="fecha">${esc(fechaLarga(r.fecha))}</div>
     </div>
 
