@@ -286,7 +286,9 @@ export function CobrarMultipleModal({
 
     // La pestaña del PDF se abre AHORA en el gesto del usuario, para que el
     // bloqueador de pop-ups no la mate (mismo patron que generarYAbrirRecibo).
-    const tab = typeof window !== "undefined" ? window.open("", "_blank", "noopener") : null;
+    // Sin 'noopener' — con ese flag Chrome/Firefox devuelven null y perdemos
+    // la referencia para navegarla despues (queda un about:blank huerfano).
+    const tab = typeof window !== "undefined" ? window.open("about:blank", "_blank") : null;
     const cerrarTab = () => { try { tab?.close(); } catch { /* ya cerrada */ } };
 
     setGuardando(true);
@@ -314,7 +316,7 @@ export function CobrarMultipleModal({
       if (tab && !tab.closed && url) {
         tab.location.href = url;
       } else if (url) {
-        try { window.open(url, "_blank", "noopener"); } catch { /* bloqueado */ }
+        try { window.open(url, "_blank"); } catch { /* bloqueado */ }
       }
       await onExito();
       onClose();

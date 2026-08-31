@@ -119,6 +119,12 @@ export async function GET(request: NextRequest) {
     const sp = request.nextUrl.searchParams;
     const incluirEliminados = sp.get("incluir_eliminados") === "1";
     const planActivo = sp.get("plan_activo") === "1";
+    // Busqueda por texto (opcional). Sin `q` conserva el comportamiento
+    // historico de listar todo. Con `q` filtra ilike sobre los mismos
+    // campos que el modal de cobro multiple + estado_cuenta ofrecen.
+    const qRaw = (sp.get("q") ?? "").trim();
+    const limitRaw = parseInt(sp.get("limit") ?? "0", 10);
+    const limitParam = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(200, limitRaw) : 0;
 
     let q = supabase
       .from("clientes")
@@ -128,6 +134,22 @@ export async function GET(request: NextRequest) {
     if (!incluirEliminados) {
       q = q.is("deleted_at", null);
     }
+    if (qRaw.length >= 2) {
+      // Escapar comas y parentesis que rompen el sintax de PostgREST `.or()`.
+      const escaped = qRaw.replace(/[,()]/g, " ").trim();
+      const pat = `%${escaped}%`;
+      q = q.or(
+        [
+          `empresa.ilike.${pat}`,
+          `nombre_contacto.ilike.${pat}`,
+          `nombre.ilike.${pat}`,
+          `nombre_facturacion.ilike.${pat}`,
+          `ruc.ilike.${pat}`,
+          `documento.ilike.${pat}`,
+        ].join(",")
+      );
+    }
+    if (limitParam > 0) q = q.limit(limitParam);
 
     const { data, error } = await q;
 

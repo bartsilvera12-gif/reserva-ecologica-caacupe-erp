@@ -14,7 +14,12 @@ export async function generarYAbrirRecibo(input: GenerarReciboInput): Promise<{ 
   // después del await, el navegador ya no la asocia al clic y el bloqueador de
   // pop-ups la descarta — por eso antes había que apretar el botón dos veces.
   // Se abre en blanco y se le carga el PDF cuando llega el id.
-  const tab = typeof window !== "undefined" ? window.open("", "_blank", "noopener") : null;
+  //
+  // OJO: NO pasar 'noopener' aquí — Chrome/Firefox devuelven `null` con ese
+  // flag y perdemos la referencia a la pestaña, quedando 'about:blank' sin
+  // navegar cuando llega el id. Nuestro endpoint es mismo origen (no hay
+  // riesgo de reverse-tabnabbing), así que el flag es innecesario.
+  const tab = typeof window !== "undefined" ? window.open("about:blank", "_blank") : null;
   const cerrarTab = () => { try { tab?.close(); } catch { /* ya cerrada */ } };
   try {
     const res = await fetchWithSupabaseSession("/api/recibos-dinero", {
@@ -34,7 +39,7 @@ export async function generarYAbrirRecibo(input: GenerarReciboInput): Promise<{ 
     } else {
       // El bloqueador impidió la pestaña: se intenta igual (algunos navegadores
       // la permiten) y si no, al menos el recibo quedó creado.
-      try { window.open(url, "_blank", "noopener"); } catch { /* bloqueado */ }
+      try { window.open(url, "_blank"); } catch { /* bloqueado */ }
     }
     return { ok: true };
   } catch {
