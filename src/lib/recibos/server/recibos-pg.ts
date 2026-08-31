@@ -48,14 +48,16 @@ async function nombreYDoc(
   if (!clienteId) return { nombre: "Consumidor final", documento: null };
   const { data } = await sb
     .from("clientes")
-    .select("empresa, nombre_contacto, nombre, ruc, documento")
+    .select("empresa, nombre_contacto, nombre, nombre_facturacion, ruc, documento")
     .eq("empresa_id", empresaId)
     .eq("id", clienteId)
     .maybeSingle();
   const c = (data ?? {}) as unknown as Record<string, unknown>;
   const s = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  // Prioridad = misma que la factura (ver /api/ventas/[id]/ticket): el override
+  // explícito `nombre_facturacion` gana, sino cae a empresa / contacto / nombre.
   return {
-    nombre: s(c.empresa) || s(c.nombre_contacto) || s(c.nombre) || "Cliente",
+    nombre: s(c.nombre_facturacion) || s(c.empresa) || s(c.nombre_contacto) || s(c.nombre) || "Cliente",
     documento: s(c.ruc) || s(c.documento) || null,
   };
 }

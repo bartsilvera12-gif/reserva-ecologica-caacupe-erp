@@ -165,22 +165,40 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   const metodo = METODO_LBL[String(r.metodo_pago ?? "")] ?? (r.metodo_pago ?? "—");
 
   // Datos adicionales del receptor para paridad con el KUDE de facturas
-  // (dirección y teléfono). El nombre y documento ya vienen en el snapshot
-  // guardado en `recibos_dinero`; estos dos son opcionales y solo se traen si
-  // existe cliente vinculado en la BD.
+  // (dirección y teléfono), y override del nombre con `nombre_facturacion`
+  // cuando existe — misma prioridad que la factura: el operador puede haber
+  // guardado un "Nombre para facturación" distinto de la razón social corta
+  // (ej. "CARNI SHOP" vs "CARNI SHOP S.R.L."). Para recibos VIEJOS con
+  // snapshot desactualizado esto los re-imprime con el nombre fiscal correcto.
   let clienteDireccion = "";
   let clienteTelefono = "";
+  let clienteNombreFinal = String(r.cliente_nombre ?? "");
   if (r.cliente_id) {
     try {
       const cq = await ctx.supabase
         .from("clientes")
-        .select("direccion, telefono, celular")
+        .select("empresa, nombre_contacto, nombre, nombre_facturacion, direccion, telefono, celular")
         .eq("empresa_id", ctx.auth.empresa_id)
         .eq("id", String(r.cliente_id))
         .maybeSingle();
-      const cli = cq.data as { direccion?: string | null; telefono?: string | null; celular?: string | null } | null;
+      const cli = cq.data as {
+        empresa?: string | null;
+        nombre_contacto?: string | null;
+        nombre?: string | null;
+        nombre_facturacion?: string | null;
+        direccion?: string | null;
+        telefono?: string | null;
+        celular?: string | null;
+      } | null;
       clienteDireccion = (cli?.direccion ?? "").trim();
       clienteTelefono = (cli?.telefono ?? cli?.celular ?? "").trim();
+      const s = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+      const preferido =
+        s(cli?.nombre_facturacion) ||
+        s(cli?.empresa) ||
+        s(cli?.nombre_contacto) ||
+        s(cli?.nombre);
+      if (preferido) clienteNombreFinal = preferido;
     } catch { /* opcional, no bloquea impresion */ }
   }
 
@@ -341,7 +359,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
     <div class="montofranja">
       <div class="cli">
         <div class="tt">Recibimos de</div>
-        <div class="razon"><span class="lb">Razón social:</span>${esc(r.cliente_nombre)}</div>
+        <div class="razon"><span class="lb">Razón social:</span>${esc(clienteNombreFinal)}</div>
         <div class="meta">
           <span class="lb">R.U.C./C.I.:</span>${esc(r.cliente_documento ?? "—")}
           ${clienteDireccion ? `<span class="sep">·</span><span class="lb">Dirección:</span>${esc(clienteDireccion)}` : ""}
