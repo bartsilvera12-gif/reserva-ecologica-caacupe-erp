@@ -181,57 +181,79 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   let clienteDireccion = "";
   let clienteTelefono = "";
   let clienteNombreFinal = String(r.cliente_nombre ?? "");
-  if (r.cliente_id && schemaForClienteLookup) {
-    // Lookup con SQL crudo via PG pool. Antes se usaba ctx.supabase (PostgREST),
-    // pero el shim de tipos puede no exponer `nombre_facturacion` en algunos
-    // schemas tenant → la columna llegaba undefined y se caia al snapshot viejo.
-    // Con PG directo hablamos con la tabla real de reservacaacupe, sin RLS
-    // en el medio.
+  // Fuente que resolvio el nombre (para debug visible en el HTML si algo va mal):
+  //   "snapshot"     -> quedo el guardado en recibos_dinero.cliente_nombre
+  //   "supabase"     -> vino del cliente PostgREST (ctx.supabase)
+  //   "pg_pool"      -> vino del pool PG directo
+  //   "sin_cliente"  -> el recibo no tiene cliente_id
+  let clienteLookupSource: "snapshot" | "supabase" | "pg_pool" | "sin_cliente" = "sin_cliente";
+  if (r.cliente_id) {
+    clienteLookupSource = "snapshot";
+    const s = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+    const aplicarCli = (cli: Record<string, unknown> | null | undefined): boolean => {
+      if (!cli) return false;
+      const dir = s(cli.direccion);
+      const tel = s(cli.telefono) || s(cli.celular);
+      if (dir) clienteDireccion = dir;
+      if (tel) clienteTelefono = tel;
+      const preferido =
+        s(cli.nombre_facturacion) ||
+        s(cli.empresa) ||
+        s(cli.nombre_contacto) ||
+        s(cli.nombre);
+      if (preferido) clienteNombreFinal = preferido;
+      return !!s(cli.nombre_facturacion);
+    };
+
+    // 1) Intento primario: Supabase PostgREST con select("*") para eludir el
+    //    shim de tipos que podria estar filtrando nombre_facturacion.
+    let supabaseTrajoNombreFact = false;
     try {
-      const p = getChatPostgresPool();
-      if (p) {
-        const tCli = quoteSchemaTable(schemaForClienteLookup, "clientes");
-        const { rows } = await p.query<{
-          empresa: string | null;
-          nombre_contacto: string | null;
-          nombre: string | null;
-          nombre_facturacion: string | null;
-          direccion: string | null;
-          telefono: string | null;
-          celular: string | null;
-        }>(
-          `SELECT empresa, nombre_contacto, nombre, nombre_facturacion,
-                  direccion, telefono, celular
-             FROM ${tCli}
-            WHERE id = $1::uuid AND empresa_id = $2::uuid`,
-          [String(r.cliente_id), ctx.auth.empresa_id]
-        );
-        const cli = rows[0];
-        if (cli) {
-          clienteDireccion = (cli.direccion ?? "").trim();
-          clienteTelefono = (cli.telefono ?? cli.celular ?? "").trim();
-          const s = (v: unknown) => (typeof v === "string" ? v.trim() : "");
-          const preferido =
-            s(cli.nombre_facturacion) ||
-            s(cli.empresa) ||
-            s(cli.nombre_contacto) ||
-            s(cli.nombre);
-          if (preferido) clienteNombreFinal = preferido;
-        } else {
-          console.warn("[recibos-pdf] cliente no encontrado en PG lookup", {
-            cliente_id: r.cliente_id,
-            empresa_id: ctx.auth.empresa_id,
-          });
-        }
-      } else {
-        console.warn("[recibos-pdf] PG pool no disponible, se usa snapshot");
+      const cq = await ctx.supabase
+        .from("clientes")
+        .select("*")
+        .eq("empresa_id", ctx.auth.empresa_id)
+        .eq("id", String(r.cliente_id))
+        .maybeSingle();
+      if (cq.data) {
+        supabaseTrajoNombreFact = aplicarCli(cq.data as unknown as Record<string, unknown>);
+        clienteLookupSource = "supabase";
+      } else if (cq.error) {
+        console.warn("[recibos-pdf] supabase select fallo", { error: cq.error.message });
       }
     } catch (e) {
-      console.warn("[recibos-pdf] lookup cliente fallo, se usa snapshot", {
+      console.warn("[recibos-pdf] supabase select excepcion", {
         error: e instanceof Error ? e.message : String(e),
-        cliente_id: r.cliente_id,
       });
     }
+
+    // 2) Fallback PG pool: SOLO si Supabase no trajo nombre_facturacion.
+    //    Cubre el caso donde el shim de tipos filtra la columna, o donde el
+    //    cliente PostgREST rechaza el select() por RLS/schema.
+    if (!supabaseTrajoNombreFact && schemaForClienteLookup) {
+      try {
+        const p = getChatPostgresPool();
+        if (p) {
+          const tCli = quoteSchemaTable(schemaForClienteLookup, "clientes");
+          const { rows } = await p.query<Record<string, unknown>>(
+            `SELECT * FROM ${tCli} WHERE id = $1::uuid AND empresa_id = $2::uuid`,
+            [String(r.cliente_id), ctx.auth.empresa_id]
+          );
+          if (rows[0]) {
+            const trajoNombreFact = aplicarCli(rows[0]);
+            if (trajoNombreFact) clienteLookupSource = "pg_pool";
+          }
+        } else {
+          console.warn("[recibos-pdf] PG pool no disponible (falta SUPABASE_DB_PASSWORD?)");
+        }
+      } catch (e) {
+        console.warn("[recibos-pdf] pg pool select fallo", {
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+
+    console.log("[recibos-pdf] lookup source", { source: clienteLookupSource, nombre: clienteNombreFinal });
   }
 
   // En el talonario los documentos cobrados se escriben a mano en la línea
