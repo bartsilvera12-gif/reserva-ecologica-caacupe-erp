@@ -2,6 +2,7 @@ import { montoEnLetras } from "@/lib/recibos/numero-a-letras";
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuthWithRol } from "@/lib/supabase/tenant-api";
 import { esAdminErp } from "@/lib/roles/erp-role-access";
+import { getChatPostgresPool, quoteSchemaTable } from "@/lib/supabase/chat-pg-pool";
 import { EMPRESA_DOC } from "@/lib/documentos/membrete";
 import { getMarcaSucursal } from "@/lib/documentos/marca-sucursal";
 import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema";
@@ -76,18 +77,25 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   if (rq.error || !rq.data) return new NextResponse("Recibo no encontrado", { status: 404 });
   const r = rq.data as Record<string, unknown>;
 
+  // Schema data del tenant (reservacaacupe). Reutilizado por el membrete de
+  // sucursal y por el lookup de cliente para nombre_facturacion.
+  let schemaForClienteLookup = "";
+  try { schemaForClienteLookup = await fetchDataSchemaForEmpresaId(ctx.auth.empresa_id); }
+  catch { /* deja vacio; el lookup se saltea */ }
+
   // Membrete por sucursal (logo/teléfono/dirección de Reserva Market; Matriz cae
   // al membrete por defecto).
   let marcaLogo = EMPRESA_DOC.logoUrl;
   let marcaTel = EMPRESA_DOC.telefono;
   let marcaDir = EMPRESA_DOC.direccion;
   try {
-    const schema = await fetchDataSchemaForEmpresaId(ctx.auth.empresa_id);
-    const m = await getMarcaSucursal(schema, ctx.auth.empresa_id, r.sucursal_id ? String(r.sucursal_id) : ctx.auth.sucursal_id ?? null);
-    if (m) {
-      if (m.logoUrl) marcaLogo = m.logoUrl;
-      if (m.telefono) marcaTel = m.telefono;
-      if (m.direccion && m.direccion.length) marcaDir = m.direccion;
+    if (schemaForClienteLookup) {
+      const m = await getMarcaSucursal(schemaForClienteLookup, ctx.auth.empresa_id, r.sucursal_id ? String(r.sucursal_id) : ctx.auth.sucursal_id ?? null);
+      if (m) {
+        if (m.logoUrl) marcaLogo = m.logoUrl;
+        if (m.telefono) marcaTel = m.telefono;
+        if (m.direccion && m.direccion.length) marcaDir = m.direccion;
+      }
     }
   } catch { /* usa defaults */ }
 
@@ -173,33 +181,57 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   let clienteDireccion = "";
   let clienteTelefono = "";
   let clienteNombreFinal = String(r.cliente_nombre ?? "");
-  if (r.cliente_id) {
+  if (r.cliente_id && schemaForClienteLookup) {
+    // Lookup con SQL crudo via PG pool. Antes se usaba ctx.supabase (PostgREST),
+    // pero el shim de tipos puede no exponer `nombre_facturacion` en algunos
+    // schemas tenant → la columna llegaba undefined y se caia al snapshot viejo.
+    // Con PG directo hablamos con la tabla real de reservacaacupe, sin RLS
+    // en el medio.
     try {
-      const cq = await ctx.supabase
-        .from("clientes")
-        .select("empresa, nombre_contacto, nombre, nombre_facturacion, direccion, telefono, celular")
-        .eq("empresa_id", ctx.auth.empresa_id)
-        .eq("id", String(r.cliente_id))
-        .maybeSingle();
-      const cli = cq.data as {
-        empresa?: string | null;
-        nombre_contacto?: string | null;
-        nombre?: string | null;
-        nombre_facturacion?: string | null;
-        direccion?: string | null;
-        telefono?: string | null;
-        celular?: string | null;
-      } | null;
-      clienteDireccion = (cli?.direccion ?? "").trim();
-      clienteTelefono = (cli?.telefono ?? cli?.celular ?? "").trim();
-      const s = (v: unknown) => (typeof v === "string" ? v.trim() : "");
-      const preferido =
-        s(cli?.nombre_facturacion) ||
-        s(cli?.empresa) ||
-        s(cli?.nombre_contacto) ||
-        s(cli?.nombre);
-      if (preferido) clienteNombreFinal = preferido;
-    } catch { /* opcional, no bloquea impresion */ }
+      const p = getChatPostgresPool();
+      if (p) {
+        const tCli = quoteSchemaTable(schemaForClienteLookup, "clientes");
+        const { rows } = await p.query<{
+          empresa: string | null;
+          nombre_contacto: string | null;
+          nombre: string | null;
+          nombre_facturacion: string | null;
+          direccion: string | null;
+          telefono: string | null;
+          celular: string | null;
+        }>(
+          `SELECT empresa, nombre_contacto, nombre, nombre_facturacion,
+                  direccion, telefono, celular
+             FROM ${tCli}
+            WHERE id = $1::uuid AND empresa_id = $2::uuid`,
+          [String(r.cliente_id), ctx.auth.empresa_id]
+        );
+        const cli = rows[0];
+        if (cli) {
+          clienteDireccion = (cli.direccion ?? "").trim();
+          clienteTelefono = (cli.telefono ?? cli.celular ?? "").trim();
+          const s = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+          const preferido =
+            s(cli.nombre_facturacion) ||
+            s(cli.empresa) ||
+            s(cli.nombre_contacto) ||
+            s(cli.nombre);
+          if (preferido) clienteNombreFinal = preferido;
+        } else {
+          console.warn("[recibos-pdf] cliente no encontrado en PG lookup", {
+            cliente_id: r.cliente_id,
+            empresa_id: ctx.auth.empresa_id,
+          });
+        }
+      } else {
+        console.warn("[recibos-pdf] PG pool no disponible, se usa snapshot");
+      }
+    } catch (e) {
+      console.warn("[recibos-pdf] lookup cliente fallo, se usa snapshot", {
+        error: e instanceof Error ? e.message : String(e),
+        cliente_id: r.cliente_id,
+      });
+    }
   }
 
   // En el talonario los documentos cobrados se escriben a mano en la línea
