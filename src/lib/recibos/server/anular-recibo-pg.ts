@@ -58,6 +58,7 @@ export async function anularRecibo(p: AnularReciboInput): Promise<AnularReciboRe
   const tRI = quoteSchemaTable(schema, "recibos_dinero_items");
   const tCob = quoteSchemaTable(schema, "cobros_clientes");
   const tCxc = quoteSchemaTable(schema, "cuentas_por_cobrar");
+  const tFac = quoteSchemaTable(schema, "facturas");
 
   const motivo = (p.motivo ?? "").trim();
   if (motivo.length < 5) {
@@ -137,6 +138,24 @@ export async function anularRecibo(p: AnularReciboInput): Promise<AnularReciboRe
             WHERE id = $3::uuid`,
           [saldoNuevo, estadoNuevo, cxc.id]
         );
+
+        // Simetria con cobrarConRecibo: al anular devolvemos el monto tambien
+        // a facturas.saldo (acotado a facturas.monto para no sobregirar).
+        // Match por venta_id porque cxc no siempre tiene factura_id.
+        const cxqVenta = await client.query<{ venta_id: string | null }>(
+          `SELECT venta_id FROM ${tCxc} WHERE id = $1::uuid`,
+          [cxc.id]
+        );
+        const ventaIdCxc = cxqVenta.rows[0]?.venta_id ?? null;
+        if (ventaIdCxc) {
+          await client.query(
+            `UPDATE ${tFac}
+                SET saldo = LEAST(monto, saldo + $1::numeric),
+                    updated_at = now()
+              WHERE origen_venta_id = $2::uuid AND empresa_id = $3::uuid`,
+            [monto, ventaIdCxc, p.empresaId]
+          );
+        }
         cuentasRecompuestas += 1;
       }
 

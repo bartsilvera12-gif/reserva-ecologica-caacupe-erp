@@ -194,6 +194,21 @@ export async function cobrarConRecibo(
         }
       }
 
+      // 2b) Sincronizar `facturas.saldo` con el cobro.
+      // Historicamente cobrarConRecibo tocaba solo cuentas_por_cobrar, y la NC
+      // (RPC nota_credito_aplicar_aprobacion_set) tocaba solo facturas.saldo.
+      // Con las dos vias sin cross-update, las tablas divergian. Ahora cada cobro
+      // reduce tambien facturas.saldo (acotado a 0, no puede sobregirar).
+      if (facturaId) {
+        await client.query(
+          `UPDATE ${tFac}
+              SET saldo = GREATEST(0::numeric, saldo - $1::numeric),
+                  updated_at = now()
+            WHERE id = $2::uuid AND empresa_id = $3::uuid`,
+          [importe, facturaId, p.empresaId]
+        );
+      }
+
       total = round2(total + importe);
       items.push({
         cxcId: cxc.id, cobroId, facturaId, numeroDoc,
