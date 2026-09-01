@@ -60,6 +60,16 @@ function fmtFecha(iso: string | null): string {
 function round2(n: number): number {
   return Math.round((Number(n) || 0) * 100) / 100;
 }
+/** Formatea un string numerico como '3.445.500' (miles con punto, sin decimales). */
+function fmtMiles(v: string): string {
+  const soloDigitos = String(v ?? "").replace(/\D/g, "");
+  if (!soloDigitos) return "";
+  return soloDigitos.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+}
+/** Extrae solo digitos del input (permite escribir con o sin puntos). */
+function stripMiles(v: string): string {
+  return String(v ?? "").replace(/\D/g, "");
+}
 
 export function CobrarMultipleModal({
   open,
@@ -464,13 +474,12 @@ export function CobrarMultipleModal({
                             <td className="py-2 px-2 text-right">
                               <div className="inline-flex items-center gap-1">
                                 <input
-                                  type="number"
-                                  min="0"
-                                  step="1"
-                                  value={s.importe}
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={fmtMiles(s.importe)}
                                   disabled={!s.checked}
-                                  onChange={(e) => actualizarSel(c.id, { importe: e.target.value })}
-                                  className="w-28 rounded border border-slate-300 px-2 py-1 text-right text-sm disabled:bg-slate-100 disabled:text-slate-400"
+                                  onChange={(e) => actualizarSel(c.id, { importe: stripMiles(e.target.value) })}
+                                  className="w-32 rounded border border-slate-300 px-2 py-1 text-right text-sm font-mono disabled:bg-slate-100 disabled:text-slate-400"
                                 />
                                 <button
                                   type="button"
