@@ -280,6 +280,36 @@ export function CobrarMultipleModal({
     [ncDisp, ncSel]
   );
 
+  // Sincroniza el importe cobrado (efectivo) de cada CxC con las NCs
+  // aplicadas contra ella. Sin esto, el backend rechaza porque cobro + NC
+  // suman > saldo original. Ejemplo: FAC-000249 saldo 2.192.750, NC aplica
+  // 112.400 → importe cobrado se ajusta a 2.080.350. El operador puede
+  // reeditarlo si quiere despues.
+  useEffect(() => {
+    setSel((prev) => {
+      const next = { ...prev };
+      let mutated = false;
+      for (const c of cuentas) {
+        const sl = next[c.id];
+        if (!sl?.checked) continue;
+        let ncSum = 0;
+        for (const nc of ncDisp) {
+          const ns = ncSel[nc.id];
+          if (ns?.checked && ns.cuenta_por_cobrar_destino_id === c.id) {
+            ncSum += Number(ns.importe) || 0;
+          }
+        }
+        const objetivo = Math.max(0, round2(c.saldo - ncSum));
+        if (String(objetivo) !== sl.importe) {
+          next[c.id] = { ...sl, importe: String(objetivo) };
+          mutated = true;
+        }
+      }
+      return mutated ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ncSel, cuentas, ncDisp]);
+
   if (!open) return null;
 
   const pideBanco = metodo === "transferencia" || metodo === "tarjeta";
