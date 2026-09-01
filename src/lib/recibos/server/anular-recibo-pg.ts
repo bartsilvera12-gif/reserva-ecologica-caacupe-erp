@@ -58,6 +58,8 @@ export async function anularRecibo(p: AnularReciboInput): Promise<AnularReciboRe
   const tRI = quoteSchemaTable(schema, "recibos_dinero_items");
   const tCob = quoteSchemaTable(schema, "cobros_clientes");
   const tCxc = quoteSchemaTable(schema, "cuentas_por_cobrar");
+  const tNc = quoteSchemaTable(schema, "nota_credito");
+  const tNcA = quoteSchemaTable(schema, "nota_credito_aplicaciones");
 
   const motivo = (p.motivo ?? "").trim();
   if (motivo.length < 5) {
@@ -153,6 +155,64 @@ export async function anularRecibo(p: AnularReciboInput): Promise<AnularReciboRe
                 anulado_motivo = $2
           WHERE id = $3::uuid`,
         [p.usuarioId, motivo, cobro.id]
+      );
+    }
+
+    // 3b) Revertir aplicaciones NC vinculadas a este recibo:
+    //     - Devolver el importe a nota_credito.saldo_disponible.
+    //     - Devolver el importe a la CxC destino (revirtiendo el descuento).
+    //     - Marcar la aplicacion anulada.
+    const ncAppsQ = await client.query<{
+      id: string;
+      nota_credito_id: string;
+      cuenta_por_cobrar_id: string;
+      importe_aplicado: string;
+      anulado: boolean;
+    }>(
+      `SELECT id, nota_credito_id, cuenta_por_cobrar_id, importe_aplicado, anulado
+         FROM ${tNcA}
+        WHERE recibo_id = $1::uuid AND empresa_id = $2::uuid AND anulado = false
+        FOR UPDATE`,
+      [p.reciboId, p.empresaId]
+    );
+    for (const app of ncAppsQ.rows) {
+      const imp = round2(num(app.importe_aplicado));
+      // Devolver el saldo a la NC.
+      await client.query(
+        `UPDATE ${tNc}
+            SET saldo_disponible = saldo_disponible + $1::numeric, updated_at = now()
+          WHERE id = $2::uuid AND empresa_id = $3::uuid`,
+        [imp, app.nota_credito_id, p.empresaId]
+      );
+      // Devolver el saldo a la CxC destino (respetando total como tope).
+      const cxq = await client.query<{
+        id: string; total: string; saldo: string;
+      }>(
+        `SELECT id, total, saldo FROM ${tCxc}
+          WHERE id = $1::uuid AND empresa_id = $2::uuid
+          FOR UPDATE`,
+        [app.cuenta_por_cobrar_id, p.empresaId]
+      );
+      const cxc = cxq.rows[0];
+      if (cxc) {
+        const total = round2(num(cxc.total));
+        const saldoNuevo = round2(Math.min(total, num(cxc.saldo) + imp));
+        const estadoNuevo =
+          saldoNuevo >= total - 0.001 ? "pendiente" :
+          saldoNuevo > 0.001          ? "parcial"   : "pagado";
+        await client.query(
+          `UPDATE ${tCxc} SET saldo = $1::numeric, estado = $2, updated_at = now()
+            WHERE id = $3::uuid`,
+          [saldoNuevo, estadoNuevo, cxc.id]
+        );
+      }
+      // Marcar la aplicacion anulada.
+      await client.query(
+        `UPDATE ${tNcA}
+            SET anulado = true, anulado_at = now(),
+                anulado_by_user_id = $1::uuid, anulado_motivo = $2
+          WHERE id = $3::uuid`,
+        [p.usuarioId, motivo, app.id]
       );
     }
 

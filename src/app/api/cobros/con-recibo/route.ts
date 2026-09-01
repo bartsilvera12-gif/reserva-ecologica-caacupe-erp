@@ -7,6 +7,7 @@ import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/fi
 import {
   cobrarConRecibo,
   cuentasPendientesDeCliente,
+  ncDisponiblesDeCliente,
   CobroReciboError,
 } from "@/lib/recibos/server/cobro-con-recibo-pg";
 
@@ -29,13 +30,20 @@ export async function GET(request: NextRequest) {
     if (!clienteId) return NextResponse.json(errorResponse("Falta el cliente."), { status: 400 });
 
     const schema = await fetchDataSchemaForEmpresaId(ctx.auth.empresa_id);
-    const cuentas = await cuentasPendientesDeCliente({
-      schemaRaw: schema,
-      empresaId: ctx.auth.empresa_id,
-      sucursalId: exigirSucursal(ctx.auth.sucursal_id),
-      clienteId,
-    });
-    return NextResponse.json(successResponse({ cuentas }));
+    const [cuentas, nc_disponibles] = await Promise.all([
+      cuentasPendientesDeCliente({
+        schemaRaw: schema,
+        empresaId: ctx.auth.empresa_id,
+        sucursalId: exigirSucursal(ctx.auth.sucursal_id),
+        clienteId,
+      }),
+      ncDisponiblesDeCliente({
+        schemaRaw: schema,
+        empresaId: ctx.auth.empresa_id,
+        clienteId,
+      }),
+    ]);
+    return NextResponse.json(successResponse({ cuentas, nc_disponibles }));
   } catch (err) {
     return respError(err);
   }
@@ -68,6 +76,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(errorResponse("Indicá al menos una factura con importe."), { status: 400 });
     }
 
+    const ncAplicRaw = Array.isArray(body.nc_aplicaciones) ? body.nc_aplicaciones : [];
+    const nc_aplicaciones = ncAplicRaw
+      .map((a) => {
+        const o = a as {
+          nota_credito_id?: unknown;
+          cuenta_por_cobrar_destino_id?: unknown;
+          importe_aplicado?: unknown;
+        };
+        return {
+          nota_credito_id: typeof o.nota_credito_id === "string" ? o.nota_credito_id : "",
+          cuenta_por_cobrar_destino_id:
+            typeof o.cuenta_por_cobrar_destino_id === "string" ? o.cuenta_por_cobrar_destino_id : "",
+          importe_aplicado: Number(o.importe_aplicado) || 0,
+        };
+      })
+      .filter(
+        (a) =>
+          a.nota_credito_id &&
+          a.cuenta_por_cobrar_destino_id &&
+          a.importe_aplicado > 0
+      );
+
     const schema = await fetchDataSchemaForEmpresaId(ctx.auth.empresa_id);
     const out = await cobrarConRecibo({
       schemaRaw: schema,
@@ -75,6 +105,7 @@ export async function POST(request: NextRequest) {
       sucursalId: exigirSucursal(ctx.auth.sucursal_id),
       clienteId,
       aplicaciones,
+      nc_aplicaciones,
       metodo_pago: typeof body.metodo_pago === "string" ? body.metodo_pago : null,
       entidad_bancaria_id: typeof body.entidad_bancaria_id === "string" ? body.entidad_bancaria_id : null,
       referencia: typeof body.referencia === "string" ? body.referencia : null,

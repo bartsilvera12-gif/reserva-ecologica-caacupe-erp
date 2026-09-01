@@ -46,12 +46,21 @@ export type AplicacionCobro = {
   importe: number;
 };
 
+/** Aplicación de una NC contra una CxC dentro de este cobro. */
+export type AplicacionNc = {
+  nota_credito_id: string;
+  cuenta_por_cobrar_destino_id: string;
+  importe_aplicado: number;
+};
+
 export type CobrarConReciboInput = {
   schemaRaw: string;
   empresaId: string;
   sucursalId: string;
   clienteId: string;
   aplicaciones: AplicacionCobro[];
+  /** NCs del cliente que se aplican como linea negativa en este cobro. */
+  nc_aplicaciones?: AplicacionNc[];
   metodo_pago?: string | null;
   entidad_bancaria_id?: string | null;
   referencia?: string | null;
@@ -207,6 +216,140 @@ export async function cobrarConRecibo(
       });
     }
 
+    // 2c) Aplicaciones de NC: cada NC del cliente que el operador decide usar
+    //     en este cobro se descuenta del `saldo_disponible` de esa NC y del
+    //     `saldo` de la CxC destino. Se registra en nota_credito_aplicaciones.
+    //     El monto NETO del recibo = suma cobros - suma NCs aplicadas.
+    const tNc  = quoteSchemaTable(schema, "nota_credito");
+    const tNcA = quoteSchemaTable(schema, "nota_credito_aplicaciones");
+    const ncApps = (p.nc_aplicaciones ?? []).filter(
+      (a) => a.nota_credito_id && a.cuenta_por_cobrar_destino_id && round2(a.importe_aplicado) > 0
+    );
+    const ncAppsProcesadas: Array<{
+      ncId: string;
+      cxcId: string;
+      importe: number;
+      numeroDocDestino: string | null;
+      facturaIdDestino: string | null;
+      vencDestino: string | null;
+      ncFacturaOrigenNumero: string | null;
+    }> = [];
+    let totalNcAplicado = 0;
+    for (const a of ncApps) {
+      // NC con lock — validar saldo disponible.
+      const ncQ = await client.query<{
+        id: string; monto: string; saldo_disponible: string;
+        cliente_id: string; estado_erp: string; factura_id: string;
+      }>(
+        `SELECT id, monto, saldo_disponible, cliente_id, estado_erp, factura_id
+           FROM ${tNc}
+          WHERE id = $1::uuid AND empresa_id = $2::uuid
+          FOR UPDATE`,
+        [a.nota_credito_id, p.empresaId]
+      );
+      const nc = ncQ.rows[0];
+      if (!nc) throw new CobroReciboError(404, `NC ${a.nota_credito_id} no encontrada.`);
+      if (nc.estado_erp !== "aprobada") {
+        throw new CobroReciboError(409, `La NC no está aprobada (estado=${nc.estado_erp}).`);
+      }
+      if (nc.cliente_id !== p.clienteId) {
+        throw new CobroReciboError(400, "La NC pertenece a otro cliente.");
+      }
+      const impAplic = round2(a.importe_aplicado);
+      const sd = round2(num(nc.saldo_disponible));
+      if (impAplic > sd + 0.001) {
+        throw new CobroReciboError(
+          400,
+          `El importe de la NC (${impAplic}) supera su saldo disponible (${sd}).`
+        );
+      }
+
+      // CxC destino con lock (misma reglas que un cobro comun).
+      const cxcQ = await client.query<{
+        id: string; cliente_id: string; total: string; saldo: string;
+        estado: string; venta_id: string | null;
+      }>(
+        `SELECT id, cliente_id, total, saldo, estado, venta_id
+           FROM ${tC}
+          WHERE id = $1::uuid AND empresa_id = $2::uuid
+          FOR UPDATE`,
+        [a.cuenta_por_cobrar_destino_id, p.empresaId]
+      );
+      const cxcDest = cxcQ.rows[0];
+      if (!cxcDest) throw new CobroReciboError(404, "Cuenta por cobrar destino no encontrada.");
+      if (cxcDest.cliente_id !== p.clienteId) {
+        throw new CobroReciboError(400, "La CxC destino pertenece a otro cliente.");
+      }
+      if (cxcDest.estado === "anulado") {
+        throw new CobroReciboError(409, "La CxC destino está anulada.");
+      }
+      const saldoDest = round2(num(cxcDest.saldo));
+      if (impAplic > saldoDest + 0.001) {
+        throw new CobroReciboError(
+          400,
+          `El importe NC (${impAplic}) supera el saldo pendiente (${saldoDest}) de la CxC destino.`
+        );
+      }
+
+      // Descuento en la CxC destino.
+      const saldoNuevo = round2(saldoDest - impAplic);
+      const totalDest = round2(num(cxcDest.total));
+      const estadoNuevo =
+        saldoNuevo <= 0.001 ? "pagado" : saldoNuevo < totalDest ? "parcial" : "pendiente";
+      await client.query(
+        `UPDATE ${tC} SET saldo = $1::numeric, estado = $2, updated_at = now()
+          WHERE id = $3::uuid AND empresa_id = $4::uuid`,
+        [saldoNuevo < 0 ? 0 : saldoNuevo, estadoNuevo, cxcDest.id, p.empresaId]
+      );
+
+      // Descuento del saldo_disponible de la NC.
+      await client.query(
+        `UPDATE ${tNc} SET saldo_disponible = GREATEST(0::numeric, saldo_disponible - $1::numeric),
+                          updated_at = now()
+          WHERE id = $2::uuid AND empresa_id = $3::uuid`,
+        [impAplic, nc.id, p.empresaId]
+      );
+
+      // Resolver etiqueta legible de la CxC destino (numero de factura si hay).
+      let numeroDocDestino: string | null = null;
+      let facturaIdDestino: string | null = null;
+      let vencDestino: string | null = null;
+      if (cxcDest.venta_id) {
+        const { rows: facDest } = await client.query<{ id: string; numero_factura: string | null }>(
+          `SELECT id, numero_factura FROM ${tFac}
+            WHERE empresa_id = $1::uuid AND origen_venta_id = $2::uuid LIMIT 1`,
+          [p.empresaId, cxcDest.venta_id]
+        );
+        if (facDest[0]) {
+          facturaIdDestino = facDest[0].id;
+          numeroDocDestino = facDest[0].numero_factura ?? null;
+        }
+      }
+      // Nro factura de origen de la NC (informativo para el detalle del recibo).
+      let ncFacturaOrigenNumero: string | null = null;
+      const { rows: facOri } = await client.query<{ numero_factura: string | null }>(
+        `SELECT numero_factura FROM ${tFac} WHERE id = $1::uuid`,
+        [nc.factura_id]
+      );
+      if (facOri[0]?.numero_factura) ncFacturaOrigenNumero = facOri[0].numero_factura;
+
+      ncAppsProcesadas.push({
+        ncId: nc.id,
+        cxcId: cxcDest.id,
+        importe: impAplic,
+        numeroDocDestino,
+        facturaIdDestino,
+        vencDestino,
+        ncFacturaOrigenNumero,
+      });
+      totalNcAplicado = round2(totalNcAplicado + impAplic);
+    }
+
+    const totalNeto = round2(total - totalNcAplicado);
+    if (totalNeto < 0) {
+      throw new CobroReciboError(400, "Las NC aplicadas superan al total del cobro.");
+    }
+
     // 3) Un solo recibo por el total, con su detalle.
     const numeroRecibo = await proximoNumeroRecibo(client, schema, p.empresaId, p.sucursalId);
     const { rows: recRows } = await client.query<{ id: string }>(
@@ -219,8 +362,8 @@ export async function cobrarConRecibo(
        RETURNING id`,
       [
         p.empresaId, p.sucursalId, numeroRecibo, p.clienteId, clienteNombre, clienteDoc,
-        fechaPago, total, metodo, p.entidad_bancaria_id || null, p.referencia?.trim() || null,
-        `Cobro de ${items.length} ${items.length === 1 ? "documento" : "documentos"}`,
+        fechaPago, totalNeto, metodo, p.entidad_bancaria_id || null, p.referencia?.trim() || null,
+        `Cobro de ${items.length} ${items.length === 1 ? "documento" : "documentos"}${ncAppsProcesadas.length > 0 ? ` con ${ncAppsProcesadas.length} NC aplicada${ncAppsProcesadas.length === 1 ? "" : "s"}` : ""}`,
         p.observaciones?.trim() || null, p.usuarioId, p.usuarioNombre,
       ]
     );
@@ -236,8 +379,27 @@ export async function cobrarConRecibo(
       );
     }
 
+    // Registro formal de cada aplicacion NC (con vinculo al recibo).
+    for (const na of ncAppsProcesadas) {
+      await client.query(
+        `INSERT INTO ${tNcA}
+           (empresa_id, sucursal_id, nota_credito_id, cuenta_por_cobrar_id,
+            recibo_id, cobro_cliente_id, importe_aplicado,
+            usuario_id, usuario_nombre)
+         VALUES ($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5::uuid,NULL,$6::numeric,$7::uuid,$8)`,
+        [
+          p.empresaId, p.sucursalId, na.ncId, na.cxcId,
+          reciboId, na.importe, p.usuarioId, p.usuarioNombre,
+        ]
+      );
+    }
+
     await client.query("COMMIT");
-    return { recibo_id: reciboId, numero_recibo: numeroRecibo, total };
+    return {
+      recibo_id: reciboId,
+      numero_recibo: numeroRecibo,
+      total: totalNeto,
+    };
   } catch (e) {
     await client.query("ROLLBACK").catch(() => null);
     throw e;
@@ -273,5 +435,43 @@ export async function cuentasPendientesDeCliente(params: {
     fecha_vencimiento: r.fecha_vencimiento,
     total: num(r.total),
     saldo: num(r.saldo),
+  }));
+}
+
+/** NCs aprobadas del cliente con saldo disponible para aplicar en un cobro. */
+export async function ncDisponiblesDeCliente(params: {
+  schemaRaw: string;
+  empresaId: string;
+  clienteId: string;
+}): Promise<Array<{
+  id: string;
+  monto: number;
+  saldo_disponible: number;
+  factura_origen_numero: string | null;
+  motivo: string | null;
+  created_at: string;
+}>> {
+  const schema = assertAllowedChatDataSchema(params.schemaRaw);
+  const tNc = quoteSchemaTable(schema, "nota_credito");
+  const tFac = quoteSchemaTable(schema, "facturas");
+  const { rows } = await pool().query(
+    `SELECT nc.id, nc.monto, nc.saldo_disponible, nc.motivo, nc.created_at,
+            f.numero_factura AS factura_origen_numero
+       FROM ${tNc} nc
+       LEFT JOIN ${tFac} f ON f.id = nc.factura_id
+      WHERE nc.empresa_id = $1::uuid
+        AND nc.cliente_id = $2::uuid
+        AND nc.estado_erp = 'aprobada'
+        AND nc.saldo_disponible > 0.001
+      ORDER BY nc.created_at`,
+    [params.empresaId, params.clienteId]
+  );
+  return rows.map((r) => ({
+    id: String(r.id),
+    monto: num(r.monto),
+    saldo_disponible: num(r.saldo_disponible),
+    factura_origen_numero: r.factura_origen_numero ?? null,
+    motivo: r.motivo ?? null,
+    created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
   }));
 }

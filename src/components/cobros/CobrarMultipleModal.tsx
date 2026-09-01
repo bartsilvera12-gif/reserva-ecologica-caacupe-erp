@@ -40,6 +40,20 @@ type Seleccion = {
   importe: string; // texto libre para no fastidiar el input
 };
 
+type NcDisponible = {
+  id: string;
+  monto: number;
+  saldo_disponible: number;
+  factura_origen_numero: string | null;
+  motivo: string | null;
+};
+
+type NcSel = {
+  checked: boolean;
+  importe: string;
+  cuenta_por_cobrar_destino_id: string; // qué CxC del cliente recibe el descuento
+};
+
 const METODOS = ["efectivo", "transferencia", "tarjeta", "otro"] as const;
 const METODO_LABEL: Record<string, string> = {
   efectivo: "Efectivo",
@@ -93,6 +107,10 @@ export function CobrarMultipleModal({
   const [cuentas, setCuentas] = useState<Cuenta[]>([]);
   const [cargandoCuentas, setCargandoCuentas] = useState(false);
   const [sel, setSel] = useState<Record<string, Seleccion>>({});
+
+  // NCs del cliente aplicables al cobro (linea negativa)
+  const [ncDisp, setNcDisp] = useState<NcDisponible[]>([]);
+  const [ncSel, setNcSel] = useState<Record<string, NcSel>>({});
 
   // Pago
   const [metodo, setMetodo] = useState<(typeof METODOS)[number]>("efectivo");
@@ -203,11 +221,23 @@ export function CobrarMultipleModal({
         return;
       }
       const rows = (body.data?.cuentas ?? []) as Cuenta[];
+      const ncs = (body.data?.nc_disponibles ?? []) as NcDisponible[];
       setCuentas(rows);
+      setNcDisp(ncs);
       // Preseleccionar todas con importe = saldo. Facil de destildar despues.
       const inicial: Record<string, Seleccion> = {};
       for (const c of rows) inicial[c.id] = { checked: true, importe: String(c.saldo) };
       setSel(inicial);
+      // Las NC arrancan destildadas — el operador decide si aplicarlas.
+      const ncInicial: Record<string, NcSel> = {};
+      for (const nc of ncs) {
+        ncInicial[nc.id] = {
+          checked: false,
+          importe: String(nc.saldo_disponible),
+          cuenta_por_cobrar_destino_id: "",
+        };
+      }
+      setNcSel(ncInicial);
     } catch {
       setError("Error de red al cargar cuentas.");
       setCuentas([]);
@@ -221,7 +251,7 @@ export function CobrarMultipleModal({
     void cargarCuentas(clienteSel.id);
   }, [open, clienteSel, cargarCuentas]);
 
-  const totalCobrar = useMemo(() => {
+  const totalFacturas = useMemo(() => {
     let s = 0;
     for (const c of cuentas) {
       const sl = sel[c.id];
@@ -230,9 +260,24 @@ export function CobrarMultipleModal({
     return round2(s);
   }, [cuentas, sel]);
 
+  const totalNc = useMemo(() => {
+    let s = 0;
+    for (const nc of ncDisp) {
+      const ns = ncSel[nc.id];
+      if (ns?.checked) s += Number(ns.importe) || 0;
+    }
+    return round2(s);
+  }, [ncDisp, ncSel]);
+
+  const totalCobrar = useMemo(() => round2(totalFacturas - totalNc), [totalFacturas, totalNc]);
+
   const cantidadFacturas = useMemo(
     () => cuentas.reduce((n, c) => (sel[c.id]?.checked ? n + 1 : n), 0),
     [cuentas, sel]
+  );
+  const cantidadNcs = useMemo(
+    () => ncDisp.reduce((n, nc) => (ncSel[nc.id]?.checked ? n + 1 : n), 0),
+    [ncDisp, ncSel]
   );
 
   if (!open) return null;
@@ -285,6 +330,45 @@ export function CobrarMultipleModal({
       setError("Marca al menos una factura y poné un importe > 0.");
       return;
     }
+
+    // Validar aplicaciones NC.
+    const nc_aplicaciones: Array<{
+      nota_credito_id: string;
+      cuenta_por_cobrar_destino_id: string;
+      importe_aplicado: number;
+    }> = [];
+    for (const nc of ncDisp) {
+      const ns = ncSel[nc.id];
+      if (!ns?.checked) continue;
+      const imp = Number(ns.importe);
+      if (!(imp > 0)) {
+        setError(`Ingresá un importe > 0 para la NC seleccionada.`);
+        return;
+      }
+      if (imp > nc.saldo_disponible + 0.001) {
+        setError(`Importe NC (${fmtGs(imp)}) supera su saldo disponible (${fmtGs(nc.saldo_disponible)}).`);
+        return;
+      }
+      if (!ns.cuenta_por_cobrar_destino_id) {
+        setError("Elegí a qué factura se aplica cada NC seleccionada.");
+        return;
+      }
+      // La CxC destino debe estar entre las seleccionadas del cobro.
+      const cxcDest = cuentas.find((c) => c.id === ns.cuenta_por_cobrar_destino_id);
+      if (!cxcDest) {
+        setError("La factura destino de la NC ya no está disponible.");
+        return;
+      }
+      nc_aplicaciones.push({
+        nota_credito_id: nc.id,
+        cuenta_por_cobrar_destino_id: ns.cuenta_por_cobrar_destino_id,
+        importe_aplicado: round2(imp),
+      });
+    }
+    if (totalCobrar < 0) {
+      setError("Las NC aplicadas superan al total del cobro.");
+      return;
+    }
     if (pideBanco && !entidadId) {
       setError(`Elegí ${metodo === "tarjeta" ? "la procesadora / banco" : "la entidad bancaria"}.`);
       return;
@@ -309,6 +393,7 @@ export function CobrarMultipleModal({
         body: JSON.stringify({
           cliente_id: clienteSel.id,
           aplicaciones,
+          nc_aplicaciones,
           metodo_pago: metodo,
           entidad_bancaria_id: pideBanco ? (entidadId || null) : null,
           referencia: referencia.trim() || null,
@@ -500,13 +585,122 @@ export function CobrarMultipleModal({
                         <td colSpan={3} className="py-2 px-2 text-xs text-slate-600">
                           {cantidadFacturas} factura{cantidadFacturas === 1 ? "" : "s"} seleccionada{cantidadFacturas === 1 ? "" : "s"}
                         </td>
-                        <td className="py-2 px-2 text-right text-xs text-slate-500">Total a cobrar</td>
-                        <td className="py-2 px-2 text-right font-bold text-base text-slate-800 tabular-nums">{fmtGs(totalCobrar)}</td>
+                        <td className="py-2 px-2 text-right text-xs text-slate-500">Subtotal facturas</td>
+                        <td className="py-2 px-2 text-right font-semibold text-sm text-slate-700 tabular-nums">{fmtGs(totalFacturas)}</td>
                       </tr>
                     </tfoot>
                   </table>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Notas de credito disponibles del cliente */}
+          {clienteSel && ncDisp.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-2">
+                Notas de crédito disponibles ({ncDisp.length})
+              </label>
+              <div className="overflow-x-auto rounded-md border border-amber-200 bg-amber-50/40">
+                <table className="w-full text-sm">
+                  <thead className="bg-amber-100/60 text-[11px] uppercase text-amber-900">
+                    <tr>
+                      <th className="py-2 px-2 text-left w-6"></th>
+                      <th className="py-2 px-2 text-left">Origen</th>
+                      <th className="py-2 px-2 text-right">Disponible</th>
+                      <th className="py-2 px-2 text-right">Importe a aplicar</th>
+                      <th className="py-2 px-2 text-left">Aplicar a</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-amber-100">
+                    {ncDisp.map((nc) => {
+                      const s = ncSel[nc.id] ?? { checked: false, importe: "0", cuenta_por_cobrar_destino_id: "" };
+                      const cuentasSeleccionadas = cuentas.filter((c) => sel[c.id]?.checked);
+                      return (
+                        <tr key={nc.id} className={s.checked ? "bg-amber-50" : "hover:bg-amber-50/50"}>
+                          <td className="py-2 px-2">
+                            <input
+                              type="checkbox"
+                              checked={s.checked}
+                              onChange={(e) => setNcSel((prev) => ({
+                                ...prev,
+                                [nc.id]: {
+                                  ...s,
+                                  checked: e.target.checked,
+                                  importe: e.target.checked ? String(nc.saldo_disponible) : "0",
+                                  cuenta_por_cobrar_destino_id: e.target.checked
+                                    ? (s.cuenta_por_cobrar_destino_id ||
+                                       cuentas.find((c) => sel[c.id]?.checked)?.id ||
+                                       "")
+                                    : "",
+                                },
+                              }))}
+                            />
+                          </td>
+                          <td className="py-2 px-2 text-xs text-slate-700">
+                            {nc.factura_origen_numero ? (
+                              <>NC de <span className="font-mono">{nc.factura_origen_numero}</span></>
+                            ) : (
+                              <>NC · <span className="font-mono text-slate-500">{nc.id.slice(0, 8)}</span></>
+                            )}
+                            {nc.motivo ? <div className="text-[10px] text-slate-500 truncate max-w-[180px]" title={nc.motivo}>{nc.motivo}</div> : null}
+                          </td>
+                          <td className="py-2 px-2 text-right tabular-nums text-amber-900">−{fmtGs(nc.saldo_disponible)}</td>
+                          <td className="py-2 px-2 text-right">
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={fmtMiles(s.importe)}
+                              disabled={!s.checked}
+                              onChange={(e) => setNcSel((prev) => ({
+                                ...prev,
+                                [nc.id]: { ...s, importe: stripMiles(e.target.value) },
+                              }))}
+                              className="w-28 rounded border border-slate-300 px-2 py-1 text-right text-sm font-mono disabled:bg-slate-100 disabled:text-slate-400"
+                            />
+                          </td>
+                          <td className="py-2 px-2">
+                            <select
+                              disabled={!s.checked}
+                              value={s.cuenta_por_cobrar_destino_id}
+                              onChange={(e) => setNcSel((prev) => ({
+                                ...prev,
+                                [nc.id]: { ...s, cuenta_por_cobrar_destino_id: e.target.value },
+                              }))}
+                              className="w-40 rounded border border-slate-300 px-2 py-1 text-xs bg-white disabled:bg-slate-100 disabled:text-slate-400"
+                            >
+                              <option value="">— Elegí factura —</option>
+                              {cuentasSeleccionadas.map((c) => (
+                                <option key={c.id} value={c.id}>{c.numero}</option>
+                              ))}
+                            </select>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-amber-100/40 border-t border-amber-200">
+                      <td colSpan={3} className="py-2 px-2 text-xs text-amber-900">
+                        {cantidadNcs} NC seleccionada{cantidadNcs === 1 ? "" : "s"}
+                      </td>
+                      <td className="py-2 px-2 text-right text-xs text-amber-800">Subtotal NC</td>
+                      <td className="py-2 px-2 text-right font-semibold text-sm text-amber-900 tabular-nums">−{fmtGs(totalNc)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <p className="mt-1 text-[10px] text-slate-500">
+                Las NC se restan del total. Solo aparecen las facturas TILDADAS arriba como destino posible.
+              </p>
+            </div>
+          )}
+
+          {/* Total neto (facturas − NC) */}
+          {clienteSel && cuentas.length > 0 && (totalNc > 0 || cantidadFacturas > 0) && (
+            <div className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50/60 px-4 py-3">
+              <span className="text-xs uppercase tracking-wide font-semibold text-emerald-800">Total neto a cobrar</span>
+              <span className="text-xl font-bold tabular-nums text-emerald-800">{fmtGs(totalCobrar)}</span>
             </div>
           )}
 

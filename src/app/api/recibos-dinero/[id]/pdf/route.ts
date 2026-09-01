@@ -267,6 +267,51 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
       ? `Pago de ${numeros.length === 1 ? "factura" : "facturas"} ${numeros.join(" y ")}`
       : String(r.concepto ?? "");
 
+  // Aplicaciones de NC que este recibo cargó como línea negativa. Cada una se
+  // muestra a continuación de las facturas para que el total del recibo cuadre
+  // con lo efectivamente cobrado.
+  type NcAplicRow = { importe: string; nc_factura_origen: string | null; destino_numero: string | null };
+  const ncAplicRows: NcAplicRow[] = [];
+  try {
+    const p2 = getChatPostgresPool();
+    if (p2 && schemaForClienteLookup) {
+      const tNcA = quoteSchemaTable(schemaForClienteLookup, "nota_credito_aplicaciones");
+      const tNc  = quoteSchemaTable(schemaForClienteLookup, "nota_credito");
+      const tFacQ  = quoteSchemaTable(schemaForClienteLookup, "facturas");
+      const tCxcQ  = quoteSchemaTable(schemaForClienteLookup, "cuentas_por_cobrar");
+      const { rows: apps } = await p2.query<{
+        importe_aplicado: string;
+        factura_origen_numero: string | null;
+        destino_numero_factura: string | null;
+        destino_numero_venta: string | null;
+      }>(
+        `SELECT a.importe_aplicado,
+                f_origen.numero_factura AS factura_origen_numero,
+                f_dest.numero_factura   AS destino_numero_factura,
+                cxc.numero_venta        AS destino_numero_venta
+           FROM ${tNcA} a
+           JOIN ${tNc}  nc      ON nc.id = a.nota_credito_id
+           LEFT JOIN ${tFacQ} f_origen ON f_origen.id = nc.factura_id
+           LEFT JOIN ${tCxcQ} cxc      ON cxc.id = a.cuenta_por_cobrar_id
+           LEFT JOIN ${tFacQ} f_dest   ON f_dest.origen_venta_id = cxc.venta_id AND f_dest.empresa_id = a.empresa_id
+          WHERE a.recibo_id = $1::uuid AND a.empresa_id = $2::uuid AND a.anulado = false
+          ORDER BY a.created_at`,
+        [id, ctx.auth.empresa_id]
+      );
+      for (const a of apps) {
+        ncAplicRows.push({
+          importe: fmtMonto(a.importe_aplicado, moneda),
+          nc_factura_origen: (a.factura_origen_numero ?? "").trim() || null,
+          destino_numero: (a.destino_numero_factura ?? a.destino_numero_venta ?? "").trim() || null,
+        });
+      }
+    }
+  } catch (e) {
+    console.warn("[recibos-pdf] no se pudieron cargar aplicaciones NC", {
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+
   /**
    * Filas de la tabla: solo las reales. Antes se rellenaba con filas vacías
    * hasta un mínimo para imitar el talonario preimpreso, pero con la tabla de
@@ -277,7 +322,20 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
     venc: d.fecha_vencimiento ? fmtFecha(d.fecha_vencimiento) : "",
     concepto: "Cobro de cuenta",
     importe: fmtMonto(d.importe_aplicado, moneda),
+    esNegativo: false as boolean,
   }));
+  // Agregar aplicaciones NC como filas negativas.
+  for (const a of ncAplicRows) {
+    const etiqueta = a.nc_factura_origen ? `NC de ${a.nc_factura_origen}` : "Nota de crédito";
+    const concepto = a.destino_numero ? `Aplicada a ${a.destino_numero}` : "Aplicación de crédito";
+    filasTabla.push({
+      doc: etiqueta,
+      venc: "",
+      concepto,
+      importe: `−${a.importe}`,
+      esNegativo: true,
+    });
+  }
   // Sin detalle (recibos anteriores al desglose) se muestra el concepto guardado.
   if (filasTabla.length === 0) {
     filasTabla.push({
@@ -285,6 +343,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
       venc: "",
       concepto: String(r.concepto ?? "Cobro"),
       importe: fmtMonto(r.monto, moneda),
+      esNegativo: false,
     });
   }
 
@@ -435,7 +494,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
           </tr>
         </thead>
         <tbody>
-          ${filasTabla.map((f) => `<tr>
+          ${filasTabla.map((f) => `<tr${f.esNegativo ? ' style="color:#7f1d1d;background:#fef2f2 !important"' : ""}>
             <td>${esc(f.doc)}</td>
             <td class="ct">${esc(f.venc)}</td>
             <td>${esc(f.concepto)}</td>
