@@ -119,6 +119,10 @@ export function CobrarMultipleModal({
   const [referencia, setReferencia] = useState("");
   const [titular, setTitular] = useState("");
   const [observaciones, setObservaciones] = useState("");
+  /** Fecha real del pago. Default = hoy. El operador la ajusta cuando registra
+   *  un cobro que llego dias antes — asi el recibo lleva la fecha del pago
+   *  real (fiscalmente / contablemente lo que corresponde), no la de carga. */
+  const [fechaPago, setFechaPago] = useState<string>(() => new Date().toISOString().slice(0, 10));
 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -134,6 +138,7 @@ export function CobrarMultipleModal({
     setReferencia("");
     setTitular("");
     setObservaciones("");
+    setFechaPago(new Date().toISOString().slice(0, 10));
     setCuentas([]);
     setSel({});
     setClientesHits([]);
@@ -428,6 +433,7 @@ export function CobrarMultipleModal({
           entidad_bancaria_id: pideBanco ? (entidadId || null) : null,
           referencia: referencia.trim() || null,
           observaciones: observaciones.trim() || null,
+          fecha_pago: fechaPago || null,
         }),
       });
       const body = await res.json();
@@ -737,6 +743,17 @@ export function CobrarMultipleModal({
           {/* Metodo de pago */}
           {clienteSel && cuentas.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Fecha del cobro</label>
+                <input
+                  type="date"
+                  value={fechaPago}
+                  onChange={(e) => setFechaPago(e.target.value)}
+                  max={new Date().toISOString().slice(0, 10)}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                />
+                <p className="mt-1 text-[10px] text-slate-400">Cuando el cliente entregó el pago (default: hoy).</p>
+              </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Método de pago</label>
                 <select
