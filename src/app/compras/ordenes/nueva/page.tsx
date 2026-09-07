@@ -68,7 +68,7 @@ export default function NuevaOrdenCompraPage() {
     setBuscando(true);
     timer.current = setTimeout(async () => {
       try {
-        const r = await fetchWithSupabaseSession(`/api/productos/search?q=${encodeURIComponent(term)}&limit=20`, { cache: "no-store" });
+        const r = await fetchWithSupabaseSession(`/api/productos/search?q=${encodeURIComponent(term)}&limit=20&contexto=compra`, { cache: "no-store" });
         const j = await r.json();
         setHits(((j?.data?.items ?? []) as Record<string, unknown>[]).map((p): ComboHit => ({
           id: String(p.id), nombre: String(p.nombre ?? ""), sku: String(p.sku ?? ""),

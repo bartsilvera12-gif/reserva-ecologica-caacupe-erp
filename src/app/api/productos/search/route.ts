@@ -26,6 +26,7 @@ interface ProductoSearchHit {
   ubicacion_nombre: string | null;
   ubicacion_tipo: string | null;
   es_vendible: boolean;
+  es_insumo: boolean;
   controla_stock: boolean;
   modo_receta: string;
   tipo_iva: "EXENTA" | "5%" | "10%";
@@ -60,6 +61,11 @@ export async function GET(request: NextRequest) {
       1,
       Math.min(MAX_LIMIT, Number.isFinite(limitParam) ? limitParam : DEFAULT_LIMIT)
     );
+    // `contexto=compra` amplia el catalogo a los insumos (materia prima) para
+    // que la orden de compra pueda incluirlos. En cualquier otro contexto
+    // (venta/caja/presupuesto) se mantiene el filtro historico solo-vendibles.
+    const contexto = (url.searchParams.get("contexto") ?? "").trim().toLowerCase();
+    const incluirInsumos = contexto === "compra";
 
     let query = supabase
       .from("productos")
@@ -68,11 +74,18 @@ export async function GET(request: NextRequest) {
           "precio_venta, precio_mayorista, precio_distribuidor, costo_promedio, stock_actual, stock_minimo, " +
           "unidad_medida, metodo_valuacion, imagen_path, imagen_url, " +
           "categoria_principal_id, proveedor_principal_id, ubicacion_principal_id, " +
-          "es_vendible, controla_stock, modo_receta, tipo_iva, activo"
+          "es_vendible, es_insumo, controla_stock, modo_receta, tipo_iva, activo"
       )
       .eq("empresa_id", empresaId)
-      .eq("activo", true)
-      .eq("es_vendible", true);
+      .eq("activo", true);
+    if (incluirInsumos) {
+      // Vendibles OR insumos (o los dos flags). Cubre todos los productos
+      // comprables: los que se revenden, los del menu con receta, y las
+      // materias primas puras.
+      query = query.or("es_vendible.eq.true,es_insumo.eq.true");
+    } else {
+      query = query.eq("es_vendible", true);
+    }
 
     query = aplicarFiltroSucursal(query, exigirSucursal(auth.sucursal_id));
 
@@ -104,6 +117,7 @@ export async function GET(request: NextRequest) {
       imagen_path: (r.imagen_path as string | null) ?? null,
       imagen_url: (r.imagen_url as string | null) ?? null,
       es_vendible: r.es_vendible !== false,
+      es_insumo: r.es_insumo === true,
       controla_stock: r.controla_stock !== false,
       modo_receta: typeof r.modo_receta === "string" ? r.modo_receta : "preparado_al_vender",
       tipo_iva: (r.tipo_iva === "EXENTA" || r.tipo_iva === "5%" ? r.tipo_iva : "10%") as "EXENTA" | "5%" | "10%",
@@ -138,6 +152,7 @@ export async function GET(request: NextRequest) {
       ubicacion_nombre: null,
       ubicacion_tipo: null,
       es_vendible: r.es_vendible,
+      es_insumo: r.es_insumo,
       controla_stock: r.controla_stock,
       modo_receta: r.modo_receta,
       tipo_iva: r.tipo_iva,
