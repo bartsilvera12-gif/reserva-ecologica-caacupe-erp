@@ -579,10 +579,16 @@ export function FacturaElectronicaPanel({
       const j = (await res.json()) as {
         success?: boolean;
         data?: {
+          cambio?: boolean;
           estado_sifen?: string | null;
-          resumenInferido?: string | null;
-          dCodResSet?: string | null;
-          dMsgResSet?: string | null;
+          estado_sifen_anterior?: string | null;
+          set?: {
+            dCodRes?: string | null;
+            dMsgRes?: string | null;
+            dEstRes?: string | null;
+            dProtAut?: string | null;
+            noEncontrado?: boolean;
+          };
         };
         error?: string;
       };
@@ -590,12 +596,21 @@ export function FacturaElectronicaPanel({
         setFlash({ kind: "err", text: j.error ?? `Error ${res.status}` });
         return;
       }
-      const msg =
-        j.data?.resumenInferido?.trim() ||
-        (j.data?.dCodResSet != null
-          ? `${j.data.dCodResSet}${j.data.dMsgResSet != null ? ` — ${j.data.dMsgResSet}` : ""}`
-          : null) ||
-        "Consulta DE completada.";
+      const set = j.data?.set ?? {};
+      const setLine =
+        set.dCodRes != null
+          ? `${set.dCodRes}${set.dMsgRes != null ? ` — ${set.dMsgRes}` : ""}`
+          : "";
+      let msg: string;
+      if (j.data?.cambio) {
+        msg = `Sincronizado: ERP pasó de "${j.data.estado_sifen_anterior ?? "?"}" a "${j.data.estado_sifen}". SET: ${setLine || "(sin código)"}`;
+      } else if (set.noEncontrado) {
+        msg = `SET no reconoce el CDC actual. Hay que subir el XML aprobado de Marangatú (usalo abajo). ${setLine}`;
+      } else if (set.dEstRes) {
+        msg = `SET reporta: ${set.dEstRes}. ${setLine}`;
+      } else {
+        msg = `SET respondió sin veredicto claro. ${setLine || "(sin datos)"}`;
+      }
       setFlash({ kind: "ok", text: msg });
       await refresh();
     } catch (e) {
