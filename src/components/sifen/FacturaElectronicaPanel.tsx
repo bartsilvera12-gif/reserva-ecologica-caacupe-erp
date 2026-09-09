@@ -227,6 +227,7 @@ export function FacturaElectronicaPanel({
     | "firmar"
     | "enviar"
     | "consulta-lote"
+    | "consulta-de"
     | "cancelar-de"
     | "pipeline"
     | "reintentar-job"
@@ -552,6 +553,49 @@ export function FacturaElectronicaPanel({
           ? `${c.dCodResLot}${c.dMsgResLot != null ? ` — ${c.dMsgResLot}` : ""}`
           : null) ||
         "Consulta lote completada.";
+      setFlash({ kind: "ok", text: msg });
+      await refresh();
+    } catch (e) {
+      setFlash({ kind: "err", text: e instanceof Error ? e.message : "Error de red" });
+    } finally {
+      setAction(null);
+    }
+  };
+
+  /**
+   * Consulta DE (siConsDE): pregunta a SET directamente por el CDC, sirve cuando
+   * la consulta-lote ya no responde por el plazo 48h. Sincroniza estado_sifen /
+   * sifen_aprobado_at / sifen_cancelado_at con lo que SET realmente tiene.
+   * Uso tipico: factura vieja donde la NC referencia un CDC que SET no reconoce
+   * (mensaje 'CDC del DTE referenciado inexistente').
+   */
+  const runConsultaDe = async () => {
+    setFlash(null);
+    setAction("consulta-de");
+    try {
+      const res = await fetchWithSupabaseSession(`/api/facturas/${facturaId}/sifen/consulta-de`, {
+        method: "POST",
+      });
+      const j = (await res.json()) as {
+        success?: boolean;
+        data?: {
+          estado_sifen?: string | null;
+          resumenInferido?: string | null;
+          dCodResSet?: string | null;
+          dMsgResSet?: string | null;
+        };
+        error?: string;
+      };
+      if (!res.ok || !j.success) {
+        setFlash({ kind: "err", text: j.error ?? `Error ${res.status}` });
+        return;
+      }
+      const msg =
+        j.data?.resumenInferido?.trim() ||
+        (j.data?.dCodResSet != null
+          ? `${j.data.dCodResSet}${j.data.dMsgResSet != null ? ` — ${j.data.dMsgResSet}` : ""}`
+          : null) ||
+        "Consulta DE completada.";
       setFlash({ kind: "ok", text: msg });
       await refresh();
     } catch (e) {
@@ -979,6 +1023,17 @@ export function FacturaElectronicaPanel({
                     className="text-sm font-medium text-slate-600 hover:text-slate-900 underline-offset-2 hover:underline disabled:opacity-40"
                   >
                     {action === "consulta-lote" ? "Consultando…" : "Consultar lote"}
+                  </button>
+                ) : null}
+                {esAdmin && fe?.cdc && fe.cdc.trim().length === 44 ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void runConsultaDe()}
+                    title="Preguntar directamente a SET por este CDC (sirve cuando pasó el plazo 48h de consulta-lote)"
+                    className="text-sm font-medium text-slate-600 hover:text-slate-900 underline-offset-2 hover:underline disabled:opacity-40"
+                  >
+                    {action === "consulta-de" ? "Consultando DE…" : "Consultar DE en SET"}
                   </button>
                 ) : null}
               </div>
