@@ -739,7 +739,7 @@ export function FacturaCorreccionFiscalNC({
         </details>
       )}
 
-      {deAprobado && estado !== "Anulado" && bloqueoTimbradoOrigen && (
+      {deAprobado && bloqueoTimbradoOrigen && (
         <div
           className="rounded-lg border-2 border-amber-700 bg-amber-50 px-3 py-3 text-sm text-amber-950 shadow-sm"
           role="alert"
@@ -757,7 +757,7 @@ export function FacturaCorreccionFiscalNC({
         </div>
       )}
 
-      {deAprobado && estado !== "Anulado" && puedeCrear ? (
+      {deAprobado && puedeCrear ? (
         <div className="space-y-2">
           <button
             type="button"
