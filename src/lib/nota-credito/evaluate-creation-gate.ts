@@ -28,9 +28,11 @@ export async function evaluateNotaCreditoCreationGate(
   }
 
   const estado = String((factura as { estado?: string }).estado ?? "");
-  if (estado === "Anulado") {
-    return { puede_crear: false, motivo_bloqueo: "La factura está anulada." };
-  }
+  // Nota: el check de estado === "Anulado" quedó reubicado despues del gate
+  // SIFEN. Cuando el operador anula la factura solo en el ERP (sin que SET
+  // haya confirmado la cancelacion), el DE sigue vivo en SET y la unica forma
+  // fiscal de anularla es via NC. Bloquear aca haria imposible completar la
+  // anulacion. La ventana real la evalua el gate SIFEN mas abajo.
 
   const saldo = num((factura as { saldo?: unknown }).saldo);
   const monto = num((factura as { monto?: unknown }).monto);
@@ -62,6 +64,17 @@ export async function evaluateNotaCreditoCreationGate(
     return {
       puede_crear: false,
       motivo_bloqueo: "El documento electrónico debe estar aprobado por SET para crear una nota de crédito.",
+    };
+  }
+
+  // Solo bloqueamos por "Anulado ERP" cuando el DE en SET tambien esta cancelado.
+  // Si SET tiene el DE aprobado sin cancelacion, la NC es la unica via fiscal para
+  // completar la anulacion — el operador anulo en el ERP pero el DE sigue vivo.
+  const sifenCanceladoAt = (feRow as { sifen_cancelado_at?: string | null }).sifen_cancelado_at;
+  if (estado === "Anulado" && sifenCanceladoAt != null && String(sifenCanceladoAt).trim() !== "") {
+    return {
+      puede_crear: false,
+      motivo_bloqueo: "La factura ya está cancelada en el ERP y en SET; no requiere nota de crédito.",
     };
   }
 

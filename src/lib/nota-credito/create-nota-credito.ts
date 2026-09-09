@@ -100,9 +100,10 @@ export async function createNotaCreditoBorrador(p: CreateNotaCreditoParams): Pro
   }
 
   const estadoFactura = String((factura as { estado?: string }).estado ?? "");
-  if (estadoFactura === "Anulado") {
-    return { ok: false, status: 409, error: "La factura está anulada; no corresponde nota de crédito." };
-  }
+  // Nota: el gate de "Anulado ERP" quedo reubicado despues del check SIFEN
+  // (ver evaluate-creation-gate.ts). Cuando el operador anulo la factura en el
+  // ERP pero el DE sigue vivo en SET, la NC es la unica via fiscal para completar
+  // la anulacion. El check final vive junto al SIFEN abajo.
 
   const saldo = num((factura as { saldo?: unknown }).saldo);
   const montoFactura = num((factura as { monto?: unknown }).monto);
@@ -136,6 +137,16 @@ export async function createNotaCreditoBorrador(p: CreateNotaCreditoParams): Pro
       ok: false,
       status: 409,
       error: "Solo se puede crear nota de crédito cuando el documento electrónico está aprobado por SET.",
+    };
+  }
+
+  // Anulado ERP + SIFEN cancelado = factura ya cerrada, no requiere NC.
+  const sifenCanceladoAt = (feRow as { sifen_cancelado_at?: string | null }).sifen_cancelado_at;
+  if (estadoFactura === "Anulado" && sifenCanceladoAt != null && String(sifenCanceladoAt).trim() !== "") {
+    return {
+      ok: false,
+      status: 409,
+      error: "La factura ya está cancelada en el ERP y en SET; no requiere nota de crédito.",
     };
   }
 
