@@ -132,7 +132,23 @@ export async function validarXmlFirmadoFacturaOrigenParaNc(
     };
   }
 
-  if (orig.cdcId.replace(/\D/g, "") !== cdc44) {
+  // Comparacion CDC exacto vs tolerante:
+  //   Los primeros 33 caracteres del CDC codifican identidad fiscal:
+  //   iTiDE(2) + dRucEm(8) + dDVEmi(1) + dEst(3) + dPunExp(3) + dNumDoc(7) +
+  //   iTipCont(1) + fecha yyyyMMdd(8). Los ultimos 11 son dCodSeg(9) + DV
+  //   (calculado sobre lo anterior) + relleno, y CAMBIAN cuando el DE se
+  //   regenera (sifen_regeneracion_seq > 0) aunque siga siendo el mismo
+  //   documento fiscal en SET.
+  //   Caso real (HERRERO 2 / FAC-000399): el XML firmado en storage quedo
+  //   con el CDC de la ultima regen (nunca aprobada por SET), mientras que
+  //   la BD tiene el CDC de la aprobacion original recuperada del historial
+  //   de sifen_jobs. Los dos comparten los primeros 33 caracteres — misma
+  //   factura fiscalmente, distintos por dCodSeg. Se acepta esa diferencia
+  //   para no bloquear la NC; los checks siguientes (RUC, timbrado, dNumDoc,
+  //   fecha) validan que sea el mismo DE.
+  const cdcXml44 = orig.cdcId.replace(/\D/g, "");
+  const mismoDocFiscal = cdcXml44.length === 44 && cdcXml44.slice(0, 33) === cdc44.slice(0, 33);
+  if (cdcXml44 !== cdc44 && !mismoDocFiscal) {
     return {
       ok: false,
       status: 400,
