@@ -1,5 +1,6 @@
 import { createServiceRoleClientWithDbSchema } from "@/lib/supabase/empresa-data-schema";
 import { convertirCantidad } from "@/lib/unidades/convert";
+import { asuncionYmd } from "@/lib/fecha/asuncion";
 
 /** Un faltante de stock detectado al validar la venta. */
 export interface FaltanteStock {
@@ -675,14 +676,23 @@ export async function createVentaTransaccionalPg(
     //    sobre venta_id impide CxC duplicada si la venta se reintentara.
     let cuentaPorCobrarId: string | null = null;
     if (params.tipoVenta === "CREDITO" && params.clienteId) {
-      const fechaEmision = fechaIso.slice(0, 10);
+      // OJO: la fecha calendario tiene que ser la de Paraguay, no la del server
+      // en UTC. Si usamos slice(0,10) sobre un ISO UTC despues de las 21:00 PY,
+      // el dia salta al siguiente en UTC y el fecha_emision queda desalineado
+      // con la firma SIFEN (rechazo 0362 [1004] "fecha adelantada").
+      const fechaEmision = asuncionYmd(fechaIso);
       let fechaVencimiento: string | null = null;
       if (params.fechaVencimiento) {
         fechaVencimiento = params.fechaVencimiento;
       } else if (params.plazoDias && params.plazoDias > 0) {
-        const d = new Date(fechaIso);
-        d.setDate(d.getDate() + params.plazoDias);
-        fechaVencimiento = d.toISOString().slice(0, 10);
+        // Sumar dias sobre el YMD Paraguay (no sobre el ISO UTC).
+        const [yy, mm, dd] = fechaEmision.split("-").map((x) => parseInt(x, 10));
+        const base = new Date(Date.UTC(yy, mm - 1, dd));
+        base.setUTCDate(base.getUTCDate() + params.plazoDias);
+        const y = base.getUTCFullYear();
+        const m = String(base.getUTCMonth() + 1).padStart(2, "0");
+        const d = String(base.getUTCDate()).padStart(2, "0");
+        fechaVencimiento = `${y}-${m}-${d}`;
       }
       const insCxc = await sb
         .from("cuentas_por_cobrar")
@@ -770,8 +780,9 @@ export async function createVentaTransaccionalPg(
         sucursal_id: params.sucursalId,
         cliente_id: params.clienteId ?? null,
         numero_factura: numeroFactura,
-        fecha: fechaIso.slice(0, 10),
-        fecha_vencimiento: fechaIso.slice(0, 10),
+        // Fecha calendario en zona Paraguay (misma razon que fechaEmision arriba).
+        fecha: asuncionYmd(fechaIso),
+        fecha_vencimiento: asuncionYmd(fechaIso),
         monto: calc.total,
         saldo: params.tipoVenta === "CREDITO" ? calc.total : 0,
         estado: params.tipoVenta === "CREDITO" ? "Pendiente" : "Pagado",
