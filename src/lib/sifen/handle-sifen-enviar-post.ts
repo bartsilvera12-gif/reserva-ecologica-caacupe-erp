@@ -4,7 +4,9 @@ import type { AppSupabaseClient } from "@/lib/supabase/schema";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { decryptSecret } from "@/lib/sifen/security";
 import { enviarLoteSifen, type RecibeLoteRespuestaParsed } from "@/lib/sifen/enviar-lote-sifen-test";
-import { recibirDeSifenSync } from "@/lib/sifen/recibe-de-sifen-test";
+import { consultarDePorCdc } from "@/lib/sifen/consulta-de-por-cdc";
+import { construirMensajeRechazoLote } from "@/lib/sifen/mensaje-rechazo-lote";
+import { debeBloquearReenvioPorDteAprobado } from "@/lib/sifen/guardia-reenvio-cdc";
 import { downloadSifenObject, SIFEN_STORAGE_BUCKET } from "@/lib/sifen/sifen-storage";
 import { downloadSifenCertificadoObject } from "@/lib/sifen/sifen-certificados-storage";
 import { toFacturaElectronicaDto } from "@/lib/sifen/to-factura-electronica-dto";
@@ -14,14 +16,6 @@ import { isExplicitSifenTestOverrideEnabled } from "@/lib/env/allow-test-mode";
 function parseAmbiente(raw: string): AmbienteSifen | null {
   if (raw === "test" || raw === "produccion") return raw;
   return null;
-}
-
-function decodificarEntidadesSoapBasicas(s: string): string {
-  return s
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(String(n), 10)))
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">");
 }
 
 function respuestaRecibeLoteJson(r: RecibeLoteRespuestaParsed): Record<string, unknown> {
@@ -68,7 +62,7 @@ export async function handleSifenEnviarPost(
   const { data: feRow, error: errFe } = await supabase
     .from("factura_electronica")
     .select(
-      "id, factura_id, estado_sifen, xml_firmado_path, error, sifen_d_prot_cons_lote, sifen_ultima_respuesta_recibe_lote, sifen_ultima_respuesta_consulta_lote"
+      "id, factura_id, estado_sifen, cdc, sifen_aprobado_at, xml_firmado_path, error, sifen_d_prot_cons_lote, sifen_ultima_respuesta_recibe_lote, sifen_ultima_respuesta_consulta_lote"
     )
     .eq("factura_id", fid)
     .eq("empresa_id", auth.empresa_id)
@@ -180,6 +174,41 @@ export async function handleSifenEnviarPost(
     );
   }
 
+  // Guardia anti-duplicación: antes de enviar, preguntar a SET por el CDC (siConsDE).
+  // Si SET ya tiene el DE APROBADO, NO reenviar (duplicaría el DTE o rebotaría por
+  // CDC duplicado). Si la consulta falla (red/SET caído), no bloqueamos el flujo.
+  const cdcActual = String(feRow.cdc ?? "").replace(/\D/g, "");
+  if (cdcActual.length === 44) {
+    try {
+      const chkCdc = await consultarDePorCdc({
+        ambiente: ambienteSoap,
+        cdc: cdcActual,
+        certificadoP12: p12Dl.data,
+        certificadoPassword: p12Password,
+      });
+      if (debeBloquearReenvioPorDteAprobado(chkCdc)) {
+        const updateAprobado: Record<string, unknown> = { estado_sifen: "aprobado", error: null };
+        if (feRow.sifen_aprobado_at == null) {
+          updateAprobado.sifen_aprobado_at = new Date().toISOString();
+        }
+        await supabase
+          .from("factura_electronica")
+          .update(updateAprobado)
+          .eq("id", feRow.id)
+          .eq("empresa_id", auth.empresa_id);
+        return NextResponse.json(
+          errorResponse(
+            `SET ya tiene este documento APROBADO${chkCdc.dProtAut ? ` (protocolo ${chkCdc.dProtAut})` : ""}. ` +
+              `No se reenvía para evitar duplicar el DTE. El estado se actualizó a "aprobado"; refrescá la vista.`
+          ),
+          { status: 409 }
+        );
+      }
+    } catch {
+      /* Consulta anti-duplicación fallida (red/SET): continuar con el envío normal. */
+    }
+  }
+
   let resp: RecibeLoteRespuestaParsed;
   try {
     resp = await enviarLoteSifen({
@@ -233,30 +262,18 @@ export async function handleSifenEnviarPost(
     nuevoProt = resp.dProtConsLote == null ? null : String(resp.dProtConsLote).trim() || null;
   } else if (resp.loteNoEncolado) {
     nuevoEstado = "error_envio";
-    const baseErr =
-      [resp.dMsgRes, resp.dCodRes ? `Código ${resp.dCodRes}` : null].filter(Boolean).join(" — ") ||
-      "SET no encoló el lote (0301).";
     nuevoProt = protTrim.length > 0 ? protTrim : null;
-    let detalleRecibeSync = "";
-    try {
-      const sync = await recibirDeSifenSync({
-        xmlFirmadoRde: xmlDl.data.toString("utf8"),
-        empresaConfig: {
-          ambiente: ambienteSoap,
-          certificadoP12: p12Dl.data,
-          certificadoPassword: p12Password,
-        },
-      });
-      if (!sync.soapFault && sync.gResProc.length > 0) {
-        const g = sync.gResProc[0]!;
-        detalleRecibeSync = ` ${decodificarEntidadesSoapBasicas(`[${g.dCodRes}] ${g.dMsgRes}`)}`;
-      }
-    } catch {
-      /* recibe síncrono es solo ayuda diagnóstico */
-    }
-    const sufProt =
-      nuevoProt != null ? `${consultaLoteHint} ${nuevoProt} para más detalle si aplica.` : "";
-    nuevoError = `${baseErr}${detalleRecibeSync ? `.${detalleRecibeSync}` : ""}${sufProt}`;
+    // El detalle por-DE sale de la respuesta REAL del lote (gResProc dentro del
+    // SOAP de recibe-lote), nunca del servicio síncrono. El 1264 síncrono ya no se
+    // consulta ni se muestra: es una validación exclusiva de siRecepDE (Manual v150,
+    // D101c) y no explica un rechazo del envío asíncrono.
+    nuevoError = construirMensajeRechazoLote({
+      dCodRes: resp.dCodRes,
+      dMsgRes: resp.dMsgRes,
+      cuerpoSoapCrudo: resp.cuerpoSoapCrudo,
+      protocolo: nuevoProt,
+      consultaLoteHint,
+    });
   } else {
     nuevoEstado = "error_envio";
     const code = resp.dCodRes?.trim() ?? "";

@@ -1,0 +1,104 @@
+/**
+ * QA unitario (sin red, sin BD) de la lógica de rechazo de envío SIFEN:
+ *   - construirMensajeRechazoLote: el mensaje visible sale SIEMPRE de la respuesta
+ *     real del lote y NUNCA del 1264 del servicio síncrono.
+ *   - debeBloquearReenvioPorDteAprobado: guardia anti-duplicación por CDC.
+ *
+ * Casos cubiertos (pedido del cliente):
+ *   1. 0301 async + 1264 sync diagnóstico → el 1264 no debe aparecer.
+ *   2. Rechazo real del lote (gResProc con código real) → se muestra ese código.
+ *   3. 0301 sin detalle por-DE → mensaje limpio, sin "1264" ni "undefined".
+ *   4. CDC aprobado → bloquear reenvío.
+ *   5. CDC no encontrado → NO bloquear.
+ *
+ * Uso: npm run qa:sifen-rechazo-envio   (o: npx tsx scripts/qa-sifen-rechazo-envio.ts)
+ */
+import { construirMensajeRechazoLote } from "../src/lib/sifen/mensaje-rechazo-lote";
+import { debeBloquearReenvioPorDteAprobado } from "../src/lib/sifen/guardia-reenvio-cdc";
+
+let fallos = 0;
+function check(nombre: string, cond: boolean, extra?: string) {
+  const ok = cond === true;
+  if (!ok) fallos++;
+  console.log(`${ok ? "✓ PASS" : "✗ FAIL"}  ${nombre}${!ok && extra ? `\n        ${extra}` : ""}`);
+}
+
+const HINT = " — Use «Consultar lote SET» con el protocolo";
+const PROT = "85010225259220718";
+
+// ---------------------------------------------------------------------------
+// Caso 1: 0301 asíncrono + 1264 síncrono. El envío real (lote) rechazó por un
+// motivo real (aquí 0160). El servicio síncrono habría devuelto 1264, pero ese
+// valor NO se le pasa al builder (proviene de siRecepDE, no del lote). El mensaje
+// visible no debe contener 1264.
+// ---------------------------------------------------------------------------
+const soapLoteConDetalleReal =
+  `<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body>` +
+  `<rRetEnviLoteDe xmlns="http://ekuatia.set.gov.py/sifen/xsd">` +
+  `<dCodRes>0301</dCodRes>` +
+  `<dMsgRes>Lote no encolado para procesamiento {Se rechazaron todos los DE del lote}</dMsgRes>` +
+  `<dProtConsLote>${PROT}</dProtConsLote>` +
+  `<gResProc><dCodRes>0160</dCodRes><dMsgRes>dRucRec inv&#225;lido</dMsgRes></gResProc>` +
+  `</rRetEnviLoteDe></env:Body></env:Envelope>`;
+
+// Lo que el ex-diagnóstico síncrono habría devuelto para este emisor (se ignora):
+const _respuestaSincronaIgnorada = "[1264] RUC del emisor no está habilitado para utilizar el servicio síncrono [80131562]";
+void _respuestaSincronaIgnorada;
+
+const msg1 = construirMensajeRechazoLote({
+  dCodRes: "0301",
+  dMsgRes: "Lote no encolado para procesamiento {Se rechazaron todos los DE del lote}",
+  cuerpoSoapCrudo: soapLoteConDetalleReal,
+  protocolo: PROT,
+  consultaLoteHint: HINT,
+});
+check("Caso 1a: el mensaje NO contiene el 1264 síncrono", !msg1.includes("1264"), `msg=${msg1}`);
+check("Caso 1b: el mensaje contiene el código real del lote [0160]", msg1.includes("[0160]"), `msg=${msg1}`);
+check("Caso 1c: el mensaje conserva el 0301 y el protocolo", msg1.includes("0301") && msg1.includes(PROT), `msg=${msg1}`);
+
+// ---------------------------------------------------------------------------
+// Caso 2: rechazo real del lote con otro código (ej. 0362 [1005]). Debe verse.
+// ---------------------------------------------------------------------------
+const soapLoteRechazoReal =
+  `<rRetEnviLoteDe xmlns="http://ekuatia.set.gov.py/sifen/xsd">` +
+  `<dCodRes>0301</dCodRes><dMsgRes>Lote no encolado para procesamiento</dMsgRes>` +
+  `<gResProc><dCodRes>0362</dCodRes><dMsgRes>Fecha de emisi&#243;n fuera de rango</dMsgRes></gResProc>` +
+  `</rRetEnviLoteDe>`;
+const msg2 = construirMensajeRechazoLote({
+  dCodRes: "0301",
+  dMsgRes: "Lote no encolado para procesamiento",
+  cuerpoSoapCrudo: soapLoteRechazoReal,
+  protocolo: null,
+  consultaLoteHint: HINT,
+});
+check("Caso 2a: muestra el código real por-DE [0362]", msg2.includes("[0362]"), `msg=${msg2}`);
+check("Caso 2b: decodifica el mensaje (emisión)", /emisi[oó]n/i.test(msg2), `msg=${msg2}`);
+check("Caso 2c: sin protocolo, no agrega la pista de consulta", !msg2.includes(HINT.trim()), `msg=${msg2}`);
+
+// ---------------------------------------------------------------------------
+// Caso 3: 0301 sin gResProc por-DE. Mensaje limpio, sin 1264 ni "undefined".
+// ---------------------------------------------------------------------------
+const soapLoteSinDetalle =
+  `<rRetEnviLoteDe xmlns="http://ekuatia.set.gov.py/sifen/xsd">` +
+  `<dCodRes>0301</dCodRes><dMsgRes>Lote no encolado para procesamiento</dMsgRes>` +
+  `<dProtConsLote>${PROT}</dProtConsLote></rRetEnviLoteDe>`;
+const msg3 = construirMensajeRechazoLote({
+  dCodRes: "0301",
+  dMsgRes: "Lote no encolado para procesamiento",
+  cuerpoSoapCrudo: soapLoteSinDetalle,
+  protocolo: PROT,
+  consultaLoteHint: HINT,
+});
+check("Caso 3a: mensaje limpio sin 1264", !msg3.includes("1264"), `msg=${msg3}`);
+check("Caso 3b: sin 'undefined' ni corchetes vacíos", !msg3.includes("undefined") && !msg3.includes("[]"), `msg=${msg3}`);
+check("Caso 3c: incluye 0301 y la pista con protocolo", msg3.includes("0301") && msg3.includes(PROT), `msg=${msg3}`);
+
+// ---------------------------------------------------------------------------
+// Casos 4 y 5: guardia anti-duplicación por CDC.
+// ---------------------------------------------------------------------------
+check("Caso 4: CDC aprobado → bloquear reenvío", debeBloquearReenvioPorDteAprobado({ aprobado: true }) === true);
+check("Caso 5a: CDC no encontrado → NO bloquear", debeBloquearReenvioPorDteAprobado({ aprobado: false }) === false);
+check("Caso 5b: sin veredicto (aprobado falso) → NO bloquear", debeBloquearReenvioPorDteAprobado({ aprobado: false }) === false);
+
+console.log(`\n${fallos === 0 ? "✓ TODOS OK" : `✗ ${fallos} FALLO(S)`}`);
+process.exit(fallos === 0 ? 0 : 1);
