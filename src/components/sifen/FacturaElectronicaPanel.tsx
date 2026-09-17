@@ -900,6 +900,11 @@ export function FacturaElectronicaPanel({
   const deAprobado = Boolean(fe && String(estado) === "aprobado");
 
   const stStr = estado != null ? String(estado) : "";
+  // Documento ya aprobado por SET: no se puede regenerar ni reenviar (el backend
+  // lo bloquea; acá además ocultamos los botones para evitar el intento). Cubre
+  // el caso en que el estado quedó en rechazado/error_envio tras regenerar pero
+  // la aprobación (sifen_aprobado_at) persiste.
+  const yaAprobada = Boolean(fe?.sifen_aprobado_at) || stStr === "aprobado";
   const primaryConsultarLote =
     Boolean(resumen?.sifen_config_activa) &&
     puedeConsultarLote &&
@@ -907,6 +912,7 @@ export function FacturaElectronicaPanel({
   const primaryGenerarYEnviar =
     Boolean(resumen?.sifen_config_activa) &&
     !primaryConsultarLote &&
+    !yaAprobada &&
     (!fe || ["borrador", "generado", "firmado", "error_envio"].includes(stStr));
   // El worker en background puede estar procesando esta misma factura
   // (etapa xml/firmar/enviar) al mismo tiempo que el operador aprieta un botón
@@ -972,6 +978,13 @@ export function FacturaElectronicaPanel({
                 </div>
               ) : null}
 
+              {yaAprobada && stStr !== "aprobado" ? (
+                <div className="rounded-lg text-sm px-3 py-2 bg-amber-50 border border-amber-200 text-amber-900">
+                  Este documento ya fue aprobado por SET y no puede regenerarse ni reenviarse.
+                  Utilice el documento aprobado existente (ver «Recuperar documento aprobado (SET)»).
+                </div>
+              ) : null}
+
               <div className="flex flex-wrap items-center gap-3">
                 {/* "Regenerar documento" también debe estar disponible en
                     estado 'error_envio' (rechazo local / falla al enviar):
@@ -979,7 +992,7 @@ export function FacturaElectronicaPanel({
                     aprobado / cancelado), y en la práctica hace falta cuando
                     los datos del receptor cambiaron (p.ej. FELIX pasa de sin
                     RUC a contribuyente con RUC → nuevo XML B2B). */}
-                {(stStr === "rechazado" || stStr === "error_envio") && puedeGenerarXml ? (
+                {(stStr === "rechazado" || stStr === "error_envio") && puedeGenerarXml && !yaAprobada ? (
                   <button
                     type="button"
                     disabled={busy}
@@ -1105,7 +1118,7 @@ export function FacturaElectronicaPanel({
                     </button>
                     <button
                       type="button"
-                      disabled={!puedeGenerarXml || busy}
+                      disabled={!puedeGenerarXml || busy || yaAprobada}
                       onClick={() => run("xml")}
                       className="px-2.5 py-1.5 text-[11px] font-semibold rounded-md border border-slate-200 bg-white text-slate-800 disabled:opacity-40 hover:bg-slate-50"
                     >
@@ -1123,6 +1136,7 @@ export function FacturaElectronicaPanel({
                       type="button"
                       disabled={
                         busy ||
+                        yaAprobada ||
                         (stStr !== "firmado" &&
                           !(stStr === "error_envio" && Boolean(fe?.xml_firmado_path?.trim())))
                       }

@@ -15,6 +15,7 @@
  */
 import { construirMensajeRechazoLote } from "../src/lib/sifen/mensaje-rechazo-lote";
 import { debeBloquearReenvioPorDteAprobado } from "../src/lib/sifen/guardia-reenvio-cdc";
+import { facturaElectronicaYaAprobada, MSG_DOC_APROBADO } from "../src/lib/sifen/aprobado-guard";
 
 let fallos = 0;
 function check(nombre: string, cond: boolean, extra?: string) {
@@ -99,6 +100,33 @@ check("Caso 3c: incluye 0301 y la pista con protocolo", msg3.includes("0301") &&
 check("Caso 4: CDC aprobado → bloquear reenvío", debeBloquearReenvioPorDteAprobado({ aprobado: true }) === true);
 check("Caso 5a: CDC no encontrado → NO bloquear", debeBloquearReenvioPorDteAprobado({ aprobado: false }) === false);
 check("Caso 5b: sin veredicto (aprobado falso) → NO bloquear", debeBloquearReenvioPorDteAprobado({ aprobado: false }) === false);
+
+// ---------------------------------------------------------------------------
+// Casos 6-8: guardia definitiva "documento ya aprobado" (bloquea REGENERAR y
+// REENVIAR). Ambos handlers (/sifen/xml y /sifen/enviar) usan este predicado.
+// ---------------------------------------------------------------------------
+// Reenvío bloqueado: estado fiscal 'aprobado'.
+check("Caso 6a: REENVÍO bloqueado — estado 'aprobado'",
+  facturaElectronicaYaAprobada({ estado_sifen: "aprobado", sifen_aprobado_at: null }) === true);
+// Reenvío bloqueado: aprobado_at seteado aunque el estado sea 'firmado' (tras re-firmar).
+check("Caso 6b: REENVÍO bloqueado — sifen_aprobado_at seteado, estado 'firmado'",
+  facturaElectronicaYaAprobada({ estado_sifen: "firmado", sifen_aprobado_at: "2026-09-16T17:13:44.459Z" }) === true);
+// Regeneración bloqueada: el caso real de FAC-000080 (estado 'rechazado' pero ya aprobada).
+check("Caso 7a: REGENERACIÓN bloqueada — estado 'rechazado' con sifen_aprobado_at (caso FAC-000080)",
+  facturaElectronicaYaAprobada({ estado_sifen: "rechazado", sifen_aprobado_at: "2026-09-16T17:13:44.459Z" }) === true);
+// Regeneración bloqueada: estado 'error_envio' pero ya aprobada.
+check("Caso 7b: REGENERACIÓN bloqueada — estado 'error_envio' con sifen_aprobado_at",
+  facturaElectronicaYaAprobada({ estado_sifen: "error_envio", sifen_aprobado_at: "2026-09-16T17:13:44.459Z" }) === true);
+// NO bloquear cuando nunca fue aprobada (rechazo legítimo sin aprobación previa).
+check("Caso 8a: NO bloquea — 'rechazado' sin sifen_aprobado_at",
+  facturaElectronicaYaAprobada({ estado_sifen: "rechazado", sifen_aprobado_at: null }) === false);
+check("Caso 8b: NO bloquea — 'borrador' sin aprobación",
+  facturaElectronicaYaAprobada({ estado_sifen: "borrador", sifen_aprobado_at: null }) === false);
+check("Caso 8c: NO bloquea — fila nula/indefinida",
+  facturaElectronicaYaAprobada(null) === false);
+// Mensaje exacto requerido.
+check("Caso 9: el mensaje de bloqueo es el texto requerido",
+  MSG_DOC_APROBADO === "Este documento ya fue aprobado por SET y no puede regenerarse ni reenviarse. Utilice el documento aprobado existente.");
 
 console.log(`\n${fallos === 0 ? "✓ TODOS OK" : `✗ ${fallos} FALLO(S)`}`);
 process.exit(fallos === 0 ? 0 : 1);

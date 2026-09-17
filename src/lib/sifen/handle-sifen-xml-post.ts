@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { UsuarioConEmpresa } from "@/lib/middleware/auth";
 import type { AppSupabaseClient } from "@/lib/supabase/schema";
 import { successResponse, errorResponse } from "@/lib/api/response";
+import { facturaElectronicaYaAprobada, MSG_DOC_APROBADO } from "@/lib/sifen/aprobado-guard";
 import { loadValidatedSifenPayload } from "@/lib/sifen/load-factura-payload";
 import { buildOfficialRdeFacturaElectronicaXml } from "@/lib/sifen/rde-xml";
 import {
@@ -51,7 +52,7 @@ export async function handleSifenXmlPost(
   const { data: feSnapshot, error: errSnap } = await supabase
     .from("factura_electronica")
     .select(
-      "id, xml_path, xml_firmado_path, estado_sifen, sifen_regeneracion_seq, error, cdc, sifen_d_prot_cons_lote, sifen_ultima_respuesta_consulta_lote, sifen_ultima_respuesta_recibe_lote"
+      "id, xml_path, xml_firmado_path, estado_sifen, sifen_aprobado_at, sifen_regeneracion_seq, error, cdc, sifen_d_prot_cons_lote, sifen_ultima_respuesta_consulta_lote, sifen_ultima_respuesta_recibe_lote"
     )
     .eq("factura_id", fid)
     .eq("empresa_id", auth.empresa_id)
@@ -67,6 +68,14 @@ export async function handleSifenXmlPost(
       ),
       { status: 400 }
     );
+  }
+
+  // Guardia definitiva: un documento ya aprobado por SET no puede regenerarse
+  // (reemitir genera un duplicado 1002 y huérfana el DTE aprobado). Cubre el caso
+  // en que el estado quedó en rechazado/error_envio tras regenerar, pero
+  // `sifen_aprobado_at` sigue seteado. NO toca el CDC ni datos del DTE aprobado.
+  if (facturaElectronicaYaAprobada(feSnapshot)) {
+    return NextResponse.json(errorResponse(MSG_DOC_APROBADO), { status: 409 });
   }
 
   if (ESTADOS_BLOQUEADOS_XML.has(String(feSnapshot.estado_sifen))) {

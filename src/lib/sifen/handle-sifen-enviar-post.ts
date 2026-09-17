@@ -7,6 +7,7 @@ import { enviarLoteSifen, type RecibeLoteRespuestaParsed } from "@/lib/sifen/env
 import { consultarDePorCdc } from "@/lib/sifen/consulta-de-por-cdc";
 import { construirMensajeRechazoLote } from "@/lib/sifen/mensaje-rechazo-lote";
 import { debeBloquearReenvioPorDteAprobado } from "@/lib/sifen/guardia-reenvio-cdc";
+import { facturaElectronicaYaAprobada, MSG_DOC_APROBADO } from "@/lib/sifen/aprobado-guard";
 import { downloadSifenObject, SIFEN_STORAGE_BUCKET } from "@/lib/sifen/sifen-storage";
 import { downloadSifenCertificadoObject } from "@/lib/sifen/sifen-certificados-storage";
 import { toFacturaElectronicaDto } from "@/lib/sifen/to-factura-electronica-dto";
@@ -75,6 +76,13 @@ export async function handleSifenEnviarPost(
     return NextResponse.json(errorResponse("No existe registro electrónico para esta factura."), {
       status: 400,
     });
+  }
+
+  // Guardia definitiva: un documento ya aprobado por SET no puede reenviarse
+  // (reemitir genera un duplicado 1002). Cubre el caso en que el estado quedó en
+  // rechazado/error_envio tras regenerar, pero `sifen_aprobado_at` sigue seteado.
+  if (facturaElectronicaYaAprobada(feRow)) {
+    return NextResponse.json(errorResponse(MSG_DOC_APROBADO), { status: 409 });
   }
 
   if (String(feRow.estado_sifen) !== "firmado") {
