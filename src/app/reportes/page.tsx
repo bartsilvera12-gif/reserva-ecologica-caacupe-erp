@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import PageHeader from "@/components/ui/PageHeader";
 import { ReportCard } from "@/components/reportes/ReportCard";
-import { Wallet, Truck, Package, ShoppingCart, ArrowLeftRight, TrendingDown, PackageX, Banknote, ClipboardList } from "lucide-react";
+import { Wallet, Truck, Package, ShoppingCart, ArrowLeftRight, TrendingDown, PackageX, Banknote, ClipboardList, FileText } from "lucide-react";
 
 /** Hub de reportería operativa (Fase 1: Estado de cuenta + Proveedores). */
 export default function ReportesPage() {
@@ -52,6 +52,15 @@ export default function ReportesPage() {
             icon={Package}
             description="Compras del mes (agrupadas por N° de control), por proveedor y por producto."
             href="/reportes/compras"
+          />
+        </li>
+        <li>
+          <ReportCard
+            title="R90 – Registro de Ventas"
+            subtitle="Archivo para Marangatú (RG 90)"
+            icon={FileText}
+            description="Genera el archivo CSV de Registro de Comprobantes de Ventas (RG 90) con los comprobantes NO electrónicos del período. Los documentos electrónicos SIFEN no se incluyen: la SET ya los obtiene automáticamente."
+            href="/reportes/r90"
           />
         </li>
         <li>
