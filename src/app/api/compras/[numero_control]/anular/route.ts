@@ -15,8 +15,14 @@ import { API_ERRORS } from "@/lib/api/errors";
  *
  * Alcance: NO revierte `productos.costo_promedio` ni `precio_venta` (pueden haber
  * cambiado con compras/movimientos posteriores). Si eso hace falta, corregir
- * manualmente desde inventario. Sin cuentas_por_pagar todavía en este ERP, los
- * pagos a proveedores se manejan por separado.
+ * manualmente desde inventario.
+ *
+ * Cuentas por pagar: si la compra fue a crédito existe una `cuentas_por_pagar`
+ * ligada por `compra_numero_control`. Al anular la compra se anula también esa
+ * CxP (estado='anulada', saldo=0) para que la deuda no siga figurando como
+ * pendiente ni sume en el saldo total. Si la CxP ya tiene pagos registrados
+ * (pagado > 0) se bloquea la anulación: primero hay que revertir los pagos, si no
+ * quedarían pagos huérfanos sin deuda asociada.
  */
 
 function trimMotivo(raw: unknown): string | null {
@@ -90,6 +96,28 @@ export async function POST(
       return NextResponse.json(errorResponse("La compra ya fue anulada."), { status: 409 });
     }
 
+    // Cuenta por pagar asociada (solo compras a crédito la tienen). Si ya registró
+    // pagos, no anulamos automáticamente: el operador debe revertir esos pagos
+    // primero para no dejar pagos sin deuda asociada.
+    const cxpQ = await sb
+      .from("cuentas_por_pagar")
+      .select("id, pagado, estado")
+      .eq("empresa_id", empresaId)
+      .eq("compra_numero_control", numero)
+      .maybeSingle();
+    if (cxpQ.error) {
+      return NextResponse.json(errorResponse(cxpQ.error.message), { status: 400 });
+    }
+    const cxp = cxpQ.data as { id: string; pagado: number | string; estado: string } | null;
+    if (cxp && cxp.estado !== "anulada" && Number(cxp.pagado) > 0) {
+      return NextResponse.json(
+        errorResponse(
+          "La compra tiene una cuenta por pagar con pagos registrados. Revertí los pagos al proveedor antes de anular la compra."
+        ),
+        { status: 409 }
+      );
+    }
+
     const nowIso = new Date().toISOString();
     const referencia = `Anulación ${numero}`;
 
@@ -160,11 +188,26 @@ export async function POST(
         .eq("empresa_id", empresaId);
       if (updCompras.error) throw new Error(updCompras.error.message);
 
+      // 4) Propagar la anulación a la cuenta por pagar (compras a crédito): la deuda
+      //    deja de figurar como pendiente y sale del saldo total. saldo=0 + estado
+      //    anulada es lo que la UI de Cuentas por pagar usa para ocultarla.
+      let cxpAnulada = false;
+      if (cxp && cxp.estado !== "anulada") {
+        const updCxp = await sb
+          .from("cuentas_por_pagar")
+          .update({ estado: "anulada", saldo: 0, updated_at: nowIso })
+          .eq("empresa_id", empresaId)
+          .eq("id", cxp.id);
+        if (updCxp.error) throw new Error(updCxp.error.message);
+        cxpAnulada = true;
+      }
+
       return NextResponse.json(
         successResponse({
           numero_control: numero,
           filas_anuladas: filas.length,
           stock_reintegrado: salidasInsertadas.length,
+          cuenta_por_pagar_anulada: cxpAnulada,
         })
       );
     } catch (e) {
