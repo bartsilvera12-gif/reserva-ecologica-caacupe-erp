@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
-import { Wallet, X, Loader2, AlertTriangle, Search } from "lucide-react";
+import { Wallet, X, Loader2, AlertTriangle, Search, CalendarClock } from "lucide-react";
+import ProgramarCuotasModal from "@/components/cuotas/ProgramarCuotasModal";
 
 type Cuenta = {
   id: string;
@@ -45,6 +46,7 @@ export default function CuentasPorPagarPage() {
   const [q, setQ] = useState("");
   const [tab, setTab] = useState<"pendientes" | "todas">("pendientes");
   const [pagar, setPagar] = useState<Cuenta | null>(null);
+  const [cuotasDe, setCuotasDe] = useState<Cuenta | null>(null);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -145,9 +147,15 @@ export default function CuentasPorPagarPage() {
                   <td className="px-4 py-3"><EstadoBadge c={c} /></td>
                   <td className="px-4 py-3 text-right">
                     {c.estado !== "anulada" && c.saldo > 0 && (
-                      <button onClick={() => setPagar(c)} className="rounded-lg bg-[#4FAEB2] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#3F8E91]">
-                        Registrar pago
-                      </button>
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => setCuotasDe(c)} title="Programar cuotas"
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                          <CalendarClock className="h-3.5 w-3.5" /> Cuotas
+                        </button>
+                        <button onClick={() => setPagar(c)} className="rounded-lg bg-[#4FAEB2] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#3F8E91]">
+                          Registrar pago
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -159,6 +167,18 @@ export default function CuentasPorPagarPage() {
 
       {pagar && (
         <ModalPago cuenta={pagar} onClose={() => setPagar(null)} onPagado={() => { setPagar(null); cargar(); }} />
+      )}
+
+      {cuotasDe && (
+        <ProgramarCuotasModal
+          tipo="pagar"
+          cuentaId={cuotasDe.id}
+          montoTotal={cuotasDe.monto_original}
+          moneda={cuotasDe.moneda}
+          titulo={`${cuotasDe.proveedor_nombre} · ${cuotasDe.numero_factura_proveedor || cuotasDe.compra_numero_control}`}
+          onClose={() => setCuotasDe(null)}
+          onSaved={() => cargar()}
+        />
       )}
     </div>
   );
