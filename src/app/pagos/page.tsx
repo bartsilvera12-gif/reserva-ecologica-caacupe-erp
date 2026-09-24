@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Banknote, Loader2, Layers } from "lucide-react";
+import { Banknote, Loader2, Layers, CalendarClock } from "lucide-react";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { generarYAbrirRecibo } from "@/lib/recibos/client";
 import { RegistrarCobroModalCxc } from "@/components/cobros/RegistrarCobroModalCxc";
 import { CobrarMultipleModal } from "@/components/cobros/CobrarMultipleModal";
+import ProgramarCuotasModal from "@/components/cuotas/ProgramarCuotasModal";
 
 type Cuenta = {
   id: string;
@@ -72,6 +73,7 @@ export default function PagosPage() {
   const [toast, setToast] = useState<string | null>(null);
 
   const [cobrando, setCobrando] = useState<Cuenta | null>(null);
+  const [cuotasDe, setCuotasDe] = useState<Cuenta | null>(null);
   const [reciboBusy, setReciboBusy] = useState<string | null>(null);
   /** Modal de cobro múltiple. Puede abrirse en blanco (elegir cliente) o con
    *  cliente preseleccionado desde una fila del listado. */
@@ -269,6 +271,13 @@ export default function PagosPage() {
                           >
                             + varias
                           </button>
+                          <button
+                            onClick={() => setCuotasDe(c)}
+                            title="Programar cuotas"
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            <CalendarClock className="h-3.5 w-3.5" /> Cuotas
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -373,6 +382,19 @@ export default function PagosPage() {
         onClose={() => setCobrando(null)}
         onExito={async () => { setToast("Pago registrado"); setTimeout(() => setToast(null), 2800); await cargar(); }}
       />
+
+      {/* Modal de plan de cuotas (cronograma con montos y vencimientos distintos) */}
+      {cuotasDe && (
+        <ProgramarCuotasModal
+          tipo="cobrar"
+          cuentaId={cuotasDe.id}
+          montoTotal={cuotasDe.total}
+          moneda={cuotasDe.moneda}
+          titulo={`${cuotasDe.cliente_nombre} · ${cuotasDe.numero_venta ?? ""}`}
+          onClose={() => setCuotasDe(null)}
+          onSaved={() => cargar()}
+        />
+      )}
 
       {/* Modal de cobro múltiple: varias facturas del mismo cliente en un solo movimiento con recibo REC-XXXXXX */}
       <CobrarMultipleModal
