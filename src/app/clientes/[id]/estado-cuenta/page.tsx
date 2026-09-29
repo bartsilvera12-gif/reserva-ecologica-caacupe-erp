@@ -21,7 +21,28 @@ type Mov = {
 };
 type Cobro = { id: string; fecha_pago: string; monto: number; metodo_pago: string; referencia: string | null };
 type Cliente = { id: string; nombre: string; ruc: string | null; telefono: string | null; direccion: string | null };
-type Resumen = { total_vendido: number; saldo_pendiente: number; total_cobrado: number; vencido: number };
+type NcRow = {
+  numero: number | string | null;
+  factura_origen: string | null;
+  monto: number;
+  saldo_disponible: number;
+  estado: "disponible" | "parcial" | "aplicada";
+};
+type Resumen = {
+  total_vendido: number;
+  saldo_pendiente: number;
+  total_cobrado: number;
+  vencido: number;
+  saldo_operativo: number;
+  nc_disponibles: number;
+  saldo_neto: number;
+};
+
+const NC_BADGE: Record<string, string> = {
+  disponible: "bg-emerald-100 text-emerald-700",
+  parcial: "bg-sky-100 text-sky-700",
+  aplicada: "bg-slate-100 text-slate-500",
+};
 
 const ESTADO_BADGE: Record<string, string> = {
   pendiente: "bg-amber-100 text-amber-700",
@@ -51,6 +72,7 @@ export default function EstadoCuentaPage() {
   const [resumen, setResumen] = useState<Resumen | null>(null);
   const [movs, setMovs] = useState<Mov[]>([]);
   const [cobros, setCobros] = useState<Cobro[]>([]);
+  const [ncs, setNcs] = useState<NcRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -71,6 +93,7 @@ export default function EstadoCuentaPage() {
       setResumen(body.data.resumen);
       setMovs(body.data.movimientos ?? []);
       setCobros(body.data.cobros ?? []);
+      setNcs(body.data.notas_credito ?? []);
     } catch {
       setError("Error de red.");
     } finally {
@@ -195,6 +218,55 @@ export default function EstadoCuentaPage() {
           </div>
         )}
       </div>
+
+      {/* Notas de crédito (créditos a favor del cliente) */}
+      {ncs.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="border-b border-slate-100 px-4 py-3">
+            <h2 className="text-sm font-semibold text-gray-700">Notas de crédito</h2>
+            <p className="text-xs text-gray-400">Créditos a favor. Reducen la deuda al aplicarse en un cobro.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-gray-500">
+                <tr>
+                  <th className="py-2.5 px-4 font-medium">N.º NC</th>
+                  <th className="py-2.5 px-4 font-medium">Factura de origen</th>
+                  <th className="py-2.5 px-4 font-medium text-right">Importe</th>
+                  <th className="py-2.5 px-4 font-medium text-right">Disponible</th>
+                  <th className="py-2.5 px-4 font-medium">Estado</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {ncs.map((n, i) => (
+                  <tr key={`${n.numero ?? i}`}>
+                    <td className="py-2.5 px-4 font-mono font-medium text-gray-800">{n.numero != null ? `NC-${n.numero}` : "—"}</td>
+                    <td className="py-2.5 px-4 font-mono text-gray-600">{n.factura_origen ?? "—"}</td>
+                    <td className="py-2.5 px-4 text-right tabular-nums">{fmtGs(n.monto)}</td>
+                    <td className="py-2.5 px-4 text-right tabular-nums font-semibold text-emerald-700">{fmtGs(n.saldo_disponible)}</td>
+                    <td className="py-2.5 px-4">
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${NC_BADGE[n.estado] ?? NC_BADGE.disponible}`}>
+                        {n.estado.charAt(0).toUpperCase() + n.estado.slice(1)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {/* Conciliación: saldo operativo − NC disponibles = saldo neto */}
+          {resumen.nc_disponibles > 0 && (
+            <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-3">
+              <div className="ml-auto max-w-sm space-y-1 text-sm">
+                <div className="flex justify-between text-gray-600"><span>Saldo operativo actual</span><span className="tabular-nums font-medium">{fmtGs(resumen.saldo_operativo)}</span></div>
+                <div className="flex justify-between text-emerald-700"><span>NC disponibles</span><span className="tabular-nums font-medium">−{fmtGs(resumen.nc_disponibles)}</span></div>
+                <div className="flex justify-between border-t border-slate-200 pt-1 text-gray-900 font-bold"><span>Saldo neto (informativo)</span><span className="tabular-nums">{fmtGs(resumen.saldo_neto)}</span></div>
+              </div>
+              <p className="mt-2 text-[11px] text-gray-400">El saldo neto es informativo: las NC reducen la deuda cuando se aplican en un cobro; no modifican el saldo operativo por sí solas.</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Historial de cobros */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
