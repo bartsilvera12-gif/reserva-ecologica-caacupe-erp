@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
+import { marcarEstadoNc, totalNcDisponibles, saldoNetoInformativo } from "@/lib/estado-cuenta/nc-resumen";
 
 /**
  * GET /api/clientes/[id]/estado-cuenta — resumen + cuentas por cobrar + cobros del cliente.
@@ -89,14 +90,59 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
     if (cobQ.error) throw new Error(cobQ.error.message);
     const cobros = (cobQ.data ?? []) as Record<string, unknown>[];
 
+    // Notas de crédito APROBADAS del cliente (créditos a favor). Son a nivel
+    // cliente: reducen la deuda al aplicarse en un cobro. Acá solo se listan para
+    // que el cliente pueda conciliar; NO se toca ningún saldo.
+    const ncQ = await ctx.supabase
+      .from("nota_credito")
+      .select("numero, monto, saldo_disponible, factura_id")
+      .eq("empresa_id", empresaId)
+      .eq("cliente_id", id)
+      .eq("estado_erp", "aprobada")
+      .order("created_at", { ascending: true });
+    if (ncQ.error) throw new Error(ncQ.error.message);
+    const ncRows = (ncQ.data ?? []) as Record<string, unknown>[];
+
+    // Número de la factura de origen de cada NC (para conciliar).
+    const facturaIds = Array.from(
+      new Set(ncRows.map((n) => (n.factura_id ? String(n.factura_id) : "")).filter(Boolean))
+    );
+    const facturaNumeroPorId = new Map<string, string>();
+    if (facturaIds.length > 0) {
+      const fq = await ctx.supabase
+        .from("facturas")
+        .select("id, numero_factura")
+        .eq("empresa_id", empresaId)
+        .in("id", facturaIds);
+      if (fq.error) throw new Error(fq.error.message);
+      for (const f of (fq.data ?? []) as Record<string, unknown>[]) {
+        facturaNumeroPorId.set(String(f.id), String(f.numero_factura ?? ""));
+      }
+    }
+
+    const notas_credito = marcarEstadoNc(
+      ncRows.map((n) => ({
+        numero: (n.numero as number | string | null) ?? null,
+        factura_origen: n.factura_id ? facturaNumeroPorId.get(String(n.factura_id)) ?? null : null,
+        monto: Number(n.monto) || 0,
+        saldo_disponible: Number(n.saldo_disponible) || 0,
+      }))
+    );
+    const ncDisponibles = totalNcDisponibles(notas_credito);
+    const saldoNeto = saldoNetoInformativo(saldoPendiente, ncDisponibles);
+
     const resumen = {
       total_vendido: Math.round(totalVendido),
       saldo_pendiente: Math.round(saldoPendiente),
       total_cobrado: Math.round(totalVendido - saldoPendiente),
       vencido: Math.round(vencido),
+      // Conciliación de NC (informativo; no cambia el saldo operativo).
+      saldo_operativo: Math.round(saldoPendiente),
+      nc_disponibles: Math.round(ncDisponibles),
+      saldo_neto: Math.round(saldoNeto),
     };
 
-    return NextResponse.json(successResponse({ cliente, resumen, movimientos, cobros }));
+    return NextResponse.json(successResponse({ cliente, resumen, movimientos, cobros, notas_credito }));
   } catch (err) {
     console.error("[/api/clientes/[id]/estado-cuenta GET]", err instanceof Error ? err.message : err);
     return NextResponse.json(errorResponse("No se pudo cargar el estado de cuenta."), { status: 500 });

@@ -4,6 +4,7 @@ import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema";
 import { membreteA4 } from "@/lib/documentos/membrete";
 import { getMarcaSucursal } from "@/lib/documentos/marca-sucursal";
+import { marcarEstadoNc, totalNcDisponibles, saldoNetoInformativo } from "@/lib/estado-cuenta/nc-resumen";
 
 /**
  * GET /api/clientes/[id]/estado-cuenta/pdf?auto=1
@@ -85,6 +86,30 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
       .eq("sucursal_id", exigirSucursal(ctx.auth.sucursal_id)).eq("cliente_id", id).order("fecha_pago", { ascending: false }).limit(500);
   const cobros = (cobQ.data ?? []) as Record<string, unknown>[];
 
+  // Notas de crédito aprobadas (créditos a favor). Solo se listan para conciliar;
+  // no tocan ningún saldo.
+  const ncQ = await ctx.supabase
+    .from("nota_credito")
+    .select("numero, monto, saldo_disponible, factura_id")
+    .eq("empresa_id", empresaId).eq("cliente_id", id).eq("estado_erp", "aprobada")
+    .order("created_at", { ascending: true });
+  const ncRows = (ncQ.data ?? []) as Record<string, unknown>[];
+  const facturaIds = Array.from(new Set(ncRows.map((n) => (n.factura_id ? String(n.factura_id) : "")).filter(Boolean)));
+  const facturaNumeroPorId = new Map<string, string>();
+  if (facturaIds.length > 0) {
+    const fq = await ctx.supabase.from("facturas").select("id, numero_factura").eq("empresa_id", empresaId).in("id", facturaIds);
+    for (const f of (fq.data ?? []) as Record<string, unknown>[]) facturaNumeroPorId.set(String(f.id), String(f.numero_factura ?? ""));
+  }
+  const notasCredito = marcarEstadoNc(ncRows.map((n) => ({
+    numero: (n.numero as number | string | null) ?? null,
+    factura_origen: n.factura_id ? facturaNumeroPorId.get(String(n.factura_id)) ?? null : null,
+    monto: Number(n.monto) || 0,
+    saldo_disponible: Number(n.saldo_disponible) || 0,
+  })));
+  const ncDisponibles = totalNcDisponibles(notasCredito);
+  const saldoNeto = saldoNetoInformativo(saldoPendiente, ncDisponibles);
+  const NC_ESTADO_LBL: Record<string, string> = { disponible: "Disponible", parcial: "Parcial", aplicada: "Aplicada" };
+
   let nombreEmpresa: string | null = null;
   try {
     const eq = await ctx.supabase.from("empresas").select("nombre_empresa").eq("id", empresaId).maybeSingle();
@@ -109,6 +134,14 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
       <td>${esc(r.referencia ?? "—")}</td>
       <td>${esc(r.usuario_nombre ?? "—")}</td>
       <td class="r">${fmtGs(r.monto)}</td>
+    </tr>`).join("");
+  const filasNc = notasCredito.map((n) => `
+    <tr>
+      <td>${esc(n.numero != null ? `NC-${n.numero}` : "—")}</td>
+      <td>${esc(n.factura_origen ?? "—")}</td>
+      <td class="r">${fmtGs(n.monto)}</td>
+      <td class="r">${fmtGs(n.saldo_disponible)}</td>
+      <td>${esc(NC_ESTADO_LBL[n.estado] ?? n.estado)}</td>
     </tr>`).join("");
 
   const html = `<!doctype html>
@@ -162,6 +195,23 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
     <thead><tr><th>Venta</th><th>Emisión</th><th>Vencimiento</th><th class="r">Total</th><th class="r">Cobrado</th><th class="r">Saldo</th><th>Estado</th></tr></thead>
     <tbody>${filasMov || `<tr><td colspan="7" style="text-align:center">Sin cuentas a crédito</td></tr>`}</tbody>
   </table>
+
+  ${notasCredito.length > 0 ? `
+  <h2 class="sec">Notas de crédito</h2>
+  <div style="font-size:10px;color:#6b7280;margin-top:2px">Créditos a favor. Reducen la deuda al aplicarse en un cobro.</div>
+  <table>
+    <thead><tr><th>N.º NC</th><th>Factura de origen</th><th class="r">Importe</th><th class="r">Disponible</th><th>Estado</th></tr></thead>
+    <tbody>${filasNc}</tbody>
+  </table>
+  ${ncDisponibles > 0 ? `
+  <table style="margin-top:10px;max-width:340px;margin-left:auto">
+    <tbody>
+      <tr><td>Saldo operativo actual</td><td class="r">${fmtGs(saldoPendiente)}</td></tr>
+      <tr><td>NC disponibles</td><td class="r" style="color:#047857">−${fmtGs(ncDisponibles)}</td></tr>
+      <tr><td style="font-weight:800">Saldo neto (informativo)</td><td class="r" style="font-weight:800">${fmtGs(saldoNeto)}</td></tr>
+    </tbody>
+  </table>
+  <div style="font-size:10px;color:#6b7280;margin-top:4px;text-align:right">El saldo neto es informativo: las NC bajan la deuda al aplicarse en un cobro; no modifican el saldo operativo por sí solas.</div>` : ""}` : ""}
 
   <h2 class="sec">Cobros registrados</h2>
   <table>
