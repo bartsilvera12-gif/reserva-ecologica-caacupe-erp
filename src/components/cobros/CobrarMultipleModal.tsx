@@ -274,7 +274,10 @@ export function CobrarMultipleModal({
     return round2(s);
   }, [ncDisp, ncSel]);
 
-  const totalCobrar = useMemo(() => round2(totalFacturas - totalNc), [totalFacturas, totalNc]);
+  // El efectivo a cobrar es la suma de los importes (que ya representan el
+  // efectivo real por factura). La NC se aplica aparte al saldo de la factura y
+  // NO se vuelve a restar del efectivo.
+  const totalCobrar = totalFacturas;
 
   const cantidadFacturas = useMemo(
     () => cuentas.reduce((n, c) => (sel[c.id]?.checked ? n + 1 : n), 0),
@@ -727,15 +730,15 @@ export function CobrarMultipleModal({
                 </table>
               </div>
               <p className="mt-1 text-[10px] text-slate-500">
-                Las NC se restan del total. Solo aparecen las facturas TILDADAS arriba como destino posible.
+                Las NC se aplican al saldo de la factura; no se restan del efectivo. Solo aparecen las facturas TILDADAS arriba como destino posible.
               </p>
             </div>
           )}
 
-          {/* Total neto (facturas − NC) */}
+          {/* Total efectivo a cobrar (suma de importes; la NC se aplica aparte) */}
           {clienteSel && cuentas.length > 0 && (totalNc > 0 || cantidadFacturas > 0) && (
             <div className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50/60 px-4 py-3">
-              <span className="text-xs uppercase tracking-wide font-semibold text-emerald-800">Total neto a cobrar</span>
+              <span className="text-xs uppercase tracking-wide font-semibold text-emerald-800">Total efectivo a cobrar</span>
               <span className="text-xl font-bold tabular-nums text-emerald-800">{fmtGs(totalCobrar)}</span>
             </div>
           )}

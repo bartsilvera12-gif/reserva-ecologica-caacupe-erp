@@ -13,6 +13,7 @@
  */
 import { getChatPostgresPool, quoteSchemaTable } from "@/lib/supabase/chat-pg-pool";
 import { assertAllowedChatDataSchema } from "@/lib/supabase/chat-data-schema";
+import { montoEfectivoRecibo } from "@/lib/recibos/recibo-calculo";
 
 function pool() {
   const p = getChatPostgresPool();
@@ -345,10 +346,11 @@ export async function cobrarConRecibo(
       totalNcAplicado = round2(totalNcAplicado + impAplic);
     }
 
-    const totalNeto = round2(total - totalNcAplicado);
-    if (totalNeto < 0) {
-      throw new CobroReciboError(400, "Las NC aplicadas superan al total del cobro.");
-    }
+    // El recibo documenta el EFECTIVO recibido = suma de los cobros en efectivo.
+    // La NC ya se aplicó por separado al saldo de la factura (arriba); NO se
+    // vuelve a descontar del efectivo. Antes se hacía `total - totalNcAplicado`,
+    // que restaba la NC dos veces porque el importe ya venía neto de NC.
+    const totalNeto = montoEfectivoRecibo(items.map((it) => it.importe));
 
     // 3) Un solo recibo por el total, con su detalle.
     const numeroRecibo = await proximoNumeroRecibo(client, schema, p.empresaId, p.sucursalId);
