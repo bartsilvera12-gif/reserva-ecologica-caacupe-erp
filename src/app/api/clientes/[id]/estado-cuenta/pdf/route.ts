@@ -4,7 +4,7 @@ import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema";
 import { membreteA4 } from "@/lib/documentos/membrete";
 import { getMarcaSucursal } from "@/lib/documentos/marca-sucursal";
-import { marcarEstadoNc, totalNcDisponibles, saldoNetoInformativo } from "@/lib/estado-cuenta/nc-resumen";
+import { marcarEstadoNc, totalNcDisponibles, saldoNetoInformativo, saldoOperativoEfectivo, esCorregidaNc, ncOrigenCompensada } from "@/lib/estado-cuenta/nc-resumen";
 
 /**
  * GET /api/clientes/[id]/estado-cuenta/pdf?auto=1
@@ -65,19 +65,42 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
 
   const cxcQ = await ctx.supabase
     .from("cuentas_por_cobrar")
-    .select("numero_venta, fecha_emision, fecha_vencimiento, total, saldo, estado")
+    .select("venta_id, numero_venta, fecha_emision, fecha_vencimiento, total, saldo, estado")
     .eq("empresa_id", empresaId)
       .eq("sucursal_id", exigirSucursal(ctx.auth.sucursal_id)).eq("cliente_id", id).order("fecha_emision", { ascending: false });
-  let saldoPendiente = 0, vencido = 0;
-  const movs = ((cxcQ.data ?? []) as Record<string, unknown>[]).map((r) => {
+  const cxcData = (cxcQ.data ?? []) as Record<string, unknown>[];
+
+  // Factura de cada CxC (por la venta): número FAC y estado fiscal.
+  const ventaIds = Array.from(new Set(cxcData.map((r) => (r.venta_id ? String(r.venta_id) : "")).filter(Boolean)));
+  const facturaPorVenta = new Map<string, { numero: string | null; estado: string | null }>();
+  if (ventaIds.length > 0) {
+    const ffq = await ctx.supabase.from("facturas").select("origen_venta_id, numero_factura, estado").eq("empresa_id", empresaId).in("origen_venta_id", ventaIds);
+    for (const f of (ffq.data ?? []) as Record<string, unknown>[]) {
+      facturaPorVenta.set(String(f.origen_venta_id), { numero: (f.numero_factura as string | null) ?? null, estado: (f.estado as string | null) ?? null });
+    }
+  }
+
+  let vencido = 0;
+  const movs = cxcData.map((r) => {
     const total = Number(r.total) || 0, saldo = Number(r.saldo) || 0;
     const venc = r.fecha_vencimiento ? String(r.fecha_vencimiento).slice(0, 10) : null;
-    const vig = r.estado === "pendiente" || r.estado === "parcial";
-    if (r.estado !== "anulado") saldoPendiente += saldo;
+    const fac = r.venta_id ? facturaPorVenta.get(String(r.venta_id)) : undefined;
+    const corregida = esCorregidaNc(fac?.estado);
+    const saldoEfectivo = corregida ? 0 : saldo;
+    const vig = (r.estado === "pendiente" || r.estado === "parcial") && !corregida;
     const vencida = vig && venc != null && venc < hoy;
-    if (vencida) vencido += saldo;
-    return { numero: r.numero_venta, emision: r.fecha_emision, venc, total, cobrado: total - saldo, saldo, estado: r.estado, vencida };
+    if (vencida) vencido += saldoEfectivo;
+    return {
+      numeroFactura: fac?.numero ?? null, numeroVenta: (r.numero_venta as string | null) ?? null,
+      emision: r.fecha_emision, venc, total, cobrado: total - saldo, saldo: saldoEfectivo,
+      estado: corregida ? "corregida_nc" : String(r.estado), corregida, vencida,
+    };
   });
+  const saldoPendiente = saldoOperativoEfectivo(cxcData.map((r) => ({
+    saldo: Number(r.saldo) || 0,
+    cxc_estado: (r.estado as string | null) ?? null,
+    factura_estado: (r.venta_id ? facturaPorVenta.get(String(r.venta_id))?.estado : null) ?? null,
+  })));
 
   const cobQ = await ctx.supabase
     .from("cobros_clientes")
@@ -94,18 +117,27 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
     .eq("empresa_id", empresaId).eq("cliente_id", id).eq("estado_erp", "aprobada")
     .order("created_at", { ascending: true });
   const ncRows = (ncQ.data ?? []) as Record<string, unknown>[];
-  const facturaIds = Array.from(new Set(ncRows.map((n) => (n.factura_id ? String(n.factura_id) : "")).filter(Boolean)));
-  const facturaNumeroPorId = new Map<string, string>();
-  if (facturaIds.length > 0) {
-    const fq = await ctx.supabase.from("facturas").select("id, numero_factura").eq("empresa_id", empresaId).in("id", facturaIds);
-    for (const f of (fq.data ?? []) as Record<string, unknown>[]) facturaNumeroPorId.set(String(f.id), String(f.numero_factura ?? ""));
+  const ncFacturaIds = Array.from(new Set(ncRows.map((n) => (n.factura_id ? String(n.factura_id) : "")).filter(Boolean)));
+  const ncFacturaPorId = new Map<string, { numero: string | null; estado: string | null; ventaId: string | null }>();
+  if (ncFacturaIds.length > 0) {
+    const fq = await ctx.supabase.from("facturas").select("id, numero_factura, estado, origen_venta_id").eq("empresa_id", empresaId).in("id", ncFacturaIds);
+    for (const f of (fq.data ?? []) as Record<string, unknown>[]) ncFacturaPorId.set(String(f.id), { numero: (f.numero_factura as string | null) ?? null, estado: (f.estado as string | null) ?? null, ventaId: (f.origen_venta_id as string | null) ?? null });
   }
-  const notasCredito = marcarEstadoNc(ncRows.map((n) => ({
-    numero: (n.numero as number | string | null) ?? null,
-    factura_origen: n.factura_id ? facturaNumeroPorId.get(String(n.factura_id)) ?? null : null,
-    monto: Number(n.monto) || 0,
-    saldo_disponible: Number(n.saldo_disponible) || 0,
-  })));
+  // NC 'aplicada' (no cuenta como disponible) solo si su factura está Corregida NC
+  // Y su CxC sigue con saldo > 0 (compensó una deuda vigente).
+  const cxcSaldoPorVenta = new Map<string, number>();
+  for (const r of cxcData) { if (r.venta_id) cxcSaldoPorVenta.set(String(r.venta_id), Number(r.saldo) || 0); }
+  const notasCredito = marcarEstadoNc(ncRows.map((n) => {
+    const fac = n.factura_id ? ncFacturaPorId.get(String(n.factura_id)) : undefined;
+    const saldoCxcOrigen = fac?.ventaId ? cxcSaldoPorVenta.get(fac.ventaId) ?? 0 : 0;
+    return {
+      numero: (n.numero as number | string | null) ?? null,
+      factura_origen: fac?.numero ?? null,
+      monto: Number(n.monto) || 0,
+      saldo_disponible: Number(n.saldo_disponible) || 0,
+      origen_corregida: ncOrigenCompensada(fac?.estado, saldoCxcOrigen),
+    };
+  }));
   const ncDisponibles = totalNcDisponibles(notasCredito);
   const saldoNeto = saldoNetoInformativo(saldoPendiente, ncDisponibles);
   const NC_ESTADO_LBL: Record<string, string> = { disponible: "Disponible", parcial: "Parcial", aplicada: "Aplicada" };
@@ -119,13 +151,13 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
 
   const filasMov = movs.map((m) => `
     <tr>
-      <td>${esc(m.numero ?? "—")}</td>
+      <td>${esc(m.numeroFactura ?? m.numeroVenta ?? "—")}${m.numeroFactura && m.numeroVenta ? `<br><span style="font-size:9px;color:#9ca3af">${esc(m.numeroVenta)}</span>` : ""}</td>
       <td>${fmtFecha(m.emision)}</td>
       <td class="${m.vencida ? "venc" : ""}">${fmtFecha(m.venc)}</td>
       <td class="r">${fmtGs(m.total)}</td>
       <td class="r">${fmtGs(m.cobrado)}</td>
       <td class="r">${fmtGs(m.saldo)}</td>
-      <td>${esc(m.vencida && m.estado !== "pagado" ? "Vencido" : (ESTADO_LBL[String(m.estado)] ?? m.estado))}</td>
+      <td>${m.corregida ? "Corregida NC" : esc(m.vencida && m.estado !== "pagado" ? "Vencido" : (ESTADO_LBL[String(m.estado)] ?? m.estado))}</td>
     </tr>`).join("");
   const filasCob = cobros.map((r) => `
     <tr>
@@ -192,7 +224,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
 
   <h2 class="sec">Cuentas a crédito</h2>
   <table>
-    <thead><tr><th>Venta</th><th>Emisión</th><th>Vencimiento</th><th class="r">Total</th><th class="r">Cobrado</th><th class="r">Saldo</th><th>Estado</th></tr></thead>
+    <thead><tr><th>Factura</th><th>Emisión</th><th>Vencimiento</th><th class="r">Total</th><th class="r">Cobrado</th><th class="r">Saldo</th><th>Estado</th></tr></thead>
     <tbody>${filasMov || `<tr><td colspan="7" style="text-align:center">Sin cuentas a crédito</td></tr>`}</tbody>
   </table>
 

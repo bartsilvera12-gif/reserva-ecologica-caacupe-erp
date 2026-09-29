@@ -11,12 +11,15 @@ import { RegistrarCobroModalCxc } from "@/components/cobros/RegistrarCobroModalC
 type Mov = {
   id: string;
   numero_venta: string | null;
+  numero_factura: string | null;
   fecha_emision: string | null;
   fecha_vencimiento: string | null;
   total: number;
   cobrado: number;
   saldo: number;
+  saldo_operativo?: number;
   estado: string;
+  corregida_nc?: boolean;
   vencida: boolean;
 };
 type Cobro = { id: string; fecha_pago: string; monto: number; metodo_pago: string; referencia: string | null };
@@ -50,6 +53,7 @@ const ESTADO_BADGE: Record<string, string> = {
   pagado: "bg-emerald-100 text-emerald-700",
   vencido: "bg-red-100 text-red-700",
   anulado: "bg-slate-100 text-slate-500",
+  corregida_nc: "bg-violet-100 text-violet-700",
 };
 
 function fmtGs(n: number) {
@@ -180,7 +184,7 @@ export default function EstadoCuentaPage() {
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-gray-500">
                 <tr>
-                  <th className="py-2.5 px-4 font-medium">Venta</th>
+                  <th className="py-2.5 px-4 font-medium">Factura</th>
                   <th className="py-2.5 px-4 font-medium">Emisión</th>
                   <th className="py-2.5 px-4 font-medium">Vencimiento</th>
                   <th className="py-2.5 px-4 font-medium text-right">Total</th>
@@ -193,19 +197,28 @@ export default function EstadoCuentaPage() {
               <tbody className="divide-y divide-slate-100">
                 {movs.map((m) => (
                   <tr key={m.id}>
-                    <td className="py-2.5 px-4 font-mono font-medium text-gray-800">{m.numero_venta ?? "—"}</td>
+                    <td className="py-2.5 px-4">
+                      <div className="font-mono font-medium text-gray-800">{m.numero_factura ?? m.numero_venta ?? "—"}</div>
+                      {m.numero_factura && m.numero_venta && (
+                        <div className="font-mono text-[10px] text-gray-400">{m.numero_venta}</div>
+                      )}
+                    </td>
                     <td className="py-2.5 px-4 text-gray-600">{fmtFecha(m.fecha_emision)}</td>
                     <td className={`py-2.5 px-4 ${m.vencida ? "font-semibold text-red-600" : "text-gray-600"}`}>{fmtFecha(m.fecha_vencimiento)}</td>
                     <td className="py-2.5 px-4 text-right tabular-nums">{fmtGs(m.total)}</td>
                     <td className="py-2.5 px-4 text-right tabular-nums text-emerald-700">{fmtGs(m.cobrado)}</td>
                     <td className="py-2.5 px-4 text-right tabular-nums font-semibold">{fmtGs(m.saldo)}</td>
                     <td className="py-2.5 px-4">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${ESTADO_BADGE[m.vencida && m.estado !== "pagado" ? "vencido" : m.estado] ?? ESTADO_BADGE.pendiente}`}>
-                        {m.vencida && m.estado !== "pagado" ? "Vencido" : m.estado.charAt(0).toUpperCase() + m.estado.slice(1)}
-                      </span>
+                      {m.corregida_nc ? (
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${ESTADO_BADGE.corregida_nc}`}>Corregida NC</span>
+                      ) : (
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${ESTADO_BADGE[m.vencida && m.estado !== "pagado" ? "vencido" : m.estado] ?? ESTADO_BADGE.pendiente}`}>
+                          {m.vencida && m.estado !== "pagado" ? "Vencido" : m.estado.charAt(0).toUpperCase() + m.estado.slice(1)}
+                        </span>
+                      )}
                     </td>
                     <td className="py-2.5 px-4 text-right">
-                      {m.estado === "pagado" || m.estado === "anulado" ? (
+                      {m.estado === "pagado" || m.estado === "anulado" || m.corregida_nc ? (
                         <span className="text-xs text-gray-400">—</span>
                       ) : (
                         <button onClick={() => abrirCobro(m)} className="rounded-lg bg-[#4FAEB2] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#3F8E91]">Registrar cobro</button>
