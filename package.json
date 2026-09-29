@@ -58,6 +58,7 @@
     "qa:r90-ventas": "tsx scripts/qa-r90-ventas.ts",
     "qa:cuotas": "tsx scripts/qa-cuotas.ts",
     "qa:recibo-neto": "tsx scripts/qa-recibo-neto.ts",
+    "qa:recibo-lineas": "tsx scripts/qa-recibo-lineas.ts",
     "diag:sifen-rechazo-fac": "tsx scripts/diagnostico-rechazo-fac.ts",
     "db:apply-provision-chat-flow-node-fks": "node scripts/apply-migration-file-pg.cjs supabase/migrations/20260531100000_provision_fix_chat_flow_node_fks_one_schema.sql"
   },

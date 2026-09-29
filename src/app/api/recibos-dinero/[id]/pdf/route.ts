@@ -1,4 +1,5 @@
 import { montoEnLetras } from "@/lib/recibos/numero-a-letras";
+import { construirFilasRecibo, type NcAplicacionRecibo } from "@/lib/recibos/recibo-lineas";
 import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuthWithRol } from "@/lib/supabase/tenant-api";
 import { esAdminErp } from "@/lib/roles/erp-role-access";
@@ -270,8 +271,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   // Aplicaciones de NC que este recibo cargó como línea negativa. Cada una se
   // muestra a continuación de las facturas para que el total del recibo cuadre
   // con lo efectivamente cobrado.
-  type NcAplicRow = { importe: string; nc_factura_origen: string | null; destino_numero: string | null };
-  const ncAplicRows: NcAplicRow[] = [];
+  const ncAplic: NcAplicacionRecibo[] = [];
   try {
     const p2 = getChatPostgresPool();
     if (p2 && schemaForClienteLookup) {
@@ -299,8 +299,8 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
         [id, ctx.auth.empresa_id]
       );
       for (const a of apps) {
-        ncAplicRows.push({
-          importe: fmtMonto(a.importe_aplicado, moneda),
+        ncAplic.push({
+          importe: Number(a.importe_aplicado) || 0,
           nc_factura_origen: (a.factura_origen_numero ?? "").trim() || null,
           destino_numero: (a.destino_numero_factura ?? a.destino_numero_venta ?? "").trim() || null,
         });
@@ -317,25 +317,24 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
    * hasta un mínimo para imitar el talonario preimpreso, pero con la tabla de
    * color las filas en blanco quedaban feas. Se muestran únicamente las que hay.
    */
-  const filasTabla = detalle.map((d) => ({
-    doc: (d.numero_documento ?? "").trim() || "—",
-    venc: d.fecha_vencimiento ? fmtFecha(d.fecha_vencimiento) : "",
-    concepto: "Cobro de cuenta",
-    importe: fmtMonto(d.importe_aplicado, moneda),
-    esNegativo: false as boolean,
+  // Líneas del recibo: la factura muestra el importe BRUTO aplicado en la
+  // operación (efectivo/transferencia + NC aplicada a esa factura) y la NC va
+  // como fila negativa aparte, de modo que "línea factura − NC = total cobrado".
+  // Solo presentación: no cambia ningún dato. Ver construirFilasRecibo.
+  const filasTabla = construirFilasRecibo(
+    detalle.map((d) => ({
+      numero_documento: (d.numero_documento ?? "").trim() || null,
+      fecha_vencimiento: d.fecha_vencimiento ?? null,
+      importe_aplicado: Number(d.importe_aplicado) || 0,
+    })),
+    ncAplic
+  ).map((f) => ({
+    doc: f.doc,
+    venc: f.venc ? fmtFecha(f.venc) : "",
+    concepto: f.concepto,
+    importe: f.esNegativo ? `−${fmtMonto(Math.abs(f.importe), moneda)}` : fmtMonto(f.importe, moneda),
+    esNegativo: f.esNegativo as boolean,
   }));
-  // Agregar aplicaciones NC como filas negativas.
-  for (const a of ncAplicRows) {
-    const etiqueta = a.nc_factura_origen ? `NC de ${a.nc_factura_origen}` : "Nota de crédito";
-    const concepto = a.destino_numero ? `Aplicada a ${a.destino_numero}` : "Aplicación de crédito";
-    filasTabla.push({
-      doc: etiqueta,
-      venc: "",
-      concepto,
-      importe: `−${a.importe}`,
-      esNegativo: true,
-    });
-  }
   // Sin detalle (recibos anteriores al desglose) se muestra el concepto guardado.
   if (filasTabla.length === 0) {
     filasTabla.push({
