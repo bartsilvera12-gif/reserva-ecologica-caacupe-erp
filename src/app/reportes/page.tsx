@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import PageHeader from "@/components/ui/PageHeader";
 import { ReportCard } from "@/components/reportes/ReportCard";
-import { Wallet, Truck, Package, ShoppingCart, ArrowLeftRight, TrendingDown, PackageX, Banknote, ClipboardList, FileText } from "lucide-react";
+import { Wallet, Truck, Package, ShoppingCart, ArrowLeftRight, TrendingDown, PackageX, Banknote, ClipboardList, FileText, Calculator } from "lucide-react";
 
 /** Hub de reportería operativa (Fase 1: Estado de cuenta + Proveedores). */
 export default function ReportesPage() {
@@ -61,6 +61,15 @@ export default function ReportesPage() {
             icon={FileText}
             description="Genera el archivo CSV de Registro de Comprobantes de Ventas (RG 90) con los comprobantes NO electrónicos del período. Los documentos electrónicos SIFEN no se incluyen: la SET ya los obtiene automáticamente."
             href="/reportes/r90"
+          />
+        </li>
+        <li>
+          <ReportCard
+            title="Libro de Ventas IVA"
+            subtitle="Liquidación mensual de IVA"
+            icon={Calculator}
+            description="Detalle de facturas del período con el desglose Gravado 10% / IVA 10% / Gravado 5% / IVA 5% / Exentas, listo para descargar en Excel para la liquidación mensual del IVA."
+            href="/reportes/iva"
           />
         </li>
         <li>
