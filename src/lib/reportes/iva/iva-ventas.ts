@@ -115,6 +115,37 @@ export function mapFacturaToIvaRow(f: IvaVentaFacturaInput, timbrado: string): I
   };
 }
 
+export interface IvaNcInput {
+  fecha: string | Date | null;
+  /** Número de la NC. */ numero: number | string | null;
+  cliente_ruc: string | null;
+  cliente_razon_social: string | null;
+  /** Ítems de la NC, o de la factura de origen si la NC no tiene ítems propios. */
+  items: IvaItemInput[];
+}
+
+/**
+ * Arma la fila del libro IVA de una NOTA DE CRÉDITO. Los montos salen en NEGATIVO:
+ * la NC reduce las ventas gravadas y el IVA débito del período. Solo NC aprobadas.
+ */
+export function mapNcToIvaRow(nc: IvaNcInput, timbrado: string): IvaVentaRow {
+  const d = desglosarItemsIva(nc.items);
+  return {
+    fecha: fechaYmd(nc.fecha),
+    tipo: "Nota de Crédito",
+    numero_factura: nc.numero != null && String(nc.numero).trim() !== "" ? `NC-${nc.numero}` : "NC",
+    timbrado: (timbrado ?? "").trim(),
+    ruc: (nc.cliente_ruc ?? "").trim() || "Sin RUC",
+    razon_social: (nc.cliente_razon_social ?? "").trim() || "Sin nombre",
+    gravado_10: -d.gravado_10,
+    iva_10: -d.iva_10,
+    gravado_5: -d.gravado_5,
+    iva_5: -d.iva_5,
+    exentas: -d.exentas,
+    total: -d.total,
+  };
+}
+
 /** Fila de totales (suma de cada columna numérica). */
 export function totalesIva(rows: IvaVentaRow[]): DesgloseIva {
   return (rows ?? []).reduce<DesgloseIva>(
