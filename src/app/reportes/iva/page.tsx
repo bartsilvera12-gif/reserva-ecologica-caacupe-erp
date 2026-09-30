@@ -23,9 +23,10 @@ export default function LibroIvaVentasPage() {
       <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
         <p className="font-semibold">Qué incluye</p>
         <p className="mt-1 leading-snug">
-          Todas las facturas <strong>no anuladas</strong> del período (electrónicas y no electrónicas), con el
+          Todas las facturas <strong>no anuladas</strong> del período (electrónicas y no electrónicas) y las
+          <strong> notas de crédito aprobadas</strong> (como filas negativas, que reducen el IVA débito), con el
           desglose por columnas: <strong>Fecha · Tipo · N° Factura · Timbrado · RUC/CI · Razón social · Gravado
-          10% · IVA 10% · Gravado 5% · IVA 5% · Exentas · Total</strong>, y una fila de <strong>TOTALES</strong>.
+          10% · IVA 10% · Gravado 5% · IVA 5% · Exentas · Total</strong>, y una fila de <strong>TOTALES netos</strong>.
         </p>
       </div>
 

@@ -6,6 +6,7 @@ import {
   clasificarTasa,
   desglosarItemsIva,
   mapFacturaToIvaRow,
+  mapNcToIvaRow,
   totalesIva,
   type IvaItemInput,
 } from "../src/lib/reportes/iva/iva-ventas";
@@ -66,6 +67,27 @@ const total = totalesIva([row, row]);
 eq("totales suma gravado 10%", total.gravado_10, row.gravado_10 * 2);
 eq("totales suma total", total.total, row.total * 2);
 eq("totales de lista vacía = ceros", totalesIva([]), { gravado_10: 0, iva_10: 0, gravado_5: 0, iva_5: 0, exentas: 0, total: 0 });
+
+// --- Notas de crédito (filas negativas) ---
+const ncRow = mapNcToIvaRow(
+  { fecha: "2026-08-20T03:00:00.000Z", numero: 225, cliente_ruc: "80012345-6", cliente_razon_social: "CLIENTE SA",
+    items: [{ tipo_iva: "10%", subtotal: 9090.91, iva: 909.09, total: 10000 }] },
+  "18949725"
+);
+eq("NC: tipo = Nota de Crédito", ncRow.tipo, "Nota de Crédito");
+eq("NC: numero = NC-225", ncRow.numero_factura, "NC-225");
+eq("NC: gravado 10% negativo", ncRow.gravado_10, -9091);
+eq("NC: iva 10% negativo", ncRow.iva_10, -909);
+eq("NC: total negativo", ncRow.total, -10000);
+
+// Totales NETOS: factura 85.000 (10%) − NC 10.000 (10%).
+const fac10 = mapFacturaToIvaRow(
+  { fecha: "2026-08-10", numero_factura: "FAC-1", cliente_ruc: "1-1", cliente_razon_social: "X",
+    items: [{ tipo_iva: "10%", subtotal: 77272.73, iva: 7727.27, total: 85000 }] }, "T");
+const neto = totalesIva([fac10, ncRow]);
+eq("neto: gravado 10% = 77273 − 9091", neto.gravado_10, 77273 - 9091);
+eq("neto: iva 10% = 7727 − 909", neto.iva_10, 7727 - 909);
+eq("neto: total = 85000 − 10000", neto.total, 75000);
 
 console.log(`\n${fail === 0 ? "✓ TODOS OK" : "✗ HAY FALLOS"} — ${pass} pass, ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);
