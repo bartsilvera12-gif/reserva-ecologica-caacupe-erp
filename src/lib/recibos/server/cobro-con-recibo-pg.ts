@@ -102,8 +102,13 @@ export async function cobrarConRecibo(
   const tFac = quoteSchemaTable(schema, "facturas");
 
   const aplic = (p.aplicaciones ?? []).filter((a) => a.cuenta_por_cobrar_id && round2(a.importe) > 0);
-  if (aplic.length === 0) {
-    throw new CobroReciboError(400, "Indicá al menos una factura con importe mayor a 0.");
+  // Se permite cobro SIN efectivo cuando se aplica una NC que cubre la cuenta
+  // (importe efectivo 0). Debe haber al menos efectivo o una NC.
+  const hayNc = (p.nc_aplicaciones ?? []).some(
+    (a) => a.nota_credito_id && a.cuenta_por_cobrar_destino_id && round2(a.importe_aplicado) > 0
+  );
+  if (aplic.length === 0 && !hayNc) {
+    throw new CobroReciboError(400, "Indicá al menos una factura con importe, o aplicá una nota de crédito.");
   }
 
   const client = await pool().connect();
@@ -365,7 +370,9 @@ export async function cobrarConRecibo(
       [
         p.empresaId, p.sucursalId, numeroRecibo, p.clienteId, clienteNombre, clienteDoc,
         fechaPago, totalNeto, metodo, p.entidad_bancaria_id || null, p.referencia?.trim() || null,
-        `Cobro de ${items.length} ${items.length === 1 ? "documento" : "documentos"}${ncAppsProcesadas.length > 0 ? ` con ${ncAppsProcesadas.length} NC aplicada${ncAppsProcesadas.length === 1 ? "" : "s"}` : ""}`,
+        items.length === 0
+          ? `Aplicación de ${ncAppsProcesadas.length} nota${ncAppsProcesadas.length === 1 ? "" : "s"} de crédito`
+          : `Cobro de ${items.length} ${items.length === 1 ? "documento" : "documentos"}${ncAppsProcesadas.length > 0 ? ` con ${ncAppsProcesadas.length} NC aplicada${ncAppsProcesadas.length === 1 ? "" : "s"}` : ""}`,
         p.observaciones?.trim() || null, p.usuarioId, p.usuarioNombre,
       ]
     );

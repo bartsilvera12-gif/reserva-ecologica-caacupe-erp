@@ -353,20 +353,18 @@ export function CobrarMultipleModal({
     for (const c of cuentas) {
       const sl = sel[c.id];
       if (!sl?.checked) continue;
-      const imp = Number(sl.importe);
-      if (!(imp > 0)) {
-        setError(`Ingresa un importe > 0 para la factura ${c.numero}.`);
+      const imp = Number(sl.importe) || 0;
+      if (imp < 0) {
+        setError(`El importe de ${c.numero} no puede ser negativo.`);
         return;
       }
       if (imp > c.saldo + 0.001) {
         setError(`El importe de ${c.numero} (${fmtGs(imp)}) supera su saldo (${fmtGs(c.saldo)}).`);
         return;
       }
-      aplicaciones.push({ cuenta_por_cobrar_id: c.id, importe: round2(imp) });
-    }
-    if (aplicaciones.length === 0) {
-      setError("Marca al menos una factura y poné un importe > 0.");
-      return;
+      // Importe 0 es válido cuando la factura se cubre 100% con una NC; solo se
+      // agrega al cobro en efectivo si hay monto.
+      if (imp > 0) aplicaciones.push({ cuenta_por_cobrar_id: c.id, importe: round2(imp) });
     }
 
     // Validar aplicaciones NC.
@@ -403,8 +401,9 @@ export function CobrarMultipleModal({
         importe_aplicado: round2(imp),
       });
     }
-    if (totalCobrar < 0) {
-      setError("Las NC aplicadas superan al total del cobro.");
+    // Debe haber al menos una aplicación: efectivo en alguna factura, o una NC.
+    if (aplicaciones.length === 0 && nc_aplicaciones.length === 0) {
+      setError("Marcá al menos una factura con importe, o aplicá una nota de crédito.");
       return;
     }
     if (pideBanco && !entidadId) {
@@ -827,7 +826,7 @@ export function CobrarMultipleModal({
           <button
             type="button"
             onClick={confirmar}
-            disabled={guardando || !clienteSel || totalCobrar <= 0}
+            disabled={guardando || !clienteSel || (totalCobrar <= 0 && totalNc <= 0)}
             className="inline-flex items-center justify-center gap-1.5 rounded-md bg-[#4FAEB2] px-5 py-2 text-sm font-medium text-white hover:bg-[#3F8E91] disabled:opacity-50"
           >
             {guardando ? (

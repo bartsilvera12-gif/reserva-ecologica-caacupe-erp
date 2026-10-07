@@ -72,9 +72,6 @@ export async function POST(request: NextRequest) {
         };
       })
       .filter((a) => a.cuenta_por_cobrar_id && a.importe > 0);
-    if (aplicaciones.length === 0) {
-      return NextResponse.json(errorResponse("Indicá al menos una factura con importe."), { status: 400 });
-    }
 
     const ncAplicRaw = Array.isArray(body.nc_aplicaciones) ? body.nc_aplicaciones : [];
     const nc_aplicaciones = ncAplicRaw
@@ -97,6 +94,14 @@ export async function POST(request: NextRequest) {
           a.cuenta_por_cobrar_destino_id &&
           a.importe_aplicado > 0
       );
+
+    // Debe haber al menos una aplicación: efectivo en una factura, o una NC.
+    if (aplicaciones.length === 0 && nc_aplicaciones.length === 0) {
+      return NextResponse.json(
+        errorResponse("Indicá al menos una factura con importe, o aplicá una nota de crédito."),
+        { status: 400 }
+      );
+    }
 
     const schema = await fetchDataSchemaForEmpresaId(ctx.auth.empresa_id);
     const out = await cobrarConRecibo({
