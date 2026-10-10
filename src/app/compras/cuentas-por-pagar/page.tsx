@@ -195,7 +195,9 @@ function ModalPago({ cuenta, onClose, onPagado }: { cuenta: Cuenta; onClose: () 
     setErr(null);
     const m = Number(monto) || 0;
     if (m <= 0) return setErr("El monto debe ser mayor a 0.");
-    if (m > cuenta.saldo) return setErr(`El pago supera el saldo (${Math.round(cuenta.saldo).toLocaleString("es-PY")}).`);
+    // El saldo puede traer decimales (IVA), pero los guaraníes se manejan enteros y en pantalla se muestra redondeado.
+    // Comparamos contra el saldo redondeado para no rechazar un pago igual al saldo mostrado.
+    if (m > Math.round(cuenta.saldo)) return setErr(`El pago supera el saldo (${Math.round(cuenta.saldo).toLocaleString("es-PY")}).`);
     setGuardando(true);
     try {
       const res = await fetchWithSupabaseSession(`/api/cuentas-por-pagar/${cuenta.id}/pago`, {
@@ -226,7 +228,7 @@ function ModalPago({ cuenta, onClose, onPagado }: { cuenta: Cuenta; onClose: () 
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">Monto</label>
-            <input type="number" min={0} max={cuenta.saldo} step="any" value={monto} onChange={(e) => setMonto(e.target.value)}
+            <input type="number" min={0} max={Math.round(cuenta.saldo)} step="any" value={monto} onChange={(e) => setMonto(e.target.value)}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-right text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-[#4FAEB2]" />
           </div>
           <div>

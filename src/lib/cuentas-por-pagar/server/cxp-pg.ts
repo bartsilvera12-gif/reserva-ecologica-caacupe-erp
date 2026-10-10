@@ -293,7 +293,9 @@ export async function registrarPagoProveedor(params: {
     if (cta[0].estado === "anulada") throw new CxpError(409, "La cuenta está anulada.");
     const saldo = num(cta[0].saldo);
     if (saldo <= 0) throw new CxpError(409, "La cuenta ya está saldada.");
-    if (monto > saldo) throw new CxpError(400, `El pago (${monto}) supera el saldo pendiente (${saldo}).`);
+    // El saldo puede traer decimales (IVA); se paga en guaraníes enteros. Comparamos contra el saldo
+    // redondeado para aceptar un pago igual al saldo mostrado. El UPDATE con GREATEST(0, ...) deja el saldo en 0.
+    if (monto > Math.round(saldo)) throw new CxpError(400, `El pago (${monto}) supera el saldo pendiente (${saldo}).`);
 
     await client.query(
       `INSERT INTO ${tPgp}
