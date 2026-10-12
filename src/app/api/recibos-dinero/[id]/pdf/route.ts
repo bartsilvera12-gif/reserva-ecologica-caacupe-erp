@@ -437,7 +437,30 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
   .sello-anulado span{font-size:120px;font-weight:900;color:rgba(220,38,38,.28);letter-spacing:.08em;transform:rotate(-24deg);border:8px solid rgba(220,38,38,.4);padding:12px 40px;border-radius:14px}
   .anulado-motivo{margin-top:6px;text-align:center;font-size:11px;color:#7f1d1d}
   .anulado-motivo b{font-weight:700}
-  @media print{body{background:#fff}.toolbar{display:none}.page{width:auto;min-height:auto;margin:0;padding:10mm}@page{size:A4 landscape;margin:10mm}}
+  @media print{
+    body{background:#fff}
+    .toolbar{display:none}
+    .page{width:auto;min-height:auto;margin:0;padding:6mm}
+    @page{size:A4 landscape;margin:8mm}
+    .marco{box-shadow:none}
+    /* Compactar para que el recibo entre en UNA sola hoja al imprimir/PDF. */
+    .cab{padding:10px 20px}
+    .montofranja{padding:8px 20px}
+    .cuerpo{padding:10px 20px 12px}
+    .tabla{margin-top:10px}
+    .tabla th{padding:5px 10px}
+    .tabla td{padding:4px 10px;height:auto}
+    .totalfila{margin-top:8px}
+    .montofinal{margin-top:10px;padding-top:8px}
+    .montofinal .letras{padding:8px 12px}
+    .pie{margin-top:14px}
+    .firma{padding-top:16px}
+    /* Si el detalle es muy largo y se extiende a otra hoja, que no corte feo:
+       repetir encabezado y mantener juntas las filas y los bloques finales. */
+    .tabla thead{display:table-header-group}
+    .tabla tr{page-break-inside:avoid}
+    .totalfila,.montofinal,.pie{page-break-inside:avoid}
+  }
 </style></head><body>
 <div class="toolbar">
   <button onclick="window.print()">Imprimir / Guardar PDF</button>
