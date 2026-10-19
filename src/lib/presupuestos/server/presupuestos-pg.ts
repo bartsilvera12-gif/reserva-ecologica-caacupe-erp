@@ -149,7 +149,7 @@ export async function crearPresupuesto(
   if (ins.error) throw new Error(ins.error.message);
   const presupuestoId = String((ins.data as { id: string }).id);
 
-  const itemsRows = calculados.map(({ raw, calc }) => ({
+  const itemsRows = calculados.map(({ raw, calc }, idx) => ({
     empresa_id: empresaId,
     presupuesto_id: presupuestoId,
     producto_id: raw.producto_id,
@@ -163,6 +163,7 @@ export async function crearPresupuesto(
     monto_iva: calc.monto_iva,
     descuento: calc.descuento,
     total: calc.total,
+    orden: idx,
   }));
   const insItems = await sb.from("presupuesto_items").insert(itemsRows);
   if (insItems.error) {
@@ -174,6 +175,186 @@ export async function crearPresupuesto(
   }
 
   return { id: presupuestoId, numero_control: numero };
+}
+
+/**
+ * Edita un presupuesto existente: datos del cliente, condiciones e ítems (cantidades,
+ * precios, orden, agregar/quitar). Recalcula TODOS los totales en el server. Reemplaza
+ * la lista de ítems completa (borra e inserta) respetando el orden del array recibido.
+ *
+ * Restricción: NO se puede editar un presupuesto ya convertido/facturado (estado
+ * 'convertido' o con convertido_pedido_id / convertido_venta_id), para no desincronizar
+ * el pedido/venta/factura ya generados. Mantiene numero_control, estado y fecha original;
+ * recalcula fecha_vencimiento desde la fecha original + validez.
+ */
+export async function actualizarPresupuesto(
+  sb: AppSupabaseClient,
+  empresaId: string,
+  presupuestoId: string,
+  input: CrearPresupuestoInput
+): Promise<{ id: string; numero_control: string }> {
+  if (!input.items || input.items.length === 0) {
+    throw new Error("El presupuesto debe tener al menos un ítem.");
+  }
+  if (!input.cliente_nombre || !input.cliente_nombre.trim()) {
+    throw new Error("El nombre del cliente es obligatorio.");
+  }
+
+  const pq = await sb
+    .from("presupuestos")
+    .select("id, numero_control, estado, fecha, convertido_pedido_id, convertido_venta_id")
+    .eq("empresa_id", empresaId)
+    .eq("id", presupuestoId)
+    .maybeSingle();
+  if (pq.error) throw new Error(pq.error.message);
+  if (!pq.data) throw new Error("Presupuesto no encontrado.");
+  const p = pq.data as {
+    numero_control: string;
+    estado: string;
+    fecha: string;
+    convertido_pedido_id: string | null;
+    convertido_venta_id: string | null;
+  };
+  if (p.estado === "convertido" || p.convertido_pedido_id || p.convertido_venta_id) {
+    throw new Error("No se puede editar un presupuesto ya convertido o facturado.");
+  }
+
+  // Recalcular ítems y totales (mismo criterio que al crear).
+  const calculados = input.items.map((it) => ({ raw: it, calc: calcularItem(it) }));
+  let subtotal = 0;
+  let montoIva = 0;
+  let descuentoTotal = 0;
+  let total = 0;
+  for (const { calc } of calculados) {
+    subtotal += calc.subtotal;
+    montoIva += calc.monto_iva;
+    descuentoTotal += calc.descuento;
+    total += calc.total;
+  }
+
+  // Recalcular vencimiento desde la fecha original del presupuesto + validez.
+  let vencimiento: string | null = null;
+  if (input.validez_dias && input.validez_dias > 0) {
+    const base = new Date(p.fecha);
+    if (!Number.isNaN(base.getTime())) {
+      base.setDate(base.getDate() + input.validez_dias);
+      vencimiento = base.toISOString().slice(0, 10);
+    }
+  }
+
+  const upd = await sb
+    .from("presupuestos")
+    .update({
+      cliente_id: input.cliente_id,
+      cliente_nombre: input.cliente_nombre.trim(),
+      cliente_ruc: input.cliente_ruc?.trim() || null,
+      cliente_telefono: input.cliente_telefono?.trim() || null,
+      cliente_direccion: input.cliente_direccion?.trim() || null,
+      moneda: input.moneda || "PYG",
+      subtotal: round2(subtotal),
+      monto_iva: round2(montoIva),
+      descuento_total: round2(descuentoTotal),
+      total: round2(total),
+      validez_dias: input.validez_dias ?? null,
+      fecha_vencimiento: vencimiento,
+      forma_pago: input.forma_pago?.trim() || null,
+      plazo_entrega: input.plazo_entrega?.trim() || null,
+      fecha_entrega: input.fecha_entrega?.trim() || null,
+      observaciones: input.observaciones?.trim() || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("empresa_id", empresaId)
+    .eq("id", presupuestoId)
+    .select("id, numero_control")
+    .maybeSingle();
+  if (upd.error) throw new Error(upd.error.message);
+  if (!upd.data) throw new Error("Presupuesto no encontrado.");
+
+  // Reemplazar la lista de ítems completa (borrar + reinsertar con orden explícito).
+  const del = await sb
+    .from("presupuesto_items")
+    .delete()
+    .eq("empresa_id", empresaId)
+    .eq("presupuesto_id", presupuestoId);
+  if (del.error) throw new Error(del.error.message);
+
+  const itemsRows = calculados.map(({ raw, calc }, idx) => ({
+    empresa_id: empresaId,
+    presupuesto_id: presupuestoId,
+    producto_id: raw.producto_id,
+    producto_nombre: raw.producto_nombre,
+    sku: raw.sku,
+    cantidad: calc.cantidad,
+    unidad_medida: raw.unidad_medida,
+    precio_unitario: calc.precio_unitario,
+    iva_tipo: raw.iva_tipo,
+    subtotal: calc.subtotal,
+    monto_iva: calc.monto_iva,
+    descuento: calc.descuento,
+    total: calc.total,
+    orden: idx,
+  }));
+  const insItems = await sb.from("presupuesto_items").insert(itemsRows);
+  if (insItems.error) throw new Error(insItems.error.message);
+
+  return { id: presupuestoId, numero_control: String(p.numero_control) };
+}
+
+/**
+ * Duplica un presupuesto: crea uno NUEVO (numero_control nuevo, estado 'creado',
+ * fecha de hoy) con los mismos datos de cliente, condiciones e ítems. No copia el
+ * estado ni los vínculos de conversión del original.
+ */
+export async function duplicarPresupuesto(
+  sb: AppSupabaseClient,
+  empresaId: string,
+  sucursalId: string,
+  presupuestoId: string
+): Promise<{ id: string; numero_control: string }> {
+  const pq = await sb
+    .from("presupuestos")
+    .select("*")
+    .eq("empresa_id", empresaId)
+    .eq("id", presupuestoId)
+    .maybeSingle();
+  if (pq.error) throw new Error(pq.error.message);
+  if (!pq.data) throw new Error("Presupuesto no encontrado.");
+  const p = pq.data as Record<string, unknown>;
+
+  const itq = await sb
+    .from("presupuesto_items")
+    .select("*")
+    .eq("empresa_id", empresaId)
+    .eq("presupuesto_id", presupuestoId)
+    .order("orden", { ascending: true })
+    .order("created_at", { ascending: true });
+  if (itq.error) throw new Error(itq.error.message);
+  const items = (itq.data ?? []) as Record<string, unknown>[];
+  if (items.length === 0) throw new Error("El presupuesto no tiene ítems para duplicar.");
+
+  return crearPresupuesto(sb, empresaId, sucursalId, {
+    cliente_id: (p.cliente_id as string | null) ?? null,
+    cliente_nombre: String(p.cliente_nombre ?? "").trim(),
+    cliente_ruc: (p.cliente_ruc as string | null) ?? null,
+    cliente_telefono: (p.cliente_telefono as string | null) ?? null,
+    cliente_direccion: (p.cliente_direccion as string | null) ?? null,
+    moneda: String(p.moneda ?? "PYG"),
+    validez_dias: p.validez_dias != null ? Number(p.validez_dias) : null,
+    forma_pago: (p.forma_pago as string | null) ?? null,
+    plazo_entrega: (p.plazo_entrega as string | null) ?? null,
+    fecha_entrega: (p.fecha_entrega as string | null) ?? null,
+    observaciones: (p.observaciones as string | null) ?? null,
+    items: items.map((it) => ({
+      producto_id: (it.producto_id as string | null) ?? null,
+      producto_nombre: String(it.producto_nombre ?? ""),
+      sku: (it.sku as string | null) ?? null,
+      cantidad: Number(it.cantidad) || 0,
+      unidad_medida: (it.unidad_medida as string | null) ?? null,
+      precio_unitario: Number(it.precio_unitario) || 0,
+      iva_tipo: (String(it.iva_tipo ?? "10%") as IvaTipoPresupuesto),
+      descuento: Number(it.descuento) || 0,
+    })),
+  });
 }
 
 /**
