@@ -213,7 +213,7 @@ function drawLabelValue(
 
 /** Origen x de columnas de montos (Exentas / 5% / 10%) — debe coincidir con `drawTableChunk`. */
 function kudeTableMoneyXs(margin: number) {
-  return { xEx: margin + 316, x5: margin + 366, x10: margin + 414 };
+  return { xEx: margin + 360, x5: margin + 410, x10: margin + 458 };
 }
 
 function drawTableChunk(
@@ -238,17 +238,21 @@ function drawTableChunk(
   drawRectFromTop(page, margin, fromTop, innerW, totalH, { fill: rgb(1, 1, 1), border: primary });
   drawRectFromTop(page, margin, fromTop, innerW, headH, { fill: primaryFill, border: primary });
 
-  // Ancho de columnas ajustado en dos iteraciones:
+  // Ancho de columnas ajustado en tres iteraciones:
   //  1) "Código" pasó de 32pt a 66pt para EAN-13 (13 dígitos ≈ 45pt a fsz=6.5).
   //  2) "Descripción" pasó a ~134pt y trunc a 28 chars — antes descripciones
   //     de ~30 chars (ej. "YOGURT GRIEGO C/ MBURUCUYA 380G") pisaban la
-  //     columna "Unidad". "Unidad" queda con 24pt (alcanza para "UNI" y
-  //     el header "Unidad" bold).
+  //     columna "Unidad".
+  //  3) "Descripción" se ensanchó a ~178pt (trunc 40 chars) corriendo todo el
+  //     bloque derecho (Unidad/Precio/Cant./montos) hacia el borde derecho, que
+  //     tenía ~69pt libres. "10%" (x=margin+458) + monto ≈ margin+491, dentro
+  //     del borde interno (margin+515). Los montos de totales usan
+  //     kudeTableMoneyXs, así que quedan alineados automáticamente.
   const xCod = margin + 4;
   const xDesc = margin + 70;
-  const xUm = margin + 204;
-  const xPr = margin + 228;
-  const xCan = margin + 282;
+  const xUm = margin + 248;
+  const xPr = margin + 272;
+  const xCan = margin + 326;
   const { xEx, x5, x10 } = kudeTableMoneyXs(margin);
   const headerBaseline = fromTop + 11;
 
@@ -280,7 +284,7 @@ function drawTableChunk(
     const codigoBarras = codigosBarras[i]?.trim() ?? "";
     const codigoMostrar = codigoBarras || row.codigo;
     page.drawText(trunc(codigoMostrar, 18), { x: xCod, y: yb, size: fsz, font, color: BLACK });
-    page.drawText(trunc(row.descripcion, 28), { x: xDesc, y: yb, size: fsz, font, color: BLACK });
+    page.drawText(trunc(row.descripcion, 40), { x: xDesc, y: yb, size: fsz, font, color: BLACK });
     page.drawText(trunc(row.unidadMedida, 8), { x: xUm, y: yb, size: fsz, font, color: BLACK });
     page.drawText(formatMonto(row.precioUnit, parsed.monedaCodigo), { x: xPr, y: yb, size: fsz, font, color: BLACK });
     page.drawText(row.cantidad || "—", { x: xCan, y: yb, size: fsz, font, color: BLACK });
