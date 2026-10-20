@@ -390,7 +390,9 @@ export async function convertirEnPedido(
     .from("presupuesto_items")
     .select("*")
     .eq("empresa_id", empresaId)
-    .eq("presupuesto_id", presupuestoId);
+    .eq("presupuesto_id", presupuestoId)
+    .order("orden", { ascending: true })
+    .order("created_at", { ascending: true });
   if (itq.error) throw new Error(itq.error.message);
   const items = (itq.data ?? []) as Record<string, unknown>[];
 
@@ -531,7 +533,9 @@ export async function facturarPresupuestoDirecto(
     .from("presupuesto_items")
     .select("*")
     .eq("empresa_id", empresaId)
-    .eq("presupuesto_id", presupuestoId);
+    .eq("presupuesto_id", presupuestoId)
+    .order("orden", { ascending: true })
+    .order("created_at", { ascending: true });
   if (itq.error) throw new Error(itq.error.message);
   const items = (itq.data ?? []) as Record<string, unknown>[];
   if (items.length === 0) throw new Error("El presupuesto no tiene ítems.");
