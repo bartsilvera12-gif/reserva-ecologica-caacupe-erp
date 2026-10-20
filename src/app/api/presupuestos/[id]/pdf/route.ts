@@ -82,6 +82,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
     .select("producto_id, producto_nombre, sku, cantidad, unidad_medida, precio_unitario, iva_tipo, descuento, total")
     .eq("empresa_id", ctx.auth.empresa_id)
     .eq("presupuesto_id", id)
+    .order("orden", { ascending: true })
     .order("created_at", { ascending: true });
   const items = (itq.data ?? []) as Record<string, unknown>[];
 
