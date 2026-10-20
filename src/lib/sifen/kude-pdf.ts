@@ -194,6 +194,57 @@ function wrapByChars(text: string, maxChars: number): string[] {
   return out.filter(Boolean);
 }
 
+/**
+ * Parte un texto en líneas que caben en `maxWidth` usando el ancho real de la
+ * fuente (no aproximado). Rompe por palabras; si una sola palabra no entra, la
+ * corta por caracteres. Limita a `maxLines` líneas: si sobra texto, lo trunca
+ * con "…" en la última línea (evita filas infinitas en el KUDE).
+ */
+function wrapByWidth(
+  text: string,
+  font: PDFFont,
+  size: number,
+  maxWidth: number,
+  maxLines: number
+): string[] {
+  const t = (text ?? "").replace(/\s+/g, " ").trim();
+  if (!t) return [""];
+  const w = (s: string) => font.widthOfTextAtSize(s, size);
+  const lines: string[] = [];
+  const words = t.split(" ");
+  let cur = "";
+  const pushCur = () => { if (cur) { lines.push(cur); cur = ""; } };
+  for (let wi = 0; wi < words.length; wi++) {
+    const word = words[wi]!;
+    const candidate = cur ? cur + " " + word : word;
+    if (w(candidate) <= maxWidth) {
+      cur = candidate;
+      continue;
+    }
+    // No entra agregando la palabra: cerramos línea actual (si hay) y seguimos.
+    if (cur) {
+      pushCur();
+      wi--; // reintentar la palabra en la nueva línea
+      continue;
+    }
+    // Palabra sola más ancha que la columna: la cortamos por caracteres.
+    let chunk = word;
+    while (chunk.length > 1 && w(chunk) > maxWidth) chunk = chunk.slice(0, -1);
+    lines.push(chunk);
+    cur = word.slice(chunk.length);
+    if (lines.length >= maxLines) break;
+  }
+  pushCur();
+  if (lines.length > maxLines) {
+    const kept = lines.slice(0, maxLines);
+    let last = kept[maxLines - 1]!;
+    while (last.length > 1 && w(last + "…") > maxWidth) last = last.slice(0, -1);
+    kept[maxLines - 1] = last + "…";
+    return kept;
+  }
+  return lines;
+}
+
 function drawLabelValue(
   page: PDFPage,
   x: number,
@@ -232,30 +283,38 @@ function drawTableChunk(
   const fsz = 6.5;
   const headH = 16;
   const rowH = 11;
-  const bodyH = Math.max(14, items.length * rowH + 8);
-  const totalH = headH + bodyH;
 
-  drawRectFromTop(page, margin, fromTop, innerW, totalH, { fill: rgb(1, 1, 1), border: primary });
-  drawRectFromTop(page, margin, fromTop, innerW, headH, { fill: primaryFill, border: primary });
-
-  // Ancho de columnas ajustado en tres iteraciones:
+  // Ancho de columnas ajustado en varias iteraciones:
   //  1) "Código" pasó de 32pt a 66pt para EAN-13 (13 dígitos ≈ 45pt a fsz=6.5).
-  //  2) "Descripción" pasó a ~134pt y trunc a 28 chars — antes descripciones
-  //     de ~30 chars (ej. "YOGURT GRIEGO C/ MBURUCUYA 380G") pisaban la
-  //     columna "Unidad".
-  //  3) "Descripción" se ensanchó a ~178pt (trunc 40 chars) corriendo todo el
-  //     bloque derecho (Unidad/Precio/Cant./montos) hacia el borde derecho, que
-  //     tenía ~69pt libres. "10%" (x=margin+458) + monto ≈ margin+491, dentro
-  //     del borde interno (margin+515). Los montos de totales usan
-  //     kudeTableMoneyXs, así que quedan alineados automáticamente.
+  //  2) "Descripción" se ensanchó a ~178pt corriendo todo el bloque derecho
+  //     (Unidad/Precio/Cant./montos) hacia el borde derecho. "10%" (x=margin+458)
+  //     + monto ≈ margin+491, dentro del borde interno (margin+515). Los montos
+  //     de totales usan kudeTableMoneyXs, así que quedan alineados.
+  //  3) Descripciones largas (hasta ~48 chars) ya no se truncan: bajan a una 2ª
+  //     línea (wrap por ancho real de columna, máx 2 líneas), con alto de fila
+  //     variable. Importa para supermercados que exigen el nombre completo.
   const xCod = margin + 4;
   const xDesc = margin + 70;
   const xUm = margin + 248;
   const xPr = margin + 272;
   const xCan = margin + 326;
   const { xEx, x5, x10 } = kudeTableMoneyXs(margin);
-  const headerBaseline = fromTop + 11;
 
+  // Wrap de la descripción al ancho real de la columna (deja 4pt de aire antes
+  // de "Unidad"). Máx 2 líneas; si aún sobra, se trunca con "…".
+  const descWidth = xUm - xDesc - 4;
+  const descLineH = 7.5;
+  const maxDescLines = 2;
+  const descLines = items.map((row) => wrapByWidth(row.descripcion, font, fsz, descWidth, maxDescLines));
+  const rowHeights = descLines.map((lines) => rowH + (Math.max(1, lines.length) - 1) * descLineH);
+
+  const bodyH = Math.max(14, rowHeights.reduce((a, b) => a + b, 0) + 8);
+  const totalH = headH + bodyH;
+
+  drawRectFromTop(page, margin, fromTop, innerW, totalH, { fill: rgb(1, 1, 1), border: primary });
+  drawRectFromTop(page, margin, fromTop, innerW, headH, { fill: primaryFill, border: primary });
+
+  const headerBaseline = fromTop + 11;
   const drawH = (txt: string, x: number, bold: boolean) => {
     page.drawText(txt, {
       x,
@@ -284,14 +343,18 @@ function drawTableChunk(
     const codigoBarras = codigosBarras[i]?.trim() ?? "";
     const codigoMostrar = codigoBarras || row.codigo;
     page.drawText(trunc(codigoMostrar, 18), { x: xCod, y: yb, size: fsz, font, color: BLACK });
-    page.drawText(trunc(row.descripcion, 40), { x: xDesc, y: yb, size: fsz, font, color: BLACK });
+    // Descripción multilínea: el resto de las columnas se alinean a la 1ª línea.
+    const lines = descLines[i]!;
+    for (let li = 0; li < lines.length; li++) {
+      page.drawText(lines[li]!, { x: xDesc, y: baselineFromTop(page, rowBaseline + li * descLineH), size: fsz, font, color: BLACK });
+    }
     page.drawText(trunc(row.unidadMedida, 8), { x: xUm, y: yb, size: fsz, font, color: BLACK });
     page.drawText(formatMonto(row.precioUnit, parsed.monedaCodigo), { x: xPr, y: yb, size: fsz, font, color: BLACK });
     page.drawText(row.cantidad || "—", { x: xCan, y: yb, size: fsz, font, color: BLACK });
     page.drawText(formatMonto(row.montoExenta, parsed.monedaCodigo), { x: xEx, y: yb, size: fsz, font, color: BLACK });
     page.drawText(formatMonto(row.montoGrav5, parsed.monedaCodigo), { x: x5, y: yb, size: fsz, font, color: BLACK });
     page.drawText(formatMonto(row.montoGrav10, parsed.monedaCodigo), { x: x10, y: yb, size: fsz, font, color: BLACK });
-    rowBaseline += rowH;
+    rowBaseline += rowHeights[i]!;
   }
 
   return fromTop + totalH + 10;
@@ -554,6 +617,16 @@ export async function buildKudePdfBuffer(input: BuildKudePdfInput): Promise<Buff
     input.codigosBarrasPorItem && input.codigosBarrasPorItem.length === items.length
       ? input.codigosBarrasPorItem
       : items.map(() => null);
+  // Altura real de cada fila (mismas reglas que drawTableChunk): las filas con
+  // descripción de 2 líneas ocupan más, así que la paginación suma alturas
+  // reales en vez de asumir un alto fijo.
+  const descWidth = 248 - 70 - 4; // xUm - xDesc - 4
+  const descLineH = 7.5;
+  const maxDescLines = 2;
+  const itemHeights = items.map((it) => {
+    const lines = wrapByWidth(it.descripcion, font, 6.5, descWidth, maxDescLines).length;
+    return rowH + (Math.max(1, lines) - 1) * descLineH;
+  });
   while (idx < items.length) {
     let room = A4_H - cursorTop - footerReserve;
     if (room < headH + rowH + 20) {
@@ -561,8 +634,18 @@ export async function buildKudePdfBuffer(input: BuildKudePdfInput): Promise<Buff
       cursorTop = margin;
       room = A4_H - cursorTop - footerReserve;
     }
-    const maxRows = Math.max(1, Math.floor((room - headH - 12) / rowH));
-    const slice = items.slice(idx, idx + maxRows);
+    // Llenado "greedy": agregamos filas mientras entren por altura (siempre al
+    // menos una, aunque sea más alta que el espacio restante).
+    const avail = room - headH - 12;
+    let used = 0;
+    let count = 0;
+    while (idx + count < items.length) {
+      const h = itemHeights[idx + count]!;
+      if (count > 0 && used + h > avail) break;
+      used += h;
+      count++;
+    }
+    const slice = items.slice(idx, idx + count);
     if (slice.length === 0) {
       page = pdfDoc.addPage([A4_W, A4_H]);
       cursorTop = margin;
