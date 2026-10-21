@@ -22,6 +22,7 @@ import type {
   SifenJobTipoError,
   FacturaElectronicaDTO,
 } from "@/lib/sifen/types";
+import { sincronizarEstadoDesdeConsultaDe } from "@/lib/sifen/sincronizar-estado-consulta-de";
 
 const LABEL = "[sifen-worker]";
 
@@ -46,6 +47,15 @@ const CONSULTA_DELAYS_MS = [1_000, 2_000, 4_000, 8_000]; // ~15s total
  * a 1h). Verificado numéricamente, no estimado.
  */
 const MAX_RE_ENCOLADOS_CONSULTA = 60;
+
+/**
+ * A partir de cuántos re-encolados de consulta-lote sin resolver, el worker
+ * intenta Consulta DE por CDC (siConsDE) como fallback. La cola de lotes de SET
+ * a veces se traba en "en proceso" indefinidamente aunque el DE ya esté
+ * aprobado; la consulta directa por CDC no depende de esa cola y resuelve el
+ * estado real. 3 ≈ tras ~3-4 min de backoff acumulado (30s+30s+60s).
+ */
+const UMBRAL_CONSULTA_DE_FALLBACK = 3;
 
 /**
  * Backoff creciente para re-encolar la consulta de lote. Se indexa por
@@ -630,6 +640,55 @@ export async function runSifenJob(job: SifenJobDTO): Promise<void> {
       // Se agotaron los intentos inline. Decidimos entre re-encolar o cerrar
       // por set_timeout según el contador de re-encolados previos.
       await setSifenJobEtapaTiempo(supabase, job.id, "consulta_lote", Date.now() - consultaStart);
+
+      // Fallback Consulta DE (siConsDE): si la consulta-lote sigue sin resolver
+      // tras varios re-encolados, preguntamos a SET directo por CDC. No depende
+      // de la cola de lotes (que suele trabarse en "en proceso"), así que
+      // destraba el caso típico donde el DE ya está aprobado del lado de SET.
+      if (job.veces_re_encolado_consulta >= UMBRAL_CONSULTA_DE_FALLBACK) {
+        try {
+          const sync = await sincronizarEstadoDesdeConsultaDe(supabase, job.empresa_id, fid);
+          if (sync.ok && sync.cambio && (sync.estado_sifen === "aprobado" || sync.estado_sifen === "rechazado")) {
+            const feAhora = await leerEstadoActual(supabase, job.empresa_id, fid);
+            const respConsulta =
+              (feAhora?.sifen_ultima_respuesta_consulta_lote as unknown as Record<string, unknown> | null) ?? null;
+            const respRecibe =
+              (feAhora?.sifen_ultima_respuesta_recibe_lote as unknown as Record<string, unknown> | null) ?? null;
+            if (sync.estado_sifen === "aprobado") {
+              await completeSifenJobAprobado(supabase, job.id, {
+                cdc: feAhora?.cdc ?? null,
+                protocoloLote: feAhora?.sifen_d_prot_cons_lote ?? null,
+                respuestaConsultaLote: respConsulta,
+                respuestaRecibeLote: respRecibe,
+                tiempoTotalMs: Date.now() - totalStart,
+              });
+              console.log(
+                `${label} resuelto via Consulta DE (CDC): APROBADO — la consulta-lote estaba trabada. set=${sync.set.dCodRes ?? "-"}`
+              );
+            } else {
+              await completeSifenJobRechazado(supabase, job.id, {
+                etapa: "consulta_lote",
+                codigoErrorSet: sync.set.dCodRes ?? null,
+                codigoSubErrorSet: null,
+                mensajeSet: sync.set.dMsgRes ?? "SET reporta el DE como rechazado (Consulta DE).",
+                respuestaConsultaLote: respConsulta,
+                respuestaRecibeLote: respRecibe,
+                tiempoTotalMs: Date.now() - totalStart,
+              });
+              console.log(
+                `${label} resuelto via Consulta DE (CDC): RECHAZADO — set=${sync.set.dCodRes ?? "-"} msg=${sync.set.dMsgRes ?? "-"}`
+              );
+            }
+            return;
+          }
+          // Sin veredicto: seguimos con la lógica normal de re-encola/timeout.
+        } catch (e) {
+          console.warn(
+            `${label} fallback Consulta DE falló: ${e instanceof Error ? e.message : String(e)}. Sigo con re-encola/timeout.`
+          );
+        }
+      }
+
       if (job.veces_re_encolado_consulta >= MAX_RE_ENCOLADOS_CONSULTA) {
         await cerrarPorSetTimeout(
           supabase,
