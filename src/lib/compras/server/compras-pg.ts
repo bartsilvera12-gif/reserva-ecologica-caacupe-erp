@@ -83,6 +83,7 @@ export interface CompraRow {
   fecha: string;
   fecha_factura: string | null;
   metodo_pago: string | null;
+  cheque_numero: string | null;
   comprobante_url: string | null;
   comprobante_storage_path: string | null;
   comprobante_nombre: string | null;
@@ -100,7 +101,7 @@ const COLS = `
   cantidad, moneda, tipo_cambio, costo_unitario_original, costo_unitario,
   iva_tipo, subtotal, monto_iva, total, precio_venta, margen_venta,
   tipo_pago, plazo_dias, nro_timbrado, numero_factura_proveedor, numero_control, estado, fecha,
-  fecha_factura, metodo_pago,
+  fecha_factura, metodo_pago, cheque_numero,
   comprobante_url, comprobante_storage_path, comprobante_nombre, comprobante_mime_type,
   created_at, updated_at, created_by, usuario_nombre
 `;
@@ -127,6 +128,7 @@ export interface InsertCompraInput {
   numero_factura_proveedor?: string | null;
   fecha_factura?: string | null;
   metodo_pago?: string | null;
+  cheque_numero?: string | null;
   created_by: string | null;
   usuario_nombre: string | null;
 }
@@ -185,8 +187,11 @@ export interface CompraHeaderInput {
   numero_factura_proveedor: string | null;
   /** Fecha del comprobante fiscal del proveedor (YYYY-MM-DD). null si no se cargó. */
   fecha_factura: string | null;
-  /** Método: 'efectivo' | 'transferencia' | 'tarjeta'. null si no se especificó. */
+  /** Método: 'efectivo' | 'transferencia' | 'tarjeta' | 'cheque'. null si no se especificó. */
   metodo_pago: string | null;
+  /** Numeración del cheque. Solo cuando metodo_pago === 'cheque'. Opcional
+   *  (otros flujos como órdenes de compra no lo setean). */
+  cheque_numero?: string | null;
   comprobante_url: string | null;
   comprobante_storage_path: string | null;
   comprobante_nombre: string | null;
@@ -256,7 +261,7 @@ export async function insertComprasConImpacto(
            tipo_pago, plazo_dias, nro_timbrado, numero_control, estado, fecha,
            fecha_factura, metodo_pago,
            comprobante_url, comprobante_storage_path, comprobante_nombre, comprobante_mime_type,
-           created_by, usuario_nombre, sucursal_id, numero_factura_proveedor
+           created_by, usuario_nombre, sucursal_id, numero_factura_proveedor, cheque_numero
          ) VALUES (
            $1::uuid, $2::uuid, $3, $4::uuid, $5,
            $6::numeric, $7, $8::numeric, $9::numeric, $10::numeric,
@@ -264,7 +269,7 @@ export async function insertComprasConImpacto(
            $17, $18::integer, $19, $20, 'registrada', now(),
            $21::date, $22,
            $23, $24, $25, $26,
-           $27::uuid, $28, $29::uuid, $30
+           $27::uuid, $28, $29::uuid, $30, $31
          )
          RETURNING ${COLS}`,
         [
@@ -278,6 +283,7 @@ export async function insertComprasConImpacto(
           header.comprobante_url, header.comprobante_storage_path,
           header.comprobante_nombre, header.comprobante_mime_type,
           header.created_by, header.usuario_nombre, sucursalId, header.numero_factura_proveedor,
+          header.cheque_numero ?? null,
         ]
       );
       insertedRows.push(compraRows[0]);
@@ -398,14 +404,14 @@ export async function insertCompraConImpacto(
          iva_tipo, subtotal, monto_iva, total, precio_venta, margen_venta,
          tipo_pago, plazo_dias, nro_timbrado, numero_control, estado, fecha,
          fecha_factura, metodo_pago,
-         created_by, usuario_nombre, sucursal_id, numero_factura_proveedor
+         created_by, usuario_nombre, sucursal_id, numero_factura_proveedor, cheque_numero
        ) VALUES (
          $1::uuid, $2::uuid, $3, $4::uuid, $5,
          $6::numeric, $7, $8::numeric, $9::numeric, $10::numeric,
          $11, $12::numeric, $13::numeric, $14::numeric, $15::numeric, $16::numeric,
          $17, $18::integer, $19, $20, 'registrada', now(),
          $21::date, $22,
-         $23::uuid, $24, $25::uuid, $26
+         $23::uuid, $24, $25::uuid, $26, $27
        )
        RETURNING ${COLS}`,
       [
@@ -435,6 +441,7 @@ export async function insertCompraConImpacto(
         d.usuario_nombre,
         sucursalId,
         d.numero_factura_proveedor ?? null,
+        d.cheque_numero ?? null,
       ]
     );
     const compra = compraRows[0];

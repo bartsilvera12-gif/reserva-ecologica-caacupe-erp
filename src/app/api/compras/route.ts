@@ -62,8 +62,16 @@ export async function POST(request: NextRequest) {
         : null;
     const metodoPagoRaw = body.metodo_pago;
     const metodoPago =
-      metodoPagoRaw === "efectivo" || metodoPagoRaw === "transferencia" || metodoPagoRaw === "tarjeta"
+      metodoPagoRaw === "efectivo" ||
+      metodoPagoRaw === "transferencia" ||
+      metodoPagoRaw === "tarjeta" ||
+      metodoPagoRaw === "cheque"
         ? metodoPagoRaw
+        : null;
+    // Número de cheque: solo tiene sentido si el método es 'cheque'.
+    const chequeNumero =
+      metodoPago === "cheque" && body.cheque_numero != null && String(body.cheque_numero).trim() !== ""
+        ? String(body.cheque_numero).trim().slice(0, 50)
         : null;
 
     const header: CompraHeaderInput = {
@@ -81,6 +89,7 @@ export async function POST(request: NextRequest) {
           : null,
       fecha_factura: fechaFactura,
       metodo_pago: metodoPago,
+      cheque_numero: chequeNumero,
       comprobante_url: body.comprobante_url != null && String(body.comprobante_url).trim() !== "" ? String(body.comprobante_url) : null,
       comprobante_storage_path: body.comprobante_storage_path != null && String(body.comprobante_storage_path).trim() !== "" ? String(body.comprobante_storage_path) : null,
       comprobante_nombre: body.comprobante_nombre != null && String(body.comprobante_nombre).trim() !== "" ? String(body.comprobante_nombre) : null,

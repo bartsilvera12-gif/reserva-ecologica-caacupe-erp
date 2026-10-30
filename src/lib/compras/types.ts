@@ -2,7 +2,7 @@ export type TipoPago = "contado" | "credito";
 export type TipoIva = "exenta" | "5" | "10";
 export type Moneda = "PYG" | "USD";
 /** Método de pago (cómo se pagó). Distinto a TipoPago (contado/crédito, plazo). */
-export type MetodoPago = "efectivo" | "transferencia" | "tarjeta";
+export type MetodoPago = "efectivo" | "transferencia" | "tarjeta" | "cheque";
 
 export interface Compra {
   id: string;
@@ -50,9 +50,11 @@ export interface Compra {
    *  (que es la fecha de registro en el sistema). Nullable — puede cargarse
    *  después o quedar vacío en compras históricas. */
   fecha_factura?: string | null;
-  /** Cómo se pagó: efectivo / transferencia / tarjeta. Distinto al tipo_pago
-   *  (contado/crédito) que define plazo. Nullable en compras históricas. */
+  /** Cómo se pagó: efectivo / transferencia / tarjeta / cheque. Distinto al
+   *  tipo_pago (contado/crédito) que define plazo. Nullable en compras históricas. */
   metodo_pago?: MetodoPago | null;
+  /** Numeración del cheque. Solo aplica cuando metodo_pago === 'cheque'. */
+  cheque_numero?: string | null;
 
   estado?: "registrada" | "pendiente" | "pagada" | "anulada";
   anulada_at?: string | null;

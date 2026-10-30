@@ -41,6 +41,7 @@ const metodoPagoBadge: Record<string, { label: string; className: string }> = {
   efectivo: { label: "Efectivo", className: "bg-emerald-50 text-emerald-700" },
   transferencia: { label: "Transferencia", className: "bg-indigo-50 text-indigo-700" },
   tarjeta: { label: "Tarjeta", className: "bg-amber-50 text-amber-800" },
+  cheque: { label: "Cheque", className: "bg-sky-50 text-sky-700" },
 };
 
 function formatFechaDate(fecha: string | null | undefined): string {
@@ -58,6 +59,7 @@ type GrupoCompra = {
   fecha: string;
   fecha_factura: string | null;
   metodo_pago: string | null;
+  cheque_numero: string | null;
   tipo_pago: TipoPago;
   plazo_dias?: number;
   items: Compra[];
@@ -79,6 +81,7 @@ function agrupar(rows: Compra[]): GrupoCompra[] {
         fecha: c.fecha,
         fecha_factura: c.fecha_factura ?? null,
         metodo_pago: c.metodo_pago ?? null,
+        cheque_numero: c.cheque_numero ?? null,
         tipo_pago: c.tipo_pago,
         plazo_dias: c.plazo_dias,
         items: [],
@@ -357,10 +360,15 @@ export default function ComprasPage() {
                         </td>
                         <td className="hidden py-4 pr-4 lg:table-cell">
                           {g.metodo_pago && metodoPagoBadge[g.metodo_pago] ? (
-                            <span
-                              className={`px-2 py-1 rounded-full text-xs font-semibold ${metodoPagoBadge[g.metodo_pago].className}`}
-                            >
-                              {metodoPagoBadge[g.metodo_pago].label}
+                            <span className="inline-flex items-center gap-1">
+                              <span
+                                className={`px-2 py-1 rounded-full text-xs font-semibold ${metodoPagoBadge[g.metodo_pago].className}`}
+                              >
+                                {metodoPagoBadge[g.metodo_pago].label}
+                              </span>
+                              {g.metodo_pago === "cheque" && g.cheque_numero ? (
+                                <span className="text-xs text-gray-500">Nº {g.cheque_numero}</span>
+                              ) : null}
                             </span>
                           ) : (
                             <span className="text-gray-400 text-xs">—</span>
