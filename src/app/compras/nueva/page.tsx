@@ -104,7 +104,8 @@ export default function NuevaCompraPage() {
     moneda: "PYG" as Moneda,
     tipo_cambio: "",
     fecha_factura: "" as string,
-    metodo_pago: "" as "" | "efectivo" | "transferencia" | "tarjeta",
+    metodo_pago: "" as "" | "efectivo" | "transferencia" | "tarjeta" | "cheque",
+    cheque_numero: "",
   });
 
   // Líneas ya agregadas
@@ -293,6 +294,7 @@ export default function NuevaCompraPage() {
           numero_factura_proveedor: cab.numero_factura_proveedor.trim() || null,
           fecha_factura: cab.fecha_factura || null,
           metodo_pago: cab.metodo_pago || null,
+          cheque_numero: cab.metodo_pago === "cheque" ? (cab.cheque_numero.trim() || null) : null,
           comprobante_storage_path: comprobante?.comprobante_storage_path ?? null,
           comprobante_nombre: comprobante?.comprobante_nombre ?? null,
           comprobante_mime_type: comprobante?.comprobante_mime_type ?? null,
@@ -517,9 +519,12 @@ export default function NuevaCompraPage() {
                       metodo_pago:
                         e.target.value === "efectivo" ||
                         e.target.value === "transferencia" ||
-                        e.target.value === "tarjeta"
+                        e.target.value === "tarjeta" ||
+                        e.target.value === "cheque"
                           ? e.target.value
                           : "",
+                      // Si deja de ser cheque, limpiamos el número.
+                      cheque_numero: e.target.value === "cheque" ? p.cheque_numero : "",
                     }))
                   }
                   className={inputClass}
@@ -528,9 +533,24 @@ export default function NuevaCompraPage() {
                   <option value="efectivo">Efectivo</option>
                   <option value="transferencia">Transferencia</option>
                   <option value="tarjeta">Tarjeta</option>
+                  <option value="cheque">Cheque</option>
                 </select>
                 <p className="mt-1 text-[11px] text-slate-500">Cómo se hizo el pago.</p>
               </div>
+              {cab.metodo_pago === "cheque" && (
+                <div>
+                  <label className={labelClass}>Nº de cheque</label>
+                  <input
+                    type="text"
+                    value={cab.cheque_numero}
+                    onChange={(e) => setCab((p) => ({ ...p, cheque_numero: e.target.value }))}
+                    placeholder="Ej: 0001234"
+                    className={inputClass}
+                    maxLength={50}
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">Numeración del cheque.</p>
+                </div>
+              )}
               <div>
                 <label className={labelClass}>Moneda</label>
                 <SegmentedControl<Moneda> value={cab.moneda}

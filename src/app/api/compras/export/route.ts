@@ -31,6 +31,7 @@ export async function GET(request: NextRequest) {
       { header: "MARGEN_VENTA", value: (r) => r.margen_venta != null ? Number(r.margen_venta) : "", width: 10 },
       { header: "TIPO_PAGO", value: (r) => r.tipo_pago, width: 10 },
       { header: "METODO_PAGO", value: (r) => r.metodo_pago ?? "", width: 12 },
+      { header: "CHEQUE_NRO", value: (r) => r.cheque_numero ?? "", width: 14 },
       { header: "PLAZO_DIAS", value: (r) => r.plazo_dias ?? "", width: 8 },
       { header: "NRO_TIMBRADO", value: (r) => r.nro_timbrado, width: 18 },
       { header: "FECHA_FACTURA", value: (r) => r.fecha_factura ?? "", width: 14 },
