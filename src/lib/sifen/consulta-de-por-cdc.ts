@@ -49,22 +49,72 @@ function extraerTexto(xml: string, local: string): string | null {
 export type ConsultaDeRespuesta = {
   httpStatus: number;
   soapFault: boolean;
-  /** `dCodRes` de la consulta. 0422 = CDC encontrado; 0420 = no existe. */
+  /** `dCodRes` de la consulta. 0422 = CDC encontrado (aprobado); 0420 = no existe. */
   dCodRes: string | null;
   dMsgRes: string | null;
   dFecProc: string | null;
-  /** Estado del DE según SET (`dEstRes` dentro de gResProc), p. ej. "Aprobado". */
+  /**
+   * `dEstRes` NO forma parte del esquema de `siConsDE` (pertenece a la respuesta
+   * de ENVÍO/lote, `gResProcLote`). Se expone por compatibilidad y para el raro
+   * caso en que SET lo incluyera; el veredicto real sale de `dCodRes` (0422).
+   */
   dEstRes: string | null;
   /** Protocolo de autorización, si SET ya lo aprobó. */
   dProtAut: string | null;
-  /** true solo si SET reporta el DE como aprobado/autorizado. */
+  /** true si SET encontró el DE y está aprobado (0422, sin evento de cancelación). */
   aprobado: boolean;
-  /** true si SET reporta el DE explícitamente como rechazado/cancelado. */
+  /** true si SET reporta el DE explícitamente como rechazado/cancelado/inutilizado. */
   rechazado: boolean;
   /** true si SET no conoce el CDC (todavía no procesado o inexistente). */
   noEncontrado: boolean;
   cuerpoSoapCrudo: string;
   requestSoap: string;
+}
+
+/**
+ * Clasifica el estado del DE a partir de la respuesta de `siConsDE`.
+ *
+ * Clave: `siConsDE` **no devuelve `dEstRes`**. Ese campo viene en la respuesta
+ * de ENVÍO/lote (`gResProcLote`), no en la consulta por CDC. Por eso la lógica
+ * anterior, que decidía solo por `dEstRes`, dejaba todo DE encontrado "sin
+ * veredicto". La señal real de esta consulta es el código `dCodRes`:
+ *   - `0422` = CDC encontrado → el DE **existe y está aprobado**. SET solo
+ *     expone por esta vía documentos aprobados (devuelve su XML en `xContenDE`).
+ *   - `0420` = CDC no encontrado (inexistente o aún no procesado).
+ *   - `0421` = RUC del certificado sin permiso (no concluyente → sin veredicto).
+ *
+ * Si el DE trae un evento de cancelación/inutilización/nulidad registrado, deja
+ * de estar vigente como aprobado. Se conserva `dEstRes` como señal adicional por
+ * si alguna respuesta llegara a incluirlo.
+ */
+export function clasificarEstadoConsultaDe(input: {
+  soapFault: boolean;
+  dCodRes: string | null;
+  dEstRes: string | null;
+  xml: string;
+}): { aprobado: boolean; rechazado: boolean; noEncontrado: boolean; encontrado: boolean } {
+  const soapFault = input.soapFault;
+  const cod = String(input.dCodRes ?? "").trim();
+  const est = (input.dEstRes ?? "").toLowerCase();
+  const xml = input.xml ?? "";
+
+  // 0422 = CDC encontrado (aprobado). xContenDE solo existe con dCodRes=0422.
+  const encontrado = !soapFault && cod === "0422";
+
+  // Evento de cancelación/inutilización/nulidad registrado sobre el DE.
+  const hayNodoEvento = /<(?:\w+:)?(?:rEve|gGroupTiEvt|rGeVeCan|rContEv|xContEv)\b/i.test(xml);
+  const cancelado =
+    !soapFault &&
+    (/rechaz|cancel|inutiliz|nulo/.test(est) ||
+      (hayNodoEvento && /cancel|inutiliz|nulo/i.test(xml)));
+
+  const aprobado =
+    !soapFault && !cancelado && (encontrado || /aprob|acept|autoriz|confirm/.test(est));
+  const rechazado = cancelado;
+  // 0420 = "CDC no encontrado" en el catálogo SET.
+  const noEncontrado = !soapFault && cod === "0420";
+
+  return { aprobado, rechazado, noEncontrado, encontrado };
 };
 
 function postHttpsMtls(
@@ -142,11 +192,12 @@ export async function consultarDePorCdc(params: ConsultarDePorCdcParams): Promis
   const dEstRes = extraerTexto(xml, "dEstRes");
   const dProtAut = extraerTexto(xml, "dProtAut");
 
-  const est = (dEstRes ?? "").toLowerCase();
-  const aprobado = !soapFault && /aprob|acept|autoriz|confirm/.test(est);
-  const rechazado = !soapFault && /rechaz|cancel|inutiliz/.test(est);
-  // 0420 = "CDC no encontrado" en el catálogo SET.
-  const noEncontrado = !soapFault && !dEstRes && String(dCodRes ?? "").trim() === "0420";
+  const { aprobado, rechazado, noEncontrado } = clasificarEstadoConsultaDe({
+    soapFault,
+    dCodRes,
+    dEstRes,
+    xml,
+  });
 
   return {
     httpStatus: res.status,
