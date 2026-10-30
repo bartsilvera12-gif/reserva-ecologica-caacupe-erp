@@ -588,6 +588,8 @@ export function FacturaElectronicaPanel({
             dEstRes?: string | null;
             dProtAut?: string | null;
             noEncontrado?: boolean;
+            aprobado?: boolean;
+            rechazado?: boolean;
           };
         };
         error?: string;
@@ -604,10 +606,12 @@ export function FacturaElectronicaPanel({
       let msg: string;
       if (j.data?.cambio) {
         msg = `Sincronizado: ERP pasó de "${j.data.estado_sifen_anterior ?? "?"}" a "${j.data.estado_sifen}". SET: ${setLine || "(sin código)"}`;
+      } else if (set.aprobado) {
+        msg = `SET confirma el documento como APROBADO (CDC encontrado). ${setLine}`.trim();
       } else if (set.noEncontrado) {
         msg = `SET no reconoce el CDC actual. Hay que subir el XML aprobado de Marangatú (usalo abajo). ${setLine}`;
-      } else if (set.dEstRes) {
-        msg = `SET reporta: ${set.dEstRes}. ${setLine}`;
+      } else if (set.rechazado || set.dEstRes) {
+        msg = `SET reporta: ${set.dEstRes ?? "rechazado/cancelado"}. ${setLine}`;
       } else {
         msg = `SET respondió sin veredicto claro. ${setLine || "(sin datos)"}`;
       }

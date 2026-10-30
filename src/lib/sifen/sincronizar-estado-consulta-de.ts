@@ -32,6 +32,8 @@ export type SincronizarConsultaDeResult =
         dEstRes: string | null;
         dProtAut: string | null;
         noEncontrado: boolean;
+        aprobado: boolean;
+        rechazado: boolean;
       };
     }
   | { ok: false; status: number; error: string };
@@ -96,9 +98,6 @@ export async function sincronizarEstadoDesdeConsultaDe(
   });
 
   const previo = String((fe as { estado_sifen?: string }).estado_sifen ?? "");
-  let estadoNuevo: string | null = null;
-  if (resp.aprobado) estadoNuevo = "aprobado";
-  else if (resp.rechazado) estadoNuevo = "rechazado";
 
   // Diagnóstico: guardar lo que SET contestó SIN pisar la respuesta del lote.
   const consultaLotePrevia =
@@ -127,44 +126,68 @@ export async function sincronizarEstadoDesdeConsultaDe(
     dEstRes: resp.dEstRes,
     dProtAut: resp.dProtAut,
     noEncontrado: resp.noEncontrado,
+    aprobado: resp.aprobado,
+    rechazado: resp.rechazado,
   };
 
-  // Sin veredicto nuevo: solo guardar diagnóstico, no tocar estado.
-  if (estadoNuevo == null || estadoNuevo === previo) {
-    await supabase
-      .from("factura_electronica")
-      .update({ sifen_ultima_respuesta_consulta_lote: diagnostico })
-      .eq("id", String((fe as { id: string }).id))
-      .eq("empresa_id", empresaId);
-    return { ok: true, cambio: false, estado_sifen: previo, estado_sifen_anterior: previo, set: setResumen };
-  }
+  const feId = String((fe as { id: string }).id);
 
-  // SET dio veredicto explícito: sincronizar.
-  const update: Record<string, unknown> = {
-    estado_sifen: estadoNuevo,
-    sifen_ultima_respuesta_consulta_lote: diagnostico,
-  };
-  if (estadoNuevo === "aprobado") {
-    update.error = null;
+  // SET confirma APROBADO (0422 = CDC encontrado). Fijar estado y limpiar
+  // cualquier error stale (p. ej. un 0301 de un primer intento fallido que luego
+  // sí entró) AUNQUE el ERP ya figurara "aprobado": ese error viejo es lo que
+  // hacía que el panel mostrara "Rechazado" debajo de un documento aprobado.
+  if (resp.aprobado) {
+    const update: Record<string, unknown> = {
+      estado_sifen: "aprobado",
+      error: null,
+      sifen_ultima_respuesta_consulta_lote: diagnostico,
+    };
     if ((fe as { sifen_aprobado_at?: string | null }).sifen_aprobado_at == null) {
       update.sifen_aprobado_at = new Date().toISOString();
     }
-  } else {
-    update.error =
-      resp.dMsgRes == null || String(resp.dMsgRes).trim() === ""
-        ? `SET reporta el DE como ${resp.dEstRes ?? "rechazado"}.`
-        : `SET: ${String(resp.dMsgRes).trim()}`;
+    const { error: errUp } = await supabase
+      .from("factura_electronica")
+      .update(update)
+      .eq("id", feId)
+      .eq("empresa_id", empresaId);
+    if (errUp) {
+      return { ok: false, status: 500, error: `SET confirma aprobado, pero no se pudo actualizar: ${errUp.message}` };
+    }
+    return {
+      ok: true,
+      cambio: previo !== "aprobado",
+      estado_sifen: "aprobado",
+      estado_sifen_anterior: previo,
+      set: setResumen,
+    };
   }
 
-  const { error: errUp } = await supabase
+  // SET reporta rechazo/cancelación explícito y aún no estaba así: sincronizar.
+  if (resp.rechazado && previo !== "rechazado") {
+    const update: Record<string, unknown> = {
+      estado_sifen: "rechazado",
+      sifen_ultima_respuesta_consulta_lote: diagnostico,
+      error:
+        resp.dMsgRes == null || String(resp.dMsgRes).trim() === ""
+          ? `SET reporta el DE como ${resp.dEstRes ?? "rechazado/cancelado"}.`
+          : `SET: ${String(resp.dMsgRes).trim()}`,
+    };
+    const { error: errUp } = await supabase
+      .from("factura_electronica")
+      .update(update)
+      .eq("id", feId)
+      .eq("empresa_id", empresaId);
+    if (errUp) {
+      return { ok: false, status: 500, error: `SET reporta rechazo, pero no se pudo actualizar: ${errUp.message}` };
+    }
+    return { ok: true, cambio: true, estado_sifen: "rechazado", estado_sifen_anterior: previo, set: setResumen };
+  }
+
+  // Sin veredicto nuevo: solo guardar diagnóstico, no tocar estado.
+  await supabase
     .from("factura_electronica")
-    .update(update)
-    .eq("id", String((fe as { id: string }).id))
+    .update({ sifen_ultima_respuesta_consulta_lote: diagnostico })
+    .eq("id", feId)
     .eq("empresa_id", empresaId);
-
-  if (errUp) {
-    return { ok: false, status: 500, error: `SET respondió ${resp.dEstRes}, pero no se pudo actualizar: ${errUp.message}` };
-  }
-
-  return { ok: true, cambio: true, estado_sifen: estadoNuevo, estado_sifen_anterior: previo, set: setResumen };
+  return { ok: true, cambio: false, estado_sifen: previo, estado_sifen_anterior: previo, set: setResumen };
 }
