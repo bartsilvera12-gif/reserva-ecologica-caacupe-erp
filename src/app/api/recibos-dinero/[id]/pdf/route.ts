@@ -21,10 +21,16 @@ function fmtMonto(n: unknown, moneda: string): string {
 }
 function fmtFecha(iso: unknown): string {
   if (!iso) return "—";
+  const s = String(iso);
+  // Fechas puras yyyy-mm-dd (p.ej. date de Postgres) se formatean a mano para
+  // evitar el shift por zona horaria: `new Date("2026-11-20")` parsea como UTC
+  // y en zona Paraguay (-3/-4) mostraría el día anterior.
+  const m = s.slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
   try {
-    return new Date(String(iso)).toLocaleDateString("es-PY", { day: "2-digit", month: "2-digit", year: "numeric" });
+    return new Date(s).toLocaleDateString("es-PY", { day: "2-digit", month: "2-digit", year: "numeric" });
   } catch {
-    return String(iso);
+    return s;
   }
 }
 /**
@@ -284,11 +290,13 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
         factura_origen_numero: string | null;
         destino_numero_factura: string | null;
         destino_numero_venta: string | null;
+        nc_numero: string | null;
       }>(
         `SELECT a.importe_aplicado,
                 f_origen.numero_factura AS factura_origen_numero,
                 f_dest.numero_factura   AS destino_numero_factura,
-                cxc.numero_venta        AS destino_numero_venta
+                cxc.numero_venta        AS destino_numero_venta,
+                nc.numero::text         AS nc_numero
            FROM ${tNcA} a
            JOIN ${tNc}  nc      ON nc.id = a.nota_credito_id
            LEFT JOIN ${tFacQ} f_origen ON f_origen.id = nc.factura_id
@@ -303,6 +311,7 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
           importe: Number(a.importe_aplicado) || 0,
           nc_factura_origen: (a.factura_origen_numero ?? "").trim() || null,
           destino_numero: (a.destino_numero_factura ?? a.destino_numero_venta ?? "").trim() || null,
+          nc_numero: (a.nc_numero ?? "").trim() || null,
         });
       }
     }
@@ -537,12 +546,16 @@ export async function GET(request: NextRequest, ctxParams: { params: Promise<{ i
       <div class="pie">
         <div class="metodos">
           <div class="tt">Forma de pago</div>
-          ${["efectivo","transferencia","tarjeta","cheque"].map((k) => {
+          ${["efectivo","transferencia","tarjeta","cheque","otro"].map((k) => {
             const on = String(r.metodo_pago ?? "").toLowerCase() === k;
             return `<div class="it${on ? " on" : ""}"><span class="bx">${on ? "&times;" : ""}</span>${esc(METODO_LBL[k] ?? k)}</div>`;
           }).join("")}
         </div>
-        <div class="cobrador">${r.usuario_nombre ? `Cobrador: <b>${esc(r.usuario_nombre)}</b>` : ""}${r.referencia ? `<br>Ref.: ${esc(r.referencia)}` : ""}</div>
+        <div class="cobrador">${r.usuario_nombre ? `Cobrador: <b>${esc(r.usuario_nombre)}</b>` : ""}${r.referencia ? `<br>Ref.: ${esc(r.referencia)}` : ""}${
+          String(r.metodo_pago ?? "").toLowerCase() === "cheque" && (r.cheque_numero || r.cheque_fecha_cobro)
+            ? `<br>Cheque Nº <b>${esc(r.cheque_numero ?? "—")}</b>${r.cheque_fecha_cobro ? ` · se cobra el <b>${esc(fmtFecha(r.cheque_fecha_cobro))}</b>` : ""}`
+            : ""
+        }</div>
         <div class="firma">
           <div class="ln">${esc(EMPRESA_DOC.nombre)}</div>
           <div class="orig">Original: Cliente &middot; Duplicado: Archivo Tributario</div>

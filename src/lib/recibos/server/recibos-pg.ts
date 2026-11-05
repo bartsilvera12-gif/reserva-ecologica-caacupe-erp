@@ -20,7 +20,7 @@ export class ReciboError extends Error {
 
 const RECIBO_COLS =
   "id, numero_recibo, cliente_id, cliente_nombre, cliente_documento, origen, venta_id, " +
-  "cuenta_por_cobrar_id, cobro_cliente_id, fecha, moneda, monto, metodo_pago, referencia, concepto, observaciones, usuario_nombre, anulado";
+  "cuenta_por_cobrar_id, cobro_cliente_id, fecha, moneda, monto, metodo_pago, referencia, concepto, observaciones, usuario_nombre, anulado, cheque_numero, cheque_fecha_cobro";
 
 async function siguienteNumero(sb: AppSupabaseClient, empresaId: string): Promise<string> {
   const { data, error } = await sb
@@ -133,7 +133,7 @@ export async function crearOReusarRecibo(
     if (!cobroId) throw new ReciboError("Falta cobro_cliente_id.");
     const cq = await sb
       .from("cobros_clientes")
-      .select("id, cliente_id, cuenta_por_cobrar_id, venta_id, monto, metodo_pago, referencia, entidad_bancaria_id")
+      .select("id, cliente_id, cuenta_por_cobrar_id, venta_id, monto, metodo_pago, referencia, entidad_bancaria_id, cheque_numero, cheque_fecha_cobro")
       .eq("empresa_id", empresaId)
       .eq("id", cobroId)
       .maybeSingle();
@@ -141,6 +141,7 @@ export async function crearOReusarRecibo(
     if (!cq.data) throw new ReciboError("Cobro no encontrado.", 404);
     const cob = cq.data as unknown as Record<string, unknown>;
 
+    // 1) Reuso directo: hay un recibo "simple" ya creado para este cobro.
     const ex = await sb
       .from("recibos_dinero")
       .select(RECIBO_COLS)
@@ -148,6 +149,30 @@ export async function crearOReusarRecibo(
       .eq("cobro_cliente_id", cobroId)
       .maybeSingle();
     if (ex.data) return { recibo: ex.data as unknown as Record<string, unknown>, existed: true };
+
+    // 2) Reuso cruzado: el cobro puede estar dentro de un recibo MÚLTIPLE
+    // (cobrarConRecibo agrupa varios cobros con recibos_dinero.cobro_cliente_id
+    // = NULL, y guarda cada cobro en recibos_dinero_items.cobro_cliente_id).
+    // Si existe ese recibo, reusarlo en lugar de crear uno nuevo sin NC — fue
+    // el origen del bug "al reabrir desde Pagos se genera otro recibo que
+    // deja de mostrar la NC".
+    const exItem = await sb
+      .from("recibos_dinero_items")
+      .select("recibo_id")
+      .eq("empresa_id", empresaId)
+      .eq("cobro_cliente_id", cobroId)
+      .limit(1)
+      .maybeSingle();
+    if (exItem.data && (exItem.data as { recibo_id?: string }).recibo_id) {
+      const reciboId = String((exItem.data as { recibo_id: string }).recibo_id);
+      const exMul = await sb
+        .from("recibos_dinero")
+        .select(RECIBO_COLS)
+        .eq("empresa_id", empresaId)
+        .eq("id", reciboId)
+        .maybeSingle();
+      if (exMul.data) return { recibo: exMul.data as unknown as Record<string, unknown>, existed: true };
+    }
 
     // Concepto según saldo de la cuenta (cancelación vs parcial).
     let numeroVenta = "";
@@ -188,6 +213,8 @@ export async function crearOReusarRecibo(
       referencia: (cob.referencia as string) || null,
       concepto,
       observaciones: input.observaciones ?? null,
+      cheque_numero: (cob.cheque_numero as string) || null,
+      cheque_fecha_cobro: (cob.cheque_fecha_cobro as string) || null,
     });
 
     // Línea de detalle, para que el PDF muestre QUÉ documento se cobró y no
@@ -244,6 +271,8 @@ type InsertData = {
   referencia: string | null;
   concepto: string | null;
   observaciones: string | null;
+  cheque_numero?: string | null;
+  cheque_fecha_cobro?: string | null;
 };
 
 async function insertarRecibo(

@@ -54,11 +54,12 @@ type NcSel = {
   cuenta_por_cobrar_destino_id: string; // qué CxC del cliente recibe el descuento
 };
 
-const METODOS = ["efectivo", "transferencia", "tarjeta", "otro"] as const;
+const METODOS = ["efectivo", "transferencia", "tarjeta", "cheque", "otro"] as const;
 const METODO_LABEL: Record<string, string> = {
   efectivo: "Efectivo",
   transferencia: "Transferencia",
   tarjeta: "Tarjeta",
+  cheque: "Cheque",
   otro: "Otro",
 };
 
@@ -119,6 +120,10 @@ export function CobrarMultipleModal({
   const [referencia, setReferencia] = useState("");
   const [titular, setTitular] = useState("");
   const [observaciones, setObservaciones] = useState("");
+  // Datos específicos del cheque: su fecha de cobro es independiente de la
+  // fecha del cobro / recibo (puede estar diferido).
+  const [chequeNumero, setChequeNumero] = useState("");
+  const [chequeFechaCobro, setChequeFechaCobro] = useState("");
   /** Fecha real del pago. Default = hoy. El operador la ajusta cuando registra
    *  un cobro que llego dias antes — asi el recibo lleva la fecha del pago
    *  real (fiscalmente / contablemente lo que corresponde), no la de carga. */
@@ -138,6 +143,8 @@ export function CobrarMultipleModal({
     setReferencia("");
     setTitular("");
     setObservaciones("");
+    setChequeNumero("");
+    setChequeFechaCobro("");
     setFechaPago(new Date().toISOString().slice(0, 10));
     setCuentas([]);
     setSel({});
@@ -414,6 +421,14 @@ export function CobrarMultipleModal({
       setError("Ingresá la referencia / nº de operación.");
       return;
     }
+    if (metodo === "cheque" && !chequeNumero.trim()) {
+      setError("Ingresá el número de cheque.");
+      return;
+    }
+    if (metodo === "cheque" && !chequeFechaCobro) {
+      setError("Ingresá la fecha de cobro del cheque.");
+      return;
+    }
 
     // La pestaña del PDF se abre AHORA en el gesto del usuario, para que el
     // bloqueador de pop-ups no la mate (mismo patron que generarYAbrirRecibo).
@@ -436,6 +451,8 @@ export function CobrarMultipleModal({
           referencia: referencia.trim() || null,
           observaciones: observaciones.trim() || null,
           fecha_pago: fechaPago || null,
+          cheque_numero: metodo === "cheque" ? (chequeNumero.trim() || null) : null,
+          cheque_fecha_cobro: metodo === "cheque" ? (chequeFechaCobro || null) : null,
         }),
       });
       const body = await res.json();
@@ -780,6 +797,29 @@ export function CobrarMultipleModal({
                     {entidadesFiltradas.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
                   </select>
                 </div>
+              )}
+              {metodo === "cheque" && (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Número de cheque *</label>
+                    <input
+                      value={chequeNumero}
+                      onChange={(e) => setChequeNumero(e.target.value)}
+                      placeholder="Nº de cheque"
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Fecha de cobro del cheque *</label>
+                    <input
+                      type="date"
+                      value={chequeFechaCobro}
+                      onChange={(e) => setChequeFechaCobro(e.target.value)}
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                    />
+                    <p className="mt-1 text-[10px] text-slate-400">Es independiente de la fecha del recibo.</p>
+                  </div>
+                </>
               )}
               <div className={pideBanco ? "sm:col-span-2" : ""}>
                 <label className="block text-xs font-medium text-gray-600 mb-1">

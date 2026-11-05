@@ -16,9 +16,9 @@ export type CxcRef = {
 
 type Entidad = { id: string; codigo: string | null; nombre: string; tipo: string | null };
 
-const METODOS = ["efectivo", "transferencia", "tarjeta", "otro"] as const;
+const METODOS = ["efectivo", "transferencia", "tarjeta", "cheque", "otro"] as const;
 const METODO_LABEL: Record<string, string> = {
-  efectivo: "Efectivo", transferencia: "Transferencia", tarjeta: "Tarjeta", otro: "Otro",
+  efectivo: "Efectivo", transferencia: "Transferencia", tarjeta: "Tarjeta", cheque: "Cheque", otro: "Otro",
 };
 
 function fmtGs(n: number, moneda = "PYG") {
@@ -45,6 +45,10 @@ export function RegistrarCobroModalCxc({
   const [referencia, setReferencia] = useState("");
   const [titular, setTitular] = useState("");
   const [entidadId, setEntidadId] = useState("");
+  // Datos específicos de cheque. La fecha de cobro es independiente de la
+  // fecha del recibo (puede estar diferido).
+  const [chequeNumero, setChequeNumero] = useState("");
+  const [chequeFechaCobro, setChequeFechaCobro] = useState("");
   const [entidades, setEntidades] = useState<Entidad[]>([]);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,6 +70,8 @@ export function RegistrarCobroModalCxc({
       setReferencia("");
       setTitular("");
       setEntidadId("");
+      setChequeNumero("");
+      setChequeFechaCobro("");
       setError(null);
       setCobroOk(null);
     }
@@ -100,6 +106,8 @@ export function RegistrarCobroModalCxc({
     if (m > cuenta.saldo + 0.001) { setError("El monto supera el saldo pendiente."); return; }
     if (pideBanco && !entidadId) { setError("Seleccioná la entidad bancaria."); return; }
     if (pideBanco && !referencia.trim()) { setError("Ingresá la referencia / nº de operación."); return; }
+    if (metodo === "cheque" && !chequeNumero.trim()) { setError("Ingresá el número de cheque."); return; }
+    if (metodo === "cheque" && !chequeFechaCobro) { setError("Ingresá la fecha de cobro del cheque."); return; }
     setGuardando(true);
     setError(null);
     try {
@@ -116,6 +124,8 @@ export function RegistrarCobroModalCxc({
           titular: pideBanco ? (titular.trim() || null) : null,
           observaciones: !pideBanco && metodo === "otro" ? (referencia.trim() || null) : null,
           entidad_nombre_snapshot: pideBanco ? entidadNombre : null,
+          cheque_numero: metodo === "cheque" ? (chequeNumero.trim() || null) : null,
+          cheque_fecha_cobro: metodo === "cheque" ? (chequeFechaCobro || null) : null,
         }),
       });
       const body = await res.json();
@@ -191,6 +201,29 @@ export function RegistrarCobroModalCxc({
                     <option value="">— Elegí —</option>
                     {entidadesFiltradas.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
                   </select>
+                </div>
+              )}
+              {metodo === "cheque" && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Número de cheque *</label>
+                    <input
+                      value={chequeNumero}
+                      onChange={(e) => setChequeNumero(e.target.value)}
+                      placeholder="Nº de cheque"
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Fecha de cobro del cheque *</label>
+                    <input
+                      type="date"
+                      value={chequeFechaCobro}
+                      onChange={(e) => setChequeFechaCobro(e.target.value)}
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                    />
+                    <p className="mt-1 text-[10px] text-slate-400">Es independiente de la fecha del recibo.</p>
+                  </div>
                 </div>
               )}
               <div>

@@ -116,6 +116,8 @@ export async function POST(request: NextRequest) {
       referencia: typeof body.referencia === "string" ? body.referencia : null,
       observaciones: typeof body.observaciones === "string" ? body.observaciones : null,
       fecha_pago: typeof body.fecha_pago === "string" ? body.fecha_pago : null,
+      cheque_numero: typeof body.cheque_numero === "string" ? body.cheque_numero : null,
+      cheque_fecha_cobro: typeof body.cheque_fecha_cobro === "string" ? body.cheque_fecha_cobro : null,
       usuarioId: ctx.auth.usuarioCatalogId ?? null,
       usuarioNombre: ctx.auth.user?.email ?? null,
     });

@@ -36,7 +36,11 @@ const num = (v: unknown) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const METODOS = new Set(["efectivo", "transferencia", "tarjeta", "cheque", "deposito"]);
+// Lista blanca de métodos de pago aceptados. "otro" se agregó junto con "cheque"
+// porque antes el frontend enviaba "otro" y acá caía al default "efectivo":
+// el recibo guardaba "Efectivo" aunque el operador hubiera elegido "Otro" (bug
+// reportado por el cliente).
+const METODOS = new Set(["efectivo", "transferencia", "tarjeta", "cheque", "deposito", "otro"]);
 const metodoValido = (m: string | null | undefined) => {
   const x = (m ?? "").trim().toLowerCase();
   return METODOS.has(x) ? x : "efectivo";
@@ -67,6 +71,10 @@ export type CobrarConReciboInput = {
   referencia?: string | null;
   observaciones?: string | null;
   fecha_pago?: string | null;
+  /** Número de cheque. Se persiste cuando metodo_pago === "cheque". */
+  cheque_numero?: string | null;
+  /** Fecha en que el cheque podrá ser cobrado (independiente de fecha_pago). */
+  cheque_fecha_cobro?: string | null;
   usuarioId: string | null;
   usuarioNombre: string | null;
 };
@@ -129,6 +137,10 @@ export async function cobrarConRecibo(
 
     const fechaPago = p.fecha_pago && p.fecha_pago.trim() ? p.fecha_pago : new Date().toISOString();
     const metodo = metodoValido(p.metodo_pago);
+    // Datos del cheque: solo cuando el método es "cheque". La fecha de cobro es
+    // independiente de la fecha del recibo (fechaPago), según pedido del cliente.
+    const chequeNumero = metodo === "cheque" ? (p.cheque_numero?.trim() || null) : null;
+    const chequeFechaCobro = metodo === "cheque" ? (p.cheque_fecha_cobro?.trim() || null) : null;
 
     let total = 0;
     const items: Array<{
@@ -173,14 +185,16 @@ export async function cobrarConRecibo(
       const { rows: cobRows } = await client.query<{ id: string }>(
         `INSERT INTO ${tCob}
            (empresa_id, sucursal_id, cliente_id, cuenta_por_cobrar_id, venta_id, fecha_pago, monto,
-            metodo_pago, entidad_bancaria_id, referencia, observaciones, usuario_id, usuario_nombre)
+            metodo_pago, entidad_bancaria_id, referencia, observaciones, usuario_id, usuario_nombre,
+            cheque_numero, cheque_fecha_cobro)
          VALUES ($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5::uuid,$6::timestamptz,$7::numeric,
-                 $8,$9::uuid,$10,$11,$12::uuid,$13)
+                 $8,$9::uuid,$10,$11,$12::uuid,$13,$14,$15::date)
          RETURNING id`,
         [
           p.empresaId, p.sucursalId, p.clienteId, cxc.id, cxc.venta_id, fechaPago, importe,
           metodo, p.entidad_bancaria_id || null, p.referencia?.trim() || null,
           p.observaciones?.trim() || null, p.usuarioId, p.usuarioNombre,
+          chequeNumero, chequeFechaCobro,
         ]
       );
       const cobroId = cobRows[0]!.id;
@@ -363,9 +377,11 @@ export async function cobrarConRecibo(
       `INSERT INTO ${tR}
          (empresa_id, sucursal_id, numero_recibo, cliente_id, cliente_nombre, cliente_documento,
           origen, fecha, moneda, monto, metodo_pago, entidad_bancaria_id, referencia,
-          concepto, observaciones, usuario_id, usuario_nombre)
+          concepto, observaciones, usuario_id, usuario_nombre,
+          cheque_numero, cheque_fecha_cobro)
        VALUES ($1::uuid,$2::uuid,$3,$4::uuid,$5,$6,'cobro_cxc',$7::timestamptz,'GS',$8::numeric,
-               $9,$10::uuid,$11,$12,$13,$14::uuid,$15)
+               $9,$10::uuid,$11,$12,$13,$14::uuid,$15,
+               $16,$17::date)
        RETURNING id`,
       [
         p.empresaId, p.sucursalId, numeroRecibo, p.clienteId, clienteNombre, clienteDoc,
@@ -374,6 +390,7 @@ export async function cobrarConRecibo(
           ? `Aplicación de ${ncAppsProcesadas.length} nota${ncAppsProcesadas.length === 1 ? "" : "s"} de crédito`
           : `Cobro de ${items.length} ${items.length === 1 ? "documento" : "documentos"}${ncAppsProcesadas.length > 0 ? ` con ${ncAppsProcesadas.length} NC aplicada${ncAppsProcesadas.length === 1 ? "" : "s"}` : ""}`,
         p.observaciones?.trim() || null, p.usuarioId, p.usuarioNombre,
+        chequeNumero, chequeFechaCobro,
       ]
     );
     const reciboId = recRows[0]!.id;

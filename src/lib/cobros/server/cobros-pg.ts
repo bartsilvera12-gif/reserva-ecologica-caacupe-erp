@@ -1,6 +1,6 @@
 import type { AppSupabaseClient } from "@/lib/supabase/schema";
 
-export type MetodoPagoCobro = "efectivo" | "transferencia" | "tarjeta" | "otro";
+export type MetodoPagoCobro = "efectivo" | "transferencia" | "tarjeta" | "cheque" | "otro";
 
 export interface RegistrarCobroInput {
   cuenta_por_cobrar_id: string;
@@ -14,6 +14,10 @@ export interface RegistrarCobroInput {
   usuario_id?: string | null;
   usuario_nombre?: string | null;
   entidad_nombre_snapshot?: string | null;
+  /** Número de cheque. Se persiste cuando metodo_pago === "cheque". */
+  cheque_numero?: string | null;
+  /** Fecha en que el cheque podrá ser cobrado (independiente de fecha_pago). */
+  cheque_fecha_cobro?: string | null;
 }
 
 export class CobroError extends Error {
@@ -30,7 +34,7 @@ function round2(n: number): number {
 }
 
 function metodoValido(m: unknown): MetodoPagoCobro {
-  return m === "transferencia" || m === "tarjeta" || m === "otro" ? m : "efectivo";
+  return m === "transferencia" || m === "tarjeta" || m === "cheque" || m === "otro" || m === "efectivo" ? m : "efectivo";
 }
 
 /**
@@ -77,6 +81,14 @@ export async function registrarCobro(
   const fechaPago =
     typeof input.fecha_pago === "string" && input.fecha_pago.trim() ? input.fecha_pago : new Date().toISOString();
 
+  const metodoNorm = metodoValido(input.metodo_pago);
+  // Solo se guardan los datos del cheque cuando el método es "cheque". Para
+  // los demás métodos quedan en null aunque el cliente los haya enviado.
+  const chequeNumero =
+    metodoNorm === "cheque" ? (input.cheque_numero?.trim() || null) : null;
+  const chequeFechaCobro =
+    metodoNorm === "cheque" ? (input.cheque_fecha_cobro?.trim() || null) : null;
+
   // 1) Insertar el cobro.
   const ins = await sb
     .from("cobros_clientes")
@@ -92,7 +104,7 @@ export async function registrarCobro(
       venta_id: cxc.venta_id,
       fecha_pago: fechaPago,
       monto,
-      metodo_pago: metodoValido(input.metodo_pago),
+      metodo_pago: metodoNorm,
       entidad_bancaria_id: input.entidad_bancaria_id || null,
       entidad_nombre_snapshot: input.entidad_nombre_snapshot?.trim() || null,
       referencia: input.referencia?.trim() || null,
@@ -100,6 +112,8 @@ export async function registrarCobro(
       observaciones: input.observaciones?.trim() || null,
       usuario_id: input.usuario_id || null,
       usuario_nombre: input.usuario_nombre?.trim() || null,
+      cheque_numero: chequeNumero,
+      cheque_fecha_cobro: chequeFechaCobro,
     })
     .select("id")
     .single();

@@ -22,13 +22,15 @@ export async function POST(request: NextRequest) {
     const result = await registrarCobro(ctx.supabase, ctx.auth.empresa_id, {
       cuenta_por_cobrar_id: String(body.cuenta_por_cobrar_id ?? ""),
       monto: Number(body.monto),
-      metodo_pago: (body.metodo_pago as "efectivo" | "transferencia" | "tarjeta" | "otro") ?? "efectivo",
+      metodo_pago: (body.metodo_pago as "efectivo" | "transferencia" | "tarjeta" | "cheque" | "otro") ?? "efectivo",
       entidad_bancaria_id: body.entidad_bancaria_id ? String(body.entidad_bancaria_id) : null,
       entidad_nombre_snapshot: body.entidad_nombre_snapshot ? String(body.entidad_nombre_snapshot) : null,
       referencia: body.referencia ? String(body.referencia) : null,
       titular: body.titular ? String(body.titular) : null,
       observaciones: body.observaciones ? String(body.observaciones) : null,
       fecha_pago: typeof body.fecha_pago === "string" ? body.fecha_pago : null,
+      cheque_numero: typeof body.cheque_numero === "string" ? body.cheque_numero : null,
+      cheque_fecha_cobro: typeof body.cheque_fecha_cobro === "string" ? body.cheque_fecha_cobro : null,
       usuario_id: usuarioId,
       usuario_nombre: usuarioNombre,
     });

@@ -25,6 +25,8 @@ export interface NcAplicacionRecibo {
   nc_factura_origen: string | null;
   /** Número de la factura (o venta) destino a la que se aplicó la NC. */
   destino_numero: string | null;
+  /** Número de la NC (p. ej. "NCR-000261"). Si se pasa, aparece en la etiqueta. */
+  nc_numero?: string | null;
 }
 
 export interface FilaRecibo {
@@ -70,7 +72,13 @@ export function construirFilasRecibo(
 
   // NC: una fila negativa por aplicación.
   for (const a of ncAplic) {
-    const etiqueta = a.nc_factura_origen ? `NC de ${a.nc_factura_origen}` : "Nota de crédito";
+    // Etiqueta "NC N° 261 de FAC-000914" — con el nro propio de la NC y, si
+    // está disponible, también la factura que le dio origen. El cliente lo
+    // pide para poder identificar la NC puntualmente al recibir el recibo.
+    const numeroNc = (a.nc_numero ?? "").trim();
+    const etiqueta = numeroNc
+      ? (a.nc_factura_origen ? `NC N° ${numeroNc} de ${a.nc_factura_origen}` : `NC N° ${numeroNc}`)
+      : (a.nc_factura_origen ? `NC de ${a.nc_factura_origen}` : "Nota de crédito");
     const concepto = a.destino_numero ? `Aplicada a ${a.destino_numero}` : "Aplicación de crédito";
     filas.push({
       doc: etiqueta,

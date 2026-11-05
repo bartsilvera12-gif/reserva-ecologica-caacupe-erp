@@ -30,6 +30,7 @@ import { getMarketingTasks, createMarketingTask, updateTaskStatus } from "@/lib/
 import { getUsuariosActivosEmpresa, type UsuarioEmpresa } from "@/lib/usuarios/empresa";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { SifenEstadoBadge } from "@/components/sifen/SifenEstadoBadge";
+import { CobrarMultipleModal } from "@/components/cobros/CobrarMultipleModal";
 import { useFacturaSifenEstados } from "@/hooks/useFacturaSifenEstados";
 import MontoInput from "@/components/ui/MontoInput";
 import { getPlanes } from "@/lib/planes/storage";
@@ -266,6 +267,9 @@ export default function ClienteDetailPage() {
   // Estado de cuenta
   const [facturas, setFacturas] = useState<Factura[]>([]);
   const [modalPago, setModalPago] = useState(false);
+  // Modal de cobro múltiple: permite cobrar varias facturas en un solo recibo
+  // sin recargar cliente/método/referencia por cada factura.
+  const [modalCobroMultiple, setModalCobroMultiple] = useState(false);
   const [facturaPago, setFacturaPago] = useState<Factura | null>(null);
   const [formPago, setFormPago] = useState({ factura_id: "" as string, monto: "", fecha_pago: "", metodo_pago: "efectivo" as const, referencia: "" });
   const [guardandoPago, setGuardandoPago] = useState(false);
@@ -852,22 +856,6 @@ export default function ClienteDetailPage() {
     }
   }
 
-  function abrirRegistrarPago() {
-    setActiveTab("estado_cuenta");
-    const conSaldo = facturas.filter((f) => f.saldo > 0);
-    const primera = conSaldo[0];
-    if (!primera) return;
-    setFacturaPago(null);
-    setFormPago({
-      factura_id: primera.id,
-      monto: String(primera.saldo),
-      fecha_pago: new Date().toISOString().slice(0, 10),
-      metodo_pago: "efectivo",
-      referencia: "",
-    });
-    setModalPago(true);
-  }
-
   async function emitirFacturaContadoDesdeModal() {
     const monto = parseFloat(formFacturaContado.monto) || 0;
     if (monto <= 0 || !cliente) {
@@ -1081,8 +1069,9 @@ export default function ClienteDetailPage() {
             </button>
             <button
               type="button"
-              onClick={abrirRegistrarPago}
+              onClick={() => setModalCobroMultiple(true)}
               className="text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-50 px-3.5 py-2 rounded-lg transition-colors"
+              title="Cobrar una o varias facturas del cliente en un solo recibo"
             >
               Registrar pago
             </button>
@@ -2078,20 +2067,9 @@ export default function ClienteDetailPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      const conSaldo = facturas.filter((f) => f.saldo > 0);
-                      const primera = conSaldo[0];
-                      setFacturaPago(null);
-                      setFormPago({
-                        factura_id: primera?.id ?? "",
-                        monto: primera ? String(primera.saldo) : "",
-                        fecha_pago: new Date().toISOString().slice(0, 10),
-                        metodo_pago: "efectivo",
-                        referencia: "",
-                      });
-                      setModalPago(true);
-                    }}
+                    onClick={() => setModalCobroMultiple(true)}
                     className="text-sm font-medium text-[#0EA5E9] hover:text-[#0284C7]"
+                    title="Cobrar una o varias facturas del cliente en un solo recibo"
                   >
                     Registrar pago
                   </button>
@@ -2591,6 +2569,20 @@ export default function ClienteDetailPage() {
           </div>
         </div>
       )}
+
+      {/* Modal Cobro múltiple: una o varias facturas → un solo recibo. */}
+      <CobrarMultipleModal
+        open={modalCobroMultiple}
+        onClose={() => setModalCobroMultiple(false)}
+        onExito={async () => {
+          // Refrescar facturas del cliente para ver los saldos y estados nuevos.
+          try {
+            const fs = await getFacturas(id);
+            setFacturas(fs ?? []);
+          } catch { /* best effort */ }
+        }}
+        clienteInicial={cliente ? { id: cliente.id, display: clienteNombre(cliente), ruc: cliente.ruc ?? null } : null}
+      />
 
       {/* Modal Registrar pago */}
       {modalPago && (
