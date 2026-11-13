@@ -8,7 +8,7 @@ import type {
   SifenPayloadReceptor,
 } from "./types";
 import { normalizeActividadEconomica, normalizeTimbradoFechaInicioVigencia } from "./config-validation";
-import { splitRucParaXml } from "./sifen-cdc";
+import { documentoTieneFormatoRucConDvValido, splitRucParaXml } from "./sifen-cdc";
 import {
   normalizarTipoDocReceptorSifen,
   resolveCodigoPaisIso3Receptor,
@@ -388,9 +388,11 @@ function validateReceptor(
   // Solo tratamos al receptor como contribuyente cuando:
   //   (a) el operador marcó explícitamente el checkbox `es_contribuyente`, o
   //   (b) el cliente es una empresa (persona jurídica — siempre contribuyente).
+  // (c) legacy: RUC vacío y Documento con formato NNNNNNN-D con DV válido (RUC cargado en el campo equivocado).
   const esContribuyentePy =
     cliente.es_contribuyente === true ||
-    trimStr(cliente.tipo_cliente ?? "").toLowerCase() === "empresa";
+    trimStr(cliente.tipo_cliente ?? "").toLowerCase() === "empresa" ||
+    (!ruc && documentoTieneFormatoRucConDvValido(documento));
 
   // Gates de coherencia contribuyente↔RUC. SET rechaza el lote con 0301 [1264]
   // ("RUC del receptor no habilitado para esta operación") cuando el ERP envía

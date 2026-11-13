@@ -62,6 +62,26 @@ export function splitRucParaXml(rucRaw: string): { cuerpo: string; dDV: string }
   return { cuerpo, dDV };
 }
 
+/** DV de RUC paraguayo (módulo 11, base 11) para el cuerpo numérico. */
+export function digitoVerificadorRucPy(cuerpo: string): string {
+  const d = cuerpo.replace(/\D/g, "");
+  let total = 0;
+  let k = 2;
+  for (let i = d.length - 1; i >= 0; i--) {
+    if (k > 11) k = 2;
+    total += parseInt(d[i], 10) * k;
+    k += 1;
+  }
+  const resto = total % 11;
+  return String(resto > 1 ? 11 - resto : 0);
+}
+
+/** true si el texto es NNNNNNN-D (cuerpo 3–8 dígitos) y el DV coincide con el módulo 11. */
+export function documentoTieneFormatoRucConDvValido(doc: string | null | undefined): boolean {
+  const m = /^(\d{3,8})-(\d)$/.exec((doc ?? "").replace(/\s/g, "").trim());
+  return !!m && digitoVerificadorRucPy(m[1]) === m[2];
+}
+
 /**
  * Valor para nodos XSD `tRuc` (p. ej. `dRucRec`): `DE_Types_v150` exige pattern `[1-9][0-9]*…`,
  * longitud 3–8, **sin ceros a la izquierda**. Rellenar el cuerpo a 8 dígitos con `padDigits` produce

@@ -549,7 +549,10 @@ export function buildOfficialRdeFacturaElectronicaXml(
     // limpian con /\D/g; acá solo se sacaba el espacio, así que una CI cargada
     // como "4192083-1" (con guión, como suele anotarse a mano) mandaba el
     // guión literal al XML — no es un número de cédula válido.
-    const doc = (receptor.documento ?? "").replace(/\D/g, "").trim();
+    // Consumidor final: si viene como NNNNNNN-D, el DV no es parte de la cédula → solo el número.
+    const docRaw = (receptor.documento ?? "").replace(/\s/g, "").trim();
+    const mCiDv = /^(\d+)-\d$/.exec(docRaw);
+    const doc = (mCiDv ? mCiDv[1] : docRaw).replace(/\D/g, "").trim();
     if (!doc) throw new Error("Receptor sin RUC: se requiere documento (CI) en cliente.");
     /** tiTiOpe (DE_Types v150): 2=B2C. Receptor no contribuyente (iNatRec=2) con
      *  documento nacional exige B2C, no B2B (mismo criterio que la rama extranjero
