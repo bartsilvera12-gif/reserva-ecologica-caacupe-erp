@@ -141,7 +141,7 @@ export async function listCompras(
   const schema = assertAllowedChatDataSchema(schemaRaw);
   const t = quoteSchemaTable(schema, "compras");
   const { rows } = await pool().query<CompraRow>(
-    `SELECT ${COLS} FROM ${t} WHERE empresa_id = $1::uuid AND sucursal_id = $2::uuid ORDER BY fecha DESC LIMIT 500`,
+    `SELECT ${COLS} FROM ${t} WHERE empresa_id = $1::uuid AND sucursal_id = $2::uuid ORDER BY fecha DESC LIMIT 10000`,
     [empresaId, sucursalId]
   );
   return rows;
