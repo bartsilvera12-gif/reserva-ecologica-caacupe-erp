@@ -217,6 +217,33 @@ export async function handleSifenEnviarPost(
     }
   }
 
+  // Toma atómica: solo UNA solicitud pasa de "firmado" a "enviado". Evita el doble
+  // envío (panel + job, o dos clicks) que dejaba el lote aceptado sin consultar.
+  const { data: tomada, error: errTomar } = await supabase
+    .from("factura_electronica")
+    .update({ estado_sifen: "enviado" })
+    .eq("id", feRow.id)
+    .eq("empresa_id", auth.empresa_id)
+    .eq("estado_sifen", "firmado")
+    .select("id");
+  if (errTomar) {
+    return NextResponse.json(errorResponse(errTomar.message), { status: 400 });
+  }
+  if (!tomada || tomada.length === 0) {
+    return NextResponse.json(
+      errorResponse("Esta factura ya se está enviando a SET (otro envío en curso). No se envió de nuevo."),
+      { status: 409 }
+    );
+  }
+  const revertirToma = async () => {
+    await supabase
+      .from("factura_electronica")
+      .update({ estado_sifen: "firmado" })
+      .eq("id", feRow.id)
+      .eq("empresa_id", auth.empresa_id)
+      .eq("estado_sifen", "enviado");
+  };
+
   let resp: RecibeLoteRespuestaParsed;
   try {
     resp = await enviarLoteSifen({
@@ -232,6 +259,7 @@ export async function handleSifenEnviarPost(
   } catch (e) {
     const m = e instanceof Error ? e.message : String(e);
     const label = ambienteSoap === "produccion" ? "SIFEN producción" : "SIFEN TEST";
+    await revertirToma();
     return NextResponse.json(errorResponse(`Fallo al llamar a ${label} (recibe-lote): ${m}`), {
       status: 502,
     });
@@ -239,7 +267,7 @@ export async function handleSifenEnviarPost(
 
   const respuestaJson = respuestaRecibeLoteJson(resp);
 
-  const previousEstado = String(feRow.estado_sifen ?? "firmado");
+  const previousEstado = "firmado";
   const previousError = feRow.error == null ? null : String(feRow.error);
   const previousProt = feRow.sifen_d_prot_cons_lote == null ? null : String(feRow.sifen_d_prot_cons_lote);
   const previousUltima = feRow.sifen_ultima_respuesta_recibe_lote;
@@ -248,6 +276,15 @@ export async function handleSifenEnviarPost(
   let nuevoEstado: "enviado" | "error_envio";
   let nuevoError: string | null;
   let nuevoProt: string | null;
+
+  // Lote previo aceptado (0300) sin resultado consultado: no hay que perderlo.
+  const ultPrev = (previousUltima ?? null) as Record<string, unknown> | null;
+  const codPrev = String(ultPrev?.dCodRes ?? "").trim().replace(/^0+/, "");
+  const loteAnteriorAceptadoSinResultado =
+    previousProt != null &&
+    previousProt.trim() !== "" &&
+    previousConsultaLote == null &&
+    (codPrev === "300" || ultPrev?.loteRecibido === true);
 
   const codRecibe = String(resp.dCodRes ?? "").trim();
   const codSinCerosIni = codRecibe.replace(/^0+/, "") || "";
@@ -268,6 +305,11 @@ export async function handleSifenEnviarPost(
     nuevoEstado = "enviado";
     nuevoError = null;
     nuevoProt = resp.dProtConsLote == null ? null : String(resp.dProtConsLote).trim() || null;
+  } else if (resp.loteNoEncolado && loteAnteriorAceptadoSinResultado) {
+    // 0301 sobre un documento que ya tenía un lote aceptado: se conserva ese lote.
+    nuevoEstado = "enviado";
+    nuevoError = null;
+    nuevoProt = previousProt;
   } else if (resp.loteNoEncolado) {
     nuevoEstado = "error_envio";
     nuevoProt = protTrim.length > 0 ? protTrim : null;
@@ -307,6 +349,7 @@ export async function handleSifenEnviarPost(
     .single();
 
   if (errUpdate || !updatedRow) {
+    await revertirToma();
     return NextResponse.json(
       errorResponse(errUpdate?.message ?? "No se pudo actualizar factura_electronica."),
       { status: 500 }

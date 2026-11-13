@@ -207,6 +207,32 @@ export async function handleNcSifenEnviarPost(
     return NextResponse.json(errorResponse(`No se pudo descargar el .p12: ${p12Dl.message}`), { status: 500 });
   }
 
+  // Toma atómica: solo una solicitud pasa a "enviado" desde el estado leído.
+  const { data: tomada, error: errTomar } = await supabase
+    .from("nota_credito_electronica")
+    .update({ estado_sifen: "enviado" })
+    .eq("id", neRow.id)
+    .eq("empresa_id", auth.empresa_id)
+    .eq("estado_sifen", estNe)
+    .select("id");
+  if (errTomar) {
+    return NextResponse.json(errorResponse(errTomar.message), { status: 400 });
+  }
+  if (!tomada || tomada.length === 0) {
+    return NextResponse.json(
+      errorResponse("Esta nota de crédito ya se está enviando a SET (otro envío en curso)."),
+      { status: 409 }
+    );
+  }
+  const revertirToma = async () => {
+    await supabase
+      .from("nota_credito_electronica")
+      .update({ estado_sifen: estNe })
+      .eq("id", neRow.id)
+      .eq("empresa_id", auth.empresa_id)
+      .eq("estado_sifen", "enviado");
+  };
+
   let resp: RecibeLoteRespuestaParsed;
   try {
     resp = await enviarLoteSifen({
@@ -222,12 +248,13 @@ export async function handleNcSifenEnviarPost(
   } catch (e) {
     const m = e instanceof Error ? e.message : String(e);
     const label = ambienteSoap === "produccion" ? "SIFEN producción" : "SIFEN TEST";
+    await revertirToma();
     return NextResponse.json(errorResponse(`Fallo al llamar a ${label} (recibe-lote): ${m}`), { status: 502 });
   }
 
   const respuestaJson = respuestaRecibeLoteJson(resp);
 
-  const previousEstado = String(neRow.estado_sifen ?? "firmado");
+  const previousEstado = estNe;
   const previousError = neRow.error == null ? null : String(neRow.error);
   const previousProt = neRow.sifen_d_prot_cons_lote == null ? null : String(neRow.sifen_d_prot_cons_lote);
   const previousUltima = neRow.sifen_ultima_respuesta_recibe_lote;
@@ -309,6 +336,7 @@ export async function handleNcSifenEnviarPost(
     .single();
 
   if (errUpdate || !updatedRow) {
+    await revertirToma();
     return NextResponse.json(
       errorResponse(errUpdate?.message ?? "No se pudo actualizar nota_credito_electronica."),
       { status: 500 }
