@@ -27,6 +27,8 @@ type Resumen = {
   sifen_job: SifenJobDTO | null;
   /** La SET confirmó la cancelación (evento 0600, o 4003 "ya tenía el evento"). */
   cancelacion_confirmada_set?: boolean;
+  /** Cliente con RUC vacío y RUC escrito en «Documento» (sale como contribuyente por regla legacy). */
+  receptor_ruc_en_documento?: boolean;
 };
 
 /**
@@ -231,6 +233,7 @@ export function FacturaElectronicaPanel({
     | "cancelar-de"
     | "pipeline"
     | "reintentar-job"
+    | "consumidor-final"
     | null
   >(null);
   const [flash, setFlash] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -413,6 +416,40 @@ export function FacturaElectronicaPanel({
         kind: "ok",
         text:
           "XML regenerado desde los datos actuales del cliente (RUC/DV/tipo de contribuyente/dirección). Si el DE estaba rechazado, se asignó un nuevo CDC. Continuá con firmar y enviar. Este paso no envía datos al SET.",
+      });
+      await refresh();
+    } catch (e) {
+      setFlash({ kind: "err", text: e instanceof Error ? e.message : "Error de red" });
+    } finally {
+      setAction(null);
+    }
+  };
+
+  /**
+   * Red de seguridad de la regla «RUC en Documento»: si la SET rechazó con 0301 [1264]
+   * (RUC no habilitado), regenera el XML de ESTA MISMA factura como consumidor final
+   * (cédula sin DV, iNatRec=2), lo firma y lo envía. No crea otra factura ni otra venta.
+   */
+  const reemitirComoConsumidorFinal = async () => {
+    setFlash(null);
+    setAction("consumidor-final");
+    try {
+      const pasos: Array<[string, string]> = [
+        [`/api/facturas/${facturaId}/sifen/xml?consumidor_final=1`, "No se pudo regenerar el documento"],
+        [`/api/facturas/${facturaId}/sifen/firmar`, "No se pudo firmar el documento"],
+        [`/api/facturas/${facturaId}/sifen/enviar`, "No se pudo enviar el documento al SET"],
+      ];
+      for (const [path, prefijo] of pasos) {
+        const res = await fetchWithSupabaseSession(path, { method: "POST" });
+        if (!res.ok) {
+          setFlash({ kind: "err", text: `${prefijo}: ${await readApiError(res)}` });
+          await refresh();
+          return;
+        }
+      }
+      setFlash({
+        kind: "ok",
+        text: "Documento reemitido como consumidor final (cédula sin DV) y enviado al SET. Consultá el resultado del lote en unos instantes.",
       });
       await refresh();
     } catch (e) {
@@ -936,6 +973,22 @@ export function FacturaElectronicaPanel({
     (resumen.sifen_job.estado === "pendiente" || resumen.sifen_job.estado === "procesando");
   const busy = action !== null || jobActivo;
 
+  const textoRechazoSet = [
+    mostrarErrorPersistido ? decodeXmlNumericEntities(fe?.error ?? "") : "",
+    resumen?.sifen_job?.estado === "rechazado" || resumen?.sifen_job?.estado === "error"
+      ? decodeXmlNumericEntities(resumen.sifen_job.mensaje_set ?? "")
+      : "",
+  ].join(" ");
+  const rechazoRucNoHabilitado =
+    textoRechazoSet.trim().length > 0 &&
+    friendlyErrorMsg({ raw: textoRechazoSet }).codigo === "0301 [1264]";
+  const puedeReemitirConsumidorFinal =
+    Boolean(resumen?.sifen_config_activa) &&
+    resumen?.receptor_ruc_en_documento === true &&
+    (stStr === "rechazado" || stStr === "error_envio") &&
+    !yaAprobada &&
+    rechazoRucNoHabilitado;
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-5 sm:p-6 w-full min-w-0">
       <div className="flex flex-col gap-8 lg:flex-row lg:items-stretch">
@@ -992,6 +1045,28 @@ export function FacturaElectronicaPanel({
                 <div className="rounded-lg text-sm px-3 py-2 bg-amber-50 border border-amber-200 text-amber-900">
                   Este documento ya fue aprobado por SET y no puede regenerarse ni reenviarse.
                   Utilice el documento aprobado existente (ver «Recuperar documento aprobado (SET)»).
+                </div>
+              ) : null}
+
+              {puedeReemitirConsumidorFinal ? (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-3 space-y-2 text-amber-900">
+                  <p className="text-sm font-semibold">
+                    Este RUC no está habilitado en la SET como contribuyente.
+                  </p>
+                  <p className="text-xs leading-snug">
+                    El cliente tiene el número con guion cargado en «Documento» y el sistema lo envió como
+                    contribuyente (RUC). Si la persona no está inscripta en la SET, podés reemitir esta misma
+                    factura como consumidor final: se envía solo el número de cédula, sin el dígito verificador.
+                    No se crea otra factura ni otra venta.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void reemitirComoConsumidorFinal()}
+                    className="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-amber-700 text-white text-sm font-semibold shadow-sm disabled:opacity-45 disabled:cursor-not-allowed hover:bg-amber-800"
+                  >
+                    {action === "consumidor-final" ? "Reemitiendo…" : "Reemitir como consumidor final"}
+                  </button>
                 </div>
               ) : null}
 

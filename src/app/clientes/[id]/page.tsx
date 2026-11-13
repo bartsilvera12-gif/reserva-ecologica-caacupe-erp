@@ -1569,6 +1569,25 @@ export default function ClienteDetailPage() {
                     ) : (
                       <input type="text" name="documento" value={form.documento} onChange={handleChange} className={inputClass} />
                     )}
+                    {form.tipo_cliente === "persona" && /^\d{5,9}\s*[-–—]\s*\d$/.test(form.documento.trim()) && (
+                      <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                        <p>Este número tiene guion: parece un RUC y no una cédula. Si es contribuyente, pasalo al campo RUC.</p>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setForm((prev) => ({
+                              ...prev,
+                              ruc: prev.documento.trim().replace(/\s*[–—]\s*|\s*-\s*/, "-"),
+                              documento: "",
+                              es_contribuyente: true,
+                            }))
+                          }
+                          className="mt-1 font-semibold underline"
+                        >
+                          Pasar a RUC
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
                 {form.tipo_cliente === "persona" && (

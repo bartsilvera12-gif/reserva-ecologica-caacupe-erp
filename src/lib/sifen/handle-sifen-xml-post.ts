@@ -134,7 +134,9 @@ export async function handleSifenXmlPost(
       .eq("empresa_id", auth.empresa_id);
   };
 
-  const loaded = await loadValidatedSifenPayload(supabase, auth.empresa_id, fid);
+  const loaded = await loadValidatedSifenPayload(supabase, auth.empresa_id, fid, {
+    forzarConsumidorFinal: request.nextUrl.searchParams.get("consumidor_final") === "1",
+  });
   if (!loaded.ok) {
     await revertBumpRegSeq();
     return NextResponse.json(errorResponse(loaded.error.message), {

@@ -113,6 +113,13 @@ export interface SifenBuildElectronicaRow {
   sifen_regeneracion_seq?: number | null;
 }
 
+export interface SifenBuildOptions {
+  /** Reemisión tras 0301 [1264]: ignora SOLO la regla «RUC vacío + Documento NNNNNNN-D»
+   *  y arma el receptor como consumidor final (cédula sin DV). No afecta a clientes con
+   *  RUC cargado, «es contribuyente» tildado o empresas. */
+  forzarConsumidorFinal?: boolean;
+}
+
 export interface BuildSifenPayloadInput {
   factura: SifenBuildFacturaRow;
   items: SifenBuildItemRow[];
@@ -253,7 +260,8 @@ function parseBoolCliente(v: unknown): boolean {
 
 function validateReceptor(
   factura: SifenBuildFacturaRow,
-  cliente: SifenBuildClienteRow | null
+  cliente: SifenBuildClienteRow | null,
+  opts?: SifenBuildOptions
 ): { ok: true; receptor: SifenPayloadReceptor } | { ok: false; error: string } {
   if (!cliente) {
     return {
@@ -392,7 +400,7 @@ function validateReceptor(
   const esContribuyentePy =
     cliente.es_contribuyente === true ||
     trimStr(cliente.tipo_cliente ?? "").toLowerCase() === "empresa" ||
-    (!ruc && documentoTieneFormatoRucConDvValido(documento));
+    (!opts?.forzarConsumidorFinal && !ruc && documentoTieneFormatoRucConDvValido(documento));
 
   // Gates de coherencia contribuyente↔RUC. SET rechaza el lote con 0301 [1264]
   // ("RUC del receptor no habilitado para esta operación") cuando el ERP envía
@@ -449,7 +457,10 @@ function mapItems(rows: SifenBuildItemRow[]): SifenPayloadItem[] {
 /**
  * Valida datos mínimos y arma el payload base SIFEN (sin XML).
  */
-export function validateAndBuildSifenPayload(input: BuildSifenPayloadInput): BuildSifenPayloadResult {
+export function validateAndBuildSifenPayload(
+  input: BuildSifenPayloadInput,
+  opts?: SifenBuildOptions
+): BuildSifenPayloadResult {
   const { factura, items, cliente, config, facturaElectronica } = input;
 
   if (!facturaElectronica) {
@@ -463,7 +474,7 @@ export function validateAndBuildSifenPayload(input: BuildSifenPayloadInput): Bui
   const em = validateEmisor(config);
   if (!em.ok) return em;
 
-  const rec = validateReceptor(factura, cliente);
+  const rec = validateReceptor(factura, cliente, opts);
   if (!rec.ok) return rec;
 
   if (!items.length) {

@@ -3,6 +3,7 @@ import type { AppSupabaseClient } from "@/lib/supabase/schema";
 import {
   validateAndBuildSifenPayload,
   type BuildSifenPayloadInput,
+  type SifenBuildOptions,
 } from "./build-payload";
 import type { AmbienteSifen, SifenFacturaPayloadBase } from "./types";
 
@@ -26,7 +27,8 @@ function ambienteDesdeConfigRow(raw: unknown): AmbienteSifen {
 export async function loadValidatedSifenPayload(
   supabase: AppSupabaseClient,
   empresaId: string,
-  facturaId: string
+  facturaId: string,
+  opts?: SifenBuildOptions
 ): Promise<LoadSifenPayloadResult> {
   const fid = facturaId.trim();
 
@@ -155,7 +157,7 @@ export async function loadValidatedSifenPayload(
     facturaElectronica: electronicaRes.data as BuildSifenPayloadInput["facturaElectronica"],
   };
 
-  const built = validateAndBuildSifenPayload(buildInput);
+  const built = validateAndBuildSifenPayload(buildInput, opts);
   if (!built.ok) {
     return { ok: false, error: { status: 400, message: built.error } };
   }

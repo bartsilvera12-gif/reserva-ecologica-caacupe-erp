@@ -12,6 +12,7 @@ import {
   buildSifenCancelacionPreview,
   normalizePlazoCancelacionHoras,
 } from "@/lib/sifen/sifen-cancelacion-rules";
+import { documentoTieneFormatoRucConDvValido } from "@/lib/sifen/sifen-cdc";
 import { getLastSifenJobForFe } from "@/lib/sifen/jobs/sifen-jobs-repo";
 
 
@@ -37,6 +38,8 @@ export type FacturaSifenResumenData = {
    * "cancelada también en la SET" en vez de invitar a reintentar el envío.
    */
   cancelacion_confirmada_set: boolean;
+  /** true si el cliente tiene RUC vacío y el RUC escrito en Documento (NNNNNNN-D). */
+  receptor_ruc_en_documento: boolean;
 };
 
 /**
@@ -63,7 +66,7 @@ export async function GET(
 
     const { data: factura, error: errFactura } = await supabase
       .from("facturas")
-      .select("id")
+      .select("id, cliente_id")
       .eq("id", fid)
       .eq("empresa_id", auth.empresa_id)
       .maybeSingle();
@@ -186,7 +189,35 @@ export async function GET(
       }
     }
 
+    // ¿El receptor salió como contribuyente SOLO por la regla «RUC vacío + Documento
+    // NNNNNNN-D»? Habilita el botón «Reemitir como consumidor final» si la SET rechaza 1264.
+    let receptor_ruc_en_documento = false;
+    const clienteIdFact = (factura as { cliente_id?: string | null }).cliente_id ?? null;
+    if (clienteIdFact) {
+      try {
+        const { data: cli } = await supabase
+          .from("clientes")
+          .select("ruc, documento, es_contribuyente, tipo_cliente, sifen_receptor_extranjero, sifen_receptor_manual")
+          .eq("id", clienteIdFact)
+          .eq("empresa_id", auth.empresa_id)
+          .maybeSingle();
+        const c = cli as Record<string, unknown> | null;
+        if (c) {
+          receptor_ruc_en_documento =
+            !String(c.ruc ?? "").trim() &&
+            c.es_contribuyente !== true &&
+            c.sifen_receptor_extranjero !== true &&
+            c.sifen_receptor_manual !== true &&
+            String(c.tipo_cliente ?? "").trim().toLowerCase() !== "empresa" &&
+            documentoTieneFormatoRucConDvValido(String(c.documento ?? ""));
+        }
+      } catch {
+        receptor_ruc_en_documento = false;
+      }
+    }
+
     const payload: FacturaSifenResumenData = {
+      receptor_ruc_en_documento,
       sifen_config_exists,
       sifen_config_activa,
       sifen_ambiente,
