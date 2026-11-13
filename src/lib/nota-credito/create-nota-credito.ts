@@ -132,7 +132,16 @@ export async function createNotaCreditoBorrador(p: CreateNotaCreditoParams): Pro
   }
 
   const estadoSifen = String((feRow as { estado_sifen?: string }).estado_sifen ?? "");
-  if (estadoSifen !== "aprobado") {
+  // «cancelado» solo en el ERP (SET nunca confirmó la cancelación) con aprobación SET previa:
+  // el DE sigue vivo en SET y la NC es la vía fiscal para anularlo.
+  const aprobadoAtCrear = (feRow as { sifen_aprobado_at?: string | null }).sifen_aprobado_at;
+  const canceladoAtCrear = (feRow as { sifen_cancelado_at?: string | null }).sifen_cancelado_at;
+  const canceladoSoloErp =
+    estadoSifen === "cancelado" &&
+    (canceladoAtCrear == null || String(canceladoAtCrear).trim() === "") &&
+    aprobadoAtCrear != null &&
+    String(aprobadoAtCrear).trim() !== "";
+  if (estadoSifen !== "aprobado" && !canceladoSoloErp) {
     return {
       ok: false,
       status: 409,

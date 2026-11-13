@@ -60,7 +60,16 @@ export async function evaluateNotaCreditoCreationGate(
   }
 
   const estadoSifen = String((feRow as { estado_sifen?: string }).estado_sifen ?? "");
-  if (estadoSifen !== "aprobado") {
+  // «cancelado» solo en el ERP (sin sifen_cancelado_at, o sea SET nunca confirmó la
+  // cancelación) pero con aprobación SET previa: el DE sigue vivo en SET y la NC es la vía.
+  const aprobadoAtGate = (feRow as { sifen_aprobado_at?: string | null }).sifen_aprobado_at;
+  const canceladoAtGate = (feRow as { sifen_cancelado_at?: string | null }).sifen_cancelado_at;
+  const canceladoSoloErp =
+    estadoSifen === "cancelado" &&
+    (canceladoAtGate == null || String(canceladoAtGate).trim() === "") &&
+    aprobadoAtGate != null &&
+    String(aprobadoAtGate).trim() !== "";
+  if (estadoSifen !== "aprobado" && !canceladoSoloErp) {
     return {
       puede_crear: false,
       motivo_bloqueo: "El documento electrónico debe estar aprobado por SET para crear una nota de crédito.",

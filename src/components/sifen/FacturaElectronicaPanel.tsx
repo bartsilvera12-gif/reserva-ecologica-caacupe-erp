@@ -901,7 +901,13 @@ export function FacturaElectronicaPanel({
   const mostrarErrorPersistido =
     Boolean(fe?.error?.trim()) && (estado === "error_envio" || estado === "rechazado");
 
-  const deAprobado = Boolean(fe && String(estado) === "aprobado");
+  // «Cancelado (ERP)» sin confirmación de SET y con aprobación previa: el DE sigue
+  // vivo en SET, así que se habilita la nota de crédito igual que con uno aprobado.
+  const deAprobado = Boolean(
+    fe &&
+      (String(estado) === "aprobado" ||
+        (String(estado) === "cancelado" && !fe.sifen_cancelado_at && Boolean(fe.sifen_aprobado_at)))
+  );
 
   const stStr = estado != null ? String(estado) : "";
   // Documento ya aprobado por SET: no se puede regenerar ni reenviar (el backend
