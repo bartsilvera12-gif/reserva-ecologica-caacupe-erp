@@ -108,6 +108,25 @@ function mesDe(iso: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+
+/** Si el texto es un período ("octubre 2026", "octubre", "2026", "10/2026"), devuelve mes (1-12 o 0) y año ("" si no hay). */
+function periodoDeTexto(texto: string): { mes: number; anio: string } | null {
+  const t = texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\bde\b/g, " ").replace(/\s+/g, " ").trim();
+  if (!t) return null;
+  let m = /^([a-z]+)(?: (\d{4}))?$/.exec(t);
+  if (m) {
+    const idx = MESES.findIndex((x) => x === m![1] || (m![1] === "setiembre" && x === "septiembre"));
+    if (idx >= 0) return { mes: idx + 1, anio: m[2] ?? "" };
+    return null;
+  }
+  m = /^(\d{4})$/.exec(t);
+  if (m) return { mes: 0, anio: m[1] };
+  m = /^(\d{1,2})[\/-](\d{4})$/.exec(t);
+  if (m && Number(m[1]) >= 1 && Number(m[1]) <= 12) return { mes: Number(m[1]), anio: m[2] };
+  return null;
+}
+
 function resumenProductos(items: Compra[]): string {
   if (items.length === 0) return "—";
   if (items.length === 1) return items[0].producto_nombre;
@@ -118,7 +137,8 @@ export default function ComprasPage() {
   const [todas, setTodas] = useState<Compra[]>([]);
   const [busqueda, setBusqueda] = useState("");
   const [filtroTipoPago, setFiltroTipoPago] = useState<TipoPago | "">("");
-  const [filtroMes, setFiltroMes] = useState("");
+  const [filtroMesNum, setFiltroMesNum] = useState("");
+  const [filtroAnio, setFiltroAnio] = useState("");
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
   const [anularTarget, setAnularTarget] = useState<{ numero: string; proveedor: string } | null>(null);
   const [ocPorConfirmar, setOcPorConfirmar] = useState<
@@ -156,20 +176,29 @@ export default function ComprasPage() {
 
   const filtrados = useMemo(() => {
     const texto = busqueda.toLowerCase().trim();
+    const periodo = periodoDeTexto(texto);
     return grupos.filter((g) => {
+      const ym = mesDe(g.fecha);
+      const coincidePeriodo = periodo
+        ? (periodo.anio === "" || ym.slice(0, 4) === periodo.anio) &&
+          (periodo.mes === 0 || Number(ym.slice(5, 7)) === periodo.mes)
+        : false;
       const coincideTexto =
         texto === "" ||
+        coincidePeriodo ||
         g.proveedor_nombre.toLowerCase().includes(texto) ||
         g.numero_control.toLowerCase().includes(texto) ||
         (g.numero_factura_proveedor?.toLowerCase().includes(texto) ?? false) ||
         g.items.some((i) => i.producto_nombre.toLowerCase().includes(texto));
       const coincideTipoPago = filtroTipoPago === "" || g.tipo_pago === filtroTipoPago;
-      const coincideMes = filtroMes === "" || mesDe(g.fecha) === filtroMes;
+      const coincideMes =
+        (filtroMesNum === "" || ym.slice(5, 7) === filtroMesNum) &&
+        (filtroAnio === "" || ym.slice(0, 4) === filtroAnio);
       return coincideTexto && coincideTipoPago && coincideMes;
     });
-  }, [grupos, busqueda, filtroTipoPago, filtroMes]);
+  }, [grupos, busqueda, filtroTipoPago, filtroMesNum, filtroAnio]);
 
-  const hayFiltros = busqueda || filtroTipoPago || filtroMes;
+  const hayFiltros = busqueda || filtroTipoPago || filtroMesNum || filtroAnio;
 
   function toggle(numero: string) {
     setExpandidos((prev) => {
@@ -282,13 +311,27 @@ export default function ComprasPage() {
               { value: "contado", label: "Contado" },
               { value: "credito", label: "Crédito" },
             ]} />
-          <label className="flex items-center gap-2 text-sm text-gray-500">
+          <div className="flex items-center gap-2 text-sm text-gray-500">
             Mes
-            <input type="month" value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)}
-              className={inputFilterClass} />
-          </label>
+            <select aria-label="Filtrar por mes" value={filtroMesNum}
+              onChange={(e) => setFiltroMesNum(e.target.value)}
+              className={inputFilterClass}>
+              <option value="">Todos los meses</option>
+              {MESES.map((n, i) => (
+                <option key={n} value={String(i + 1).padStart(2, "0")}>{n.charAt(0).toUpperCase() + n.slice(1)}</option>
+              ))}
+            </select>
+            <select aria-label="Filtrar por año" value={filtroAnio}
+              onChange={(e) => setFiltroAnio(e.target.value)}
+              className={inputFilterClass}>
+              <option value="">Año</option>
+              {Array.from({ length: 6 }, (_, i) => String(new Date().getFullYear() + 1 - i)).map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
           {hayFiltros && (
-            <button onClick={() => { setBusqueda(""); setFiltroTipoPago(""); setFiltroMes(""); }}
+            <button onClick={() => { setBusqueda(""); setFiltroTipoPago(""); setFiltroMesNum(""); setFiltroAnio(""); }}
               className="text-sm text-gray-400 hover:text-gray-600 transition-colors px-2">
               Limpiar filtros
             </button>
