@@ -101,6 +101,13 @@ function agrupar(rows: Compra[]): GrupoCompra[] {
   );
 }
 
+/** Devuelve "YYYY-MM" (hora local) de una fecha ISO. */
+function mesDe(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 function resumenProductos(items: Compra[]): string {
   if (items.length === 0) return "—";
   if (items.length === 1) return items[0].producto_nombre;
@@ -111,6 +118,7 @@ export default function ComprasPage() {
   const [todas, setTodas] = useState<Compra[]>([]);
   const [busqueda, setBusqueda] = useState("");
   const [filtroTipoPago, setFiltroTipoPago] = useState<TipoPago | "">("");
+  const [filtroMes, setFiltroMes] = useState("");
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
   const [anularTarget, setAnularTarget] = useState<{ numero: string; proveedor: string } | null>(null);
   const [ocPorConfirmar, setOcPorConfirmar] = useState<
@@ -156,11 +164,12 @@ export default function ComprasPage() {
         (g.numero_factura_proveedor?.toLowerCase().includes(texto) ?? false) ||
         g.items.some((i) => i.producto_nombre.toLowerCase().includes(texto));
       const coincideTipoPago = filtroTipoPago === "" || g.tipo_pago === filtroTipoPago;
-      return coincideTexto && coincideTipoPago;
+      const coincideMes = filtroMes === "" || mesDe(g.fecha) === filtroMes;
+      return coincideTexto && coincideTipoPago && coincideMes;
     });
-  }, [grupos, busqueda, filtroTipoPago]);
+  }, [grupos, busqueda, filtroTipoPago, filtroMes]);
 
-  const hayFiltros = busqueda || filtroTipoPago;
+  const hayFiltros = busqueda || filtroTipoPago || filtroMes;
 
   function toggle(numero: string) {
     setExpandidos((prev) => {
@@ -273,8 +282,13 @@ export default function ComprasPage() {
               { value: "contado", label: "Contado" },
               { value: "credito", label: "Crédito" },
             ]} />
+          <label className="flex items-center gap-2 text-sm text-gray-500">
+            Mes
+            <input type="month" value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)}
+              className={inputFilterClass} />
+          </label>
           {hayFiltros && (
-            <button onClick={() => { setBusqueda(""); setFiltroTipoPago(""); }}
+            <button onClick={() => { setBusqueda(""); setFiltroTipoPago(""); setFiltroMes(""); }}
               className="text-sm text-gray-400 hover:text-gray-600 transition-colors px-2">
               Limpiar filtros
             </button>
