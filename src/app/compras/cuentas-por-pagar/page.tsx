@@ -22,6 +22,8 @@ type Cuenta = {
   dias_para_vencer: number | null;
 };
 
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+
 function fmtGs(n: number, moneda = "PYG") {
   return (moneda === "USD" ? "USD " : "Gs. ") + Math.round(Number(n) || 0).toLocaleString("es-PY");
 }
@@ -45,6 +47,8 @@ export default function CuentasPorPagarPage() {
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [tab, setTab] = useState<"pendientes" | "todas">("pendientes");
+  const [filtroMes, setFiltroMes] = useState("");
+  const [filtroAnio, setFiltroAnio] = useState("");
   const [pagar, setPagar] = useState<Cuenta | null>(null);
   const [cuotasDe, setCuotasDe] = useState<Cuenta | null>(null);
 
@@ -71,13 +75,19 @@ export default function CuentasPorPagarPage() {
     const t = q.trim().toLowerCase();
     return cuentas
       .filter((c) => (tab === "todas" ? true : c.estado !== "pagada" && c.estado !== "anulada" && c.saldo > 0))
+      .filter((c) => {
+        if (!filtroMes && !filtroAnio) return true;
+        const f = (c.fecha_factura ?? c.fecha_vencimiento ?? "").slice(0, 10);
+        if (!f) return false;
+        return (filtroAnio === "" || f.slice(0, 4) === filtroAnio) && (filtroMes === "" || f.slice(5, 7) === filtroMes);
+      })
       .filter((c) =>
         t === "" ||
         c.proveedor_nombre.toLowerCase().includes(t) ||
         c.compra_numero_control.toLowerCase().includes(t) ||
         (c.numero_factura_proveedor?.toLowerCase().includes(t) ?? false)
       );
-  }, [cuentas, q, tab]);
+  }, [cuentas, q, tab, filtroMes, filtroAnio]);
 
   const totalSaldo = useMemo(() => visibles.reduce((a, c) => a + c.saldo, 0), [visibles]);
 
@@ -106,6 +116,26 @@ export default function CuentasPorPagarPage() {
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Proveedor, factura o COMP…"
             className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-sm focus:border-[#4FAEB2] focus:outline-none focus:ring-2 focus:ring-[#4FAEB2]/30" />
+        </div>
+        <div className="flex items-center gap-2 text-sm text-slate-500">
+          Mes
+          <select aria-label="Filtrar por mes" value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)}
+            className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-[#4FAEB2] focus:outline-none">
+            <option value="">Todos los meses</option>
+            {MESES.map((n, i) => (
+              <option key={n} value={String(i + 1).padStart(2, "0")}>{n.charAt(0).toUpperCase() + n.slice(1)}</option>
+            ))}
+          </select>
+          <select aria-label="Filtrar por año" value={filtroAnio} onChange={(e) => setFiltroAnio(e.target.value)}
+            className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-[#4FAEB2] focus:outline-none">
+            <option value="">Año</option>
+            {Array.from({ length: 6 }, (_, i) => String(new Date().getFullYear() + 1 - i)).map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+          {(filtroMes || filtroAnio) && (
+            <button onClick={() => { setFiltroMes(""); setFiltroAnio(""); }} className="px-2 text-sm text-slate-400 hover:text-slate-600">Limpiar</button>
+          )}
         </div>
         <span className="ml-auto text-sm text-slate-500">Saldo mostrado: <span className="font-semibold text-slate-800">{fmtGs(totalSaldo)}</span></span>
       </div>

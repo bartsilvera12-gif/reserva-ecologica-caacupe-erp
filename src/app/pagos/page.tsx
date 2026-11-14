@@ -60,7 +60,8 @@ function fmtFecha(iso: string | null) {
   return d && m && y ? `${d}/${m}/${y}` : s;
 }
 
-const inputClass = "rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#4FAEB2]/40";
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const inputClass ="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#4FAEB2]/40";
 
 export default function PagosPage() {
   const [cuentas, setCuentas] = useState<Cuenta[]>([]);
@@ -71,6 +72,20 @@ export default function PagosPage() {
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
   const [toast, setToast] = useState<string | null>(null);
+  const [mesSel, setMesSel] = useState("");
+  const [anioSel, setAnioSel] = useState("");
+
+  /** Selector de mes/año: completa Desde/Hasta con el período elegido. */
+  function aplicarPeriodo(mes: string, anio: string) {
+    setMesSel(mes);
+    setAnioSel(anio);
+    if (!mes && !anio) { setDesde(""); setHasta(""); return; }
+    const y = anio || String(new Date().getFullYear());
+    if (!mes) { setDesde(`${y}-01-01`); setHasta(`${y}-12-31`); return; }
+    const ultimo = new Date(Number(y), Number(mes), 0).getDate();
+    setDesde(`${y}-${mes}-01`);
+    setHasta(`${y}-${mes}-${String(ultimo).padStart(2, "0")}`);
+  }
 
   const [cobrando, setCobrando] = useState<Cuenta | null>(null);
   const [cuotasDe, setCuotasDe] = useState<Cuenta | null>(null);
@@ -167,15 +182,33 @@ export default function PagosPage() {
             <Layers className="h-4 w-4" /> Cobro múltiple
           </button>
           <div>
+            <label className="block text-[11px] font-medium text-slate-500 mb-1">Mes</label>
+            <select aria-label="Filtrar por mes" value={mesSel} onChange={(e) => aplicarPeriodo(e.target.value, anioSel)} className={inputClass}>
+              <option value="">Todos los meses</option>
+              {MESES.map((n, i) => (
+                <option key={n} value={String(i + 1).padStart(2, "0")}>{n.charAt(0).toUpperCase() + n.slice(1)}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[11px] font-medium text-slate-500 mb-1">Año</label>
+            <select aria-label="Filtrar por año" value={anioSel} onChange={(e) => aplicarPeriodo(mesSel, e.target.value)} className={inputClass}>
+              <option value="">Año</option>
+              {Array.from({ length: 6 }, (_, i) => String(new Date().getFullYear() + 1 - i)).map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
+          <div>
             <label className="block text-[11px] font-medium text-slate-500 mb-1">Desde</label>
-            <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} className={inputClass} />
+            <input type="date" value={desde} onChange={(e) => { setDesde(e.target.value); setMesSel(""); setAnioSel(""); }} className={inputClass} />
           </div>
           <div>
             <label className="block text-[11px] font-medium text-slate-500 mb-1">Hasta</label>
-            <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className={inputClass} />
+            <input type="date" value={hasta} onChange={(e) => { setHasta(e.target.value); setMesSel(""); setAnioSel(""); }} className={inputClass} />
           </div>
           {hayFiltro && (
-            <button type="button" onClick={() => { setDesde(""); setHasta(""); }} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">
+            <button type="button" onClick={() => { setDesde(""); setHasta(""); setMesSel(""); setAnioSel(""); }} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">
               Limpiar
             </button>
           )}
