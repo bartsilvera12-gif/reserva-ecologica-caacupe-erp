@@ -224,6 +224,13 @@ function ModalPago({ cuenta, onClose, onPagado }: { cuenta: Cuenta; onClose: () 
   const [guardando, setGuardando] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Efectivo: se asocia solo a Caja chica (al cargar las cuentas o al elegir Efectivo).
+  useEffect(() => {
+    if (metodo !== "efectivo") return;
+    const cc = cuentasPago.find((c) => c.tipo === "caja_chica");
+    if (cc) setCuentaId(cc.id);
+  }, [metodo, cuentasPago]);
+
   async function guardar() {
     setErr(null);
     const m = Number(monto) || 0;

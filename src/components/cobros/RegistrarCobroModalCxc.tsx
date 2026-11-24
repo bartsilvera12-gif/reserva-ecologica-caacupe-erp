@@ -108,7 +108,7 @@ export function RegistrarCobroModalCxc({
     const m = Number(monto);
     if (!(m > 0)) { setError("El monto debe ser mayor a cero."); return; }
     if (m > cuenta.saldo + 0.001) { setError("El monto supera el saldo pendiente."); return; }
-    if (pideBanco && !entidadId) { setError("Seleccioná la entidad bancaria."); return; }
+    if (pideBanco && !entidadId) { setError(metodo === "transferencia" && cuentasBanco.some((c) => c.tipo === "banco") ? "Elegí el banco." : "Seleccioná la entidad bancaria."); return; }
     if (pideBanco && !referencia.trim()) { setError("Ingresá la referencia / nº de operación."); return; }
     if (metodo === "cheque" && !chequeNumero.trim()) { setError("Ingresá el número de cheque."); return; }
     if (metodo === "cheque" && !chequeFechaCobro) { setError("Ingresá la fecha de cobro del cheque."); return; }
@@ -194,11 +194,11 @@ export function RegistrarCobroModalCxc({
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Método de pago</label>
-                <select value={metodo} onChange={(e) => setMetodo(e.target.value as (typeof METODOS)[number])} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white">
+                <select value={metodo} onChange={(e) => { setMetodo(e.target.value as (typeof METODOS)[number]); setEntidadId(""); setCuentaCobroId(""); }} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white">
                   {METODOS.map((m) => <option key={m} value={m}>{METODO_LABEL[m]}</option>)}
                 </select>
               </div>
-              {pideBanco && (
+              {pideBanco && !(metodo === "transferencia" && cuentasBanco.some((c) => c.tipo === "banco")) && (
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">
                     {metodo === "tarjeta" ? "Procesadora / Banco" : "Entidad bancaria"} *
@@ -213,8 +213,15 @@ export function RegistrarCobroModalCxc({
                 <CuentaSelect
                   cuentas={cuentasBanco}
                   value={cuentaCobroId}
-                  onChange={setCuentaCobroId}
-                  label="Cuenta donde se acredita"
+                  onChange={(id) => {
+                    setCuentaCobroId(id);
+                    // Transferencia: el banco elegido define también la entidad bancaria.
+                    if (metodo === "transferencia") {
+                      setEntidadId(cuentasBanco.find((c) => c.id === id)?.entidad_bancaria_id ?? "");
+                    }
+                  }}
+                  soloTipo={metodo === "transferencia" ? "banco" : undefined}
+                  label={metodo === "transferencia" ? "Banco" : "Cuenta donde se acredita"}
                   required
                   labelClassName="block text-xs font-medium text-gray-600 mb-1"
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white"

@@ -529,6 +529,11 @@ export default function NuevaCompraPage() {
                           : "",
                       // Si deja de ser cheque, limpiamos el número.
                       cheque_numero: e.target.value === "cheque" ? p.cheque_numero : "",
+                      // Efectivo: se asocia solo a Caja chica.
+                      cuenta_id:
+                        e.target.value === "efectivo"
+                          ? cuentasPago.find((c) => c.tipo === "caja_chica")?.id ?? p.cuenta_id
+                          : p.cuenta_id,
                     }))
                   }
                   className={inputClass}

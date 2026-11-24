@@ -42,7 +42,9 @@ export default function GastoForm({ gasto, onSuccess }: Props) {
       setForm((prev) => ({ ...prev, recurrente: (e.target as HTMLInputElement).checked }));
     } else if (name === "metodo_pago") {
       const v = value === "efectivo" || value === "transferencia" || value === "tarjeta" ? value : null;
-      setForm((prev) => ({ ...prev, metodo_pago: v }));
+      // Efectivo: se asocia solo a Caja chica.
+      const cajaChicaId = v === "efectivo" ? cuentas.find((c) => c.tipo === "caja_chica")?.id : undefined;
+      setForm((prev) => ({ ...prev, metodo_pago: v, cuenta_id: cajaChicaId ?? prev.cuenta_id }));
     } else if (name !== "monto") {
       const normalized = ["categoria", "descripcion", "frecuencia", "beneficiario"].includes(name)
         ? value.toUpperCase()

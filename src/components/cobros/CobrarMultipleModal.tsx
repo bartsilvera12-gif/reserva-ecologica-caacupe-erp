@@ -785,7 +785,7 @@ export function CobrarMultipleModal({
                 <label className="block text-xs font-medium text-gray-600 mb-1">Método de pago</label>
                 <select
                   value={metodo}
-                  onChange={(e) => setMetodo(e.target.value as (typeof METODOS)[number])}
+                  onChange={(e) => { setMetodo(e.target.value as (typeof METODOS)[number]); setEntidadId(""); setCuentaCobroId(""); }}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white"
                 >
                   {METODOS.map((m) => <option key={m} value={m}>{METODO_LABEL[m]}</option>)}
@@ -795,14 +795,21 @@ export function CobrarMultipleModal({
                 <CuentaSelect
                   cuentas={cuentasBanco}
                   value={cuentaCobroId}
-                  onChange={setCuentaCobroId}
-                  label="Cuenta donde se acredita"
+                  onChange={(id) => {
+                    setCuentaCobroId(id);
+                    // Transferencia: el banco elegido define también la entidad bancaria.
+                    if (metodo === "transferencia") {
+                      setEntidadId(cuentasBanco.find((c) => c.id === id)?.entidad_bancaria_id ?? "");
+                    }
+                  }}
+                  soloTipo={metodo === "transferencia" ? "banco" : undefined}
+                  label={metodo === "transferencia" ? "Banco" : "Cuenta donde se acredita"}
                   required
                   labelClassName="block text-xs font-medium text-gray-600 mb-1"
                   className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white"
                 />
               )}
-              {pideBanco && (
+              {pideBanco && !(metodo === "transferencia" && cuentasBanco.some((c) => c.tipo === "banco")) && (
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">
                     {metodo === "tarjeta" ? "Procesadora / Banco" : "Entidad bancaria"} *

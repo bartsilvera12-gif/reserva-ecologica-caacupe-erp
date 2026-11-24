@@ -533,6 +533,12 @@ export default function NuevaVentaPage() {
       setPagoTitular("");
     } else {
       setEntidadQuery("");
+      if (m === "transferencia") {
+        // Un solo selector (banco): la entidad sale de la cuenta elegida.
+        const c = cuentasBanco.find((x) => x.id === pagoCuentaId && x.tipo === "banco");
+        setPagoCuentaId(c ? c.id : "");
+        setPagoEntidadId(c?.entidad_bancaria_id ?? "");
+      }
       setCobroModalOpen(true);
     }
   }
@@ -1213,13 +1219,22 @@ export default function NuevaVentaPage() {
             <CuentaSelect
               cuentas={cuentasBanco}
               value={pagoCuentaId}
-              onChange={setPagoCuentaId}
-              label="Cuenta donde se acredita"
+              onChange={(id) => {
+                setPagoCuentaId(id);
+                // Transferencia: el banco elegido define también la entidad bancaria.
+                if (metodoPago === "transferencia") {
+                  const c = cuentasBanco.find((x) => x.id === id);
+                  setPagoEntidadId(c?.entidad_bancaria_id ?? "");
+                }
+              }}
+              label={metodoPago === "transferencia" ? "Banco" : "Cuenta donde se acredita"}
+              soloTipo={metodoPago === "transferencia" ? "banco" : undefined}
               required
               labelClassName="block text-xs text-gray-600 mb-1"
               className={inputClass}
             />
 
+            {metodoPago !== "transferencia" && (
             <div>
               <label className="block text-xs text-gray-600 mb-1">
                 {metodoPago === "tarjeta" ? "Entidad / banco / POS" : "Entidad / banco"}
@@ -1251,6 +1266,7 @@ export default function NuevaVentaPage() {
               </div>
               {entidadSel && <p className="mt-1 text-[11px] text-emerald-600">Seleccionada: {entidadSel.nombre}</p>}
             </div>
+            )}
 
             {metodoPago === "transferencia" && (
               <div>

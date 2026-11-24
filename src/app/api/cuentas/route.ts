@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     if (new URL(request.url).searchParams.get("lista")) {
       const cuentas = await listarCuentas(r.ctx.schema, r.ctx.empresaId, { soloActivas: true });
       return NextResponse.json(
-        successResponse({ cuentas: cuentas.map((c) => ({ id: c.id, nombre: c.nombre, tipo: c.tipo })) })
+        successResponse({ cuentas: cuentas.map((c) => ({ id: c.id, nombre: c.nombre, tipo: c.tipo, entidad_bancaria_id: c.entidad_bancaria_id })) })
       );
     }
     return NextResponse.json(successResponse(await resumenSaldos(r.ctx.schema, r.ctx.empresaId)));

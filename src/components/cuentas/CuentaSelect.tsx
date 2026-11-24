@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 
-export type CuentaOpcion = { id: string; nombre: string; tipo: string };
+export type CuentaOpcion = { id: string; nombre: string; tipo: string; entidad_bancaria_id?: string | null };
 
 /** Cuentas activas (bancos y caja chica) de la empresa. `cargado` = ya respondió el servidor. */
 export function useCuentasActivas(): { cuentas: CuentaOpcion[]; cargado: boolean } {
