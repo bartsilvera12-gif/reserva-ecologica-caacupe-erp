@@ -15,6 +15,7 @@
 import { getChatPostgresPool, quoteSchemaTable } from "@/lib/supabase/chat-pg-pool";
 import { assertAllowedChatDataSchema } from "@/lib/supabase/chat-data-schema";
 import type { PoolClient } from "pg";
+import { sincronizarMovimientoOrigen } from "@/lib/cuentas/server/cuentas-pg";
 
 function pool() {
   const p = getChatPostgresPool();
@@ -274,18 +275,25 @@ export async function registrarPagoProveedor(params: {
   fecha: string | null; // YYYY-MM-DD
   usuarioId: string | null;
   usuarioNombre: string | null;
+  /** Cuenta (banco / caja chica) de donde sale el pago: descuenta su saldo. */
+  cuentaId?: string | null;
 }): Promise<{ saldo: number; estado: string }> {
   const schema = assertAllowedChatDataSchema(params.schemaRaw);
   const tCxp = quoteSchemaTable(schema, "cuentas_por_pagar");
   const tPgp = quoteSchemaTable(schema, "pagos_proveedor");
+  let pagoId = "";
+  let proveedorNombre = "";
+  let nroFactura: string | null = null;
   const monto = num(params.monto);
   if (monto <= 0) throw new CxpError(400, "El monto del pago debe ser mayor a 0.");
 
   const client = await pool().connect();
   try {
     await client.query("BEGIN");
-    const { rows: cta } = await client.query<{ id: string; saldo: string; estado: string }>(
-      `SELECT id, saldo, estado FROM ${tCxp}
+    const { rows: cta } = await client.query<{
+      id: string; saldo: string; estado: string; proveedor_nombre: string | null; numero_factura_proveedor: string | null;
+    }>(
+      `SELECT id, saldo, estado, proveedor_nombre, numero_factura_proveedor FROM ${tCxp}
         WHERE id = $1::uuid AND empresa_id = $2::uuid AND sucursal_id = $3::uuid FOR UPDATE`,
       [params.cuentaPorPagarId, params.empresaId, params.sucursalId]
     );
@@ -297,17 +305,22 @@ export async function registrarPagoProveedor(params: {
     // redondeado para aceptar un pago igual al saldo mostrado. El UPDATE con GREATEST(0, ...) deja el saldo en 0.
     if (monto > Math.round(saldo)) throw new CxpError(400, `El pago (${monto}) supera el saldo pendiente (${saldo}).`);
 
-    await client.query(
+    proveedorNombre = cta[0].proveedor_nombre ?? "";
+    nroFactura = cta[0].numero_factura_proveedor ?? null;
+    const insPago = await client.query<{ id: string }>(
       `INSERT INTO ${tPgp}
          (empresa_id, sucursal_id, cuenta_por_pagar_id, fecha, monto, metodo_pago, referencia,
-          created_by, usuario_nombre)
+          created_by, usuario_nombre, cuenta_id)
        VALUES ($1::uuid,$2::uuid,$3::uuid, COALESCE($4::date,(now() AT TIME ZONE 'America/Asuncion')::date),
-               $5::numeric,$6,$7,$8::uuid,$9)`,
+               $5::numeric,$6,$7,$8::uuid,$9,$10::uuid)
+       RETURNING id`,
       [
         params.empresaId, params.sucursalId, params.cuentaPorPagarId, params.fecha,
         monto, params.metodoPago, params.referencia, params.usuarioId, params.usuarioNombre,
+        params.cuentaId || null,
       ]
     );
+    pagoId = String(insPago.rows[0].id);
     await client.query(
       `UPDATE ${tCxp} SET pagado = pagado + $2::numeric WHERE id = $1::uuid`,
       [params.cuentaPorPagarId, monto]
@@ -319,6 +332,23 @@ export async function registrarPagoProveedor(params: {
       [params.cuentaPorPagarId]
     );
     await client.query("COMMIT");
+    // Descuenta de la cuenta elegida (un solo movimiento por pago: no se duplica).
+    if (params.cuentaId) {
+      try {
+        await sincronizarMovimientoOrigen({
+          schemaRaw: params.schemaRaw, empresaId: params.empresaId, origen: "pago_proveedor", origenId: pagoId,
+          usuarioNombre: params.usuarioNombre,
+          deseado: {
+            cuentaId: params.cuentaId, tipo: "egreso", monto, fecha: params.fecha,
+            concepto: `Pago a proveedor ${proveedorNombre}${nroFactura ? ` (fact. ${nroFactura})` : ""}`.trim(),
+            referencia: params.referencia, sucursalId: params.sucursalId,
+          },
+        });
+      } catch (e) {
+        // El pago ya quedó registrado: no se reintenta (evita pagar dos veces).
+        console.error("[cxp] pago registrado pero no se pudo reflejar en la cuenta:", pagoId, e instanceof Error ? e.message : e);
+      }
+    }
     return { saldo: num(fin[0]?.saldo), estado: fin[0]?.estado ?? "parcial" };
   } catch (e) {
     await client.query("ROLLBACK").catch(() => null);

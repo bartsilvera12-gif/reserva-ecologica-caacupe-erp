@@ -20,6 +20,8 @@ export type Gasto = {
   beneficiario?: string | null;
   /** Cómo se pagó. NULL para gastos históricos sin ese dato. */
   metodo_pago?: MetodoPagoGasto | null;
+  /** Cuenta (banco / caja chica) de donde salió la plata. */
+  cuenta_id?: string | null;
 };
 
 export type GastoInput = {
@@ -32,7 +34,26 @@ export type GastoInput = {
   fecha: string;
   beneficiario?: string | null;
   metodo_pago?: MetodoPagoGasto | null;
+  cuenta_id?: string | null;
 };
+
+/** Refleja el gasto en el saldo de la cuenta (crea, corrige o revierte el movimiento). Best-effort. */
+async function sincronizarCuentaGasto(gastoId: string): Promise<void> {
+  try {
+    const res = await fetchWithSupabaseSession("/api/cuentas/sincronizar-gasto", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gasto_id: gastoId }),
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      console.error("[gastos] no se pudo actualizar el saldo de la cuenta:", t);
+      throw new Error("El gasto se guardó pero no se pudo actualizar el saldo de la cuenta. Avisá a soporte.");
+    }
+  } catch (e) {
+    if (e instanceof Error) throw e;
+  }
+}
 
 function mapRow(r: Record<string, unknown>): Gasto {
   const mp = r.metodo_pago;
@@ -51,6 +72,7 @@ function mapRow(r: Record<string, unknown>): Gasto {
     created_at: (r.created_at as string) ?? "",
     beneficiario: r.beneficiario == null || String(r.beneficiario).trim() === "" ? null : String(r.beneficiario),
     metodo_pago,
+    cuenta_id: r.cuenta_id == null ? null : String(r.cuenta_id),
   };
 }
 
@@ -119,12 +141,15 @@ export async function createGasto(input: GastoInput): Promise<Gasto> {
       fecha: input.fecha,
       beneficiario: input.beneficiario?.trim() || null,
       metodo_pago: input.metodo_pago ?? null,
+      ...(input.cuenta_id ? { cuenta_id: input.cuenta_id } : {}),
     })
     .select()
     .single();
 
   if (error) throw new Error(error.message);
-  return mapRow(data as Record<string, unknown>);
+  const creado = mapRow(data as Record<string, unknown>);
+  if (creado.cuenta_id) await sincronizarCuentaGasto(creado.id);
+  return creado;
 }
 
 export async function updateGasto(id: string, input: Partial<GastoInput>): Promise<Gasto> {
@@ -141,6 +166,7 @@ export async function updateGasto(id: string, input: Partial<GastoInput>): Promi
   if (input.fecha !== undefined) update.fecha = input.fecha;
   if (input.beneficiario !== undefined) update.beneficiario = input.beneficiario?.trim() || null;
   if (input.metodo_pago !== undefined) update.metodo_pago = input.metodo_pago ?? null;
+  if (input.cuenta_id !== undefined) update.cuenta_id = input.cuenta_id || null;
 
   const { data, error } = await supabase
     .from("gastos")
@@ -152,6 +178,8 @@ export async function updateGasto(id: string, input: Partial<GastoInput>): Promi
     .single();
 
   if (error) throw new Error(error.message);
+  // Si cambió monto, fecha o cuenta: revierte el movimiento anterior y registra el nuevo.
+  await sincronizarCuentaGasto(id);
   return mapRow(data as Record<string, unknown>);
 }
 
@@ -167,4 +195,6 @@ export async function deleteGasto(id: string): Promise<void> {
     .eq("id", id);
 
   if (error) throw new Error(error.message);
+  // El gasto ya no existe: revierte su movimiento en la cuenta.
+  await sincronizarCuentaGasto(id);
 }

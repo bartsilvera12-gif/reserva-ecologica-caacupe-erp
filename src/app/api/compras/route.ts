@@ -10,6 +10,7 @@ import {
   type CompraItemInput,
 } from "@/lib/compras/server/compras-pg";
 import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
+import { exigirCuentaSiCorresponde, sincronizarMovimientoOrigen, CuentasError } from "@/lib/cuentas/server/cuentas-pg";
 
 /**
  * GET /api/compras — lista via PG directo.
@@ -127,8 +128,35 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Compra al contado: sale plata de una cuenta (banco / caja chica). A crédito se descuenta al pagar (Cuentas por pagar).
+    const cuentaId = req("cuenta_id") ? String(body.cuenta_id).trim() : null;
+    if (header.tipo_pago === "contado") {
+      try {
+        await exigirCuentaSiCorresponde(schema, empresaId, cuentaId, "de donde sale el pago de la compra");
+      } catch (e) {
+        if (e instanceof CuentasError) return NextResponse.json(errorResponse(e.message), { status: e.status });
+        throw e;
+      }
+    }
+
     try {
       const out = await insertComprasConImpacto(schema, empresaId, exigirSucursal(ctx.auth.sucursal_id), header, items);
+
+      if (header.tipo_pago === "contado" && cuentaId) {
+        try {
+          await sincronizarMovimientoOrigen({
+            schemaRaw: schema, empresaId, origen: "compra", origenId: out.numero_control,
+            usuarioNombre: ctx.auth.user?.email ?? null,
+            deseado: {
+              cuentaId, tipo: "egreso", monto: items.reduce((s, i) => s + i.total, 0), fecha: fechaFactura,
+              concepto: `Compra ${out.numero_control} — ${header.proveedor_nombre}`.trim(),
+              referencia: header.numero_factura_proveedor, sucursalId: exigirSucursal(ctx.auth.sucursal_id),
+            },
+          });
+        } catch (e) {
+          console.error("[/api/compras POST] compra guardada pero no se reflejó en la cuenta:", out.numero_control, e instanceof Error ? e.message : e);
+        }
+      }
 
       return NextResponse.json(successResponse({
         numero_control: out.numero_control,

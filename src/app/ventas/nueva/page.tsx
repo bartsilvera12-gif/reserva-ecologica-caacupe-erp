@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import NuevoClienteRapidoModal, { type NuevoClienteCreado } from "./NuevoClienteRapidoModal";
 import { useRouter } from "next/navigation";
 import MontoInput from "@/components/ui/MontoInput";
+import CuentaSelect, { useCuentasActivas } from "@/components/cuentas/CuentaSelect";
 import ProductPickerModal, { type ProductoPickerItem, type AgregarVentaPayload } from "@/components/inventario/ProductPickerModal";
 import { saveVenta, type FaltanteStock } from "@/lib/ventas/storage";
 import { getProductos } from "@/lib/inventario/storage";
@@ -172,6 +173,8 @@ export default function NuevaVentaPage() {
   // ── Detalle de cobro (conciliación bancaria) ──────────────────────────────
   const [entidades, setEntidades] = useState<{ id: string; codigo: string | null; nombre: string; tipo: string | null }[]>([]);
   const [pagoEntidadId, setPagoEntidadId] = useState("");
+  const [pagoCuentaId, setPagoCuentaId] = useState("");
+  const { cuentas: cuentasBanco } = useCuentasActivas();
   const [pagoReferencia, setPagoReferencia] = useState("");
   const [pagoTitular, setPagoTitular] = useState("");
   const [pagoObservacion] = useState("");
@@ -666,6 +669,12 @@ export default function NuevaVentaPage() {
       setErrorVenta("Hay varias cajas abiertas: elegí en qué caja registrar la venta.");
       return;
     }
+    if (tipoVenta === "CONTADO" && metodoPago !== "efectivo" && cuentasBanco.length > 0 && !pagoCuentaId) {
+      isSubmittingRef.current = false;
+      setErrorVenta("Elegí la cuenta (banco o caja chica) donde se acredita el cobro.");
+      setCobroModalOpen(true);
+      return;
+    }
     setGuardando(true);
     try {
       const resultado = await saveVenta(
@@ -685,6 +694,7 @@ export default function NuevaVentaPage() {
         },
         undefined,
         {
+          cuenta_id: tipoVenta === "CONTADO" && metodoPago !== "efectivo" ? pagoCuentaId || null : null,
           entidad_bancaria_id: pagoEntidadId || null,
           entidad_nombre_snapshot: entidades.find((e) => e.id === pagoEntidadId)?.nombre ?? null,
           referencia: pagoReferencia.trim() || null,
@@ -1199,6 +1209,16 @@ export default function NuevaVentaPage() {
               </h3>
               <button type="button" onClick={() => setCobroModalOpen(false)} className="text-slate-400 hover:text-slate-700 text-lg leading-none">✕</button>
             </div>
+
+            <CuentaSelect
+              cuentas={cuentasBanco}
+              value={pagoCuentaId}
+              onChange={setPagoCuentaId}
+              label="Cuenta donde se acredita"
+              required
+              labelClassName="block text-xs text-gray-600 mb-1"
+              className={inputClass}
+            />
 
             <div>
               <label className="block text-xs text-gray-600 mb-1">

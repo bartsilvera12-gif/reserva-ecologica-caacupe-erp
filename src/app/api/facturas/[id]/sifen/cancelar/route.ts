@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getFacturasSupabaseFromAuth } from "@/lib/facturacion/facturas-service-client";
 import { successResponse, errorResponse } from "@/lib/api/response";
+import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema";
+import { anularMovimientosOrigen } from "@/lib/cuentas/server/cuentas-pg";
 import { API_ERRORS } from "@/lib/api/errors";
 import { toFacturaElectronicaDto } from "@/lib/sifen/to-factura-electronica-dto";
 import {
@@ -327,6 +329,13 @@ export async function POST(
         ventaAnuladaWarning = `Factura cancelada en SIFEN pero no se pudo anular la venta origen: ${resVenta.message}. Anulala manualmente desde /ventas.`;
       } else if (!resVenta.alreadyAnulada) {
         ventaAnuladaOrigenId = ventaOrigenId;
+        // Revierte el ingreso que la venta había sumado a una cuenta (banco / caja chica). Best-effort.
+        try {
+          const schemaCuentas = await fetchDataSchemaForEmpresaId(auth.empresa_id);
+          await anularMovimientosOrigen(schemaCuentas, auth.empresa_id, "venta", ventaOrigenId, motivoCascada || "Venta anulada");
+        } catch (e) {
+          console.error("[sifen cancelar] no se pudo revertir el movimiento de cuenta:", e instanceof Error ? e.message : e);
+        }
       }
     }
 

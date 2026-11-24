@@ -134,6 +134,8 @@ export interface CompraHeaderPayload {
   fecha_factura?: string | null;
   metodo_pago?: "efectivo" | "transferencia" | "tarjeta" | "cheque" | null;
   cheque_numero?: string | null;
+  /** Cuenta (banco / caja chica) de donde sale el pago de una compra al contado. */
+  cuenta_id?: string | null;
   comprobante_storage_path?: string | null;
   comprobante_nombre?: string | null;
   comprobante_mime_type?: string | null;

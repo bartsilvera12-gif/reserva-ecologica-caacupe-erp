@@ -36,6 +36,8 @@ export type PedidoCocinaInput = {
 
 /** Detalle de cobro (conciliación bancaria) — opcional, 1 por venta. */
 export type PagoDetalleInput = {
+  /** Cuenta (banco / caja chica) donde se acredita el cobro. */
+  cuenta_id?: string | null;
   entidad_bancaria_id?: string | null;
   entidad_nombre_snapshot?: string | null;
   referencia?: string | null;

@@ -18,6 +18,8 @@ export interface RegistrarCobroInput {
   cheque_numero?: string | null;
   /** Fecha en que el cheque podrá ser cobrado (independiente de fecha_pago). */
   cheque_fecha_cobro?: string | null;
+  /** Cuenta (banco / caja chica) donde se acredita el cobro (no efectivo). */
+  cuenta_id?: string | null;
 }
 
 export class CobroError extends Error {
@@ -114,6 +116,7 @@ export async function registrarCobro(
       usuario_nombre: input.usuario_nombre?.trim() || null,
       cheque_numero: chequeNumero,
       cheque_fecha_cobro: chequeFechaCobro,
+      ...(metodoNorm !== "efectivo" && input.cuenta_id ? { cuenta_id: input.cuenta_id } : {}),
     })
     .select("id")
     .single();

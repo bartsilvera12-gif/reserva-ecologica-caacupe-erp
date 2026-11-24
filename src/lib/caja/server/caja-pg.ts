@@ -340,7 +340,7 @@ export async function registrarMovimientoCaja(params: {
   schemaRaw: string; empresaId: string; sucursalId: string; cajaId: string;
   tipo: string; concepto: string | null; monto: number; metodoPago: string;
   usuarioId: string | null; usuarioNombre: string | null;
-}): Promise<void> {
+}): Promise<string> {
   const schema = assertAllowedChatDataSchema(params.schemaRaw);
   const tCaja = quoteSchemaTable(schema, "cajas");
   const tM = quoteSchemaTable(schema, "caja_movimientos");
@@ -355,14 +355,16 @@ export async function registrarMovimientoCaja(params: {
     );
     if (!rows[0]) throw new CajaError(404, "Caja no encontrada.");
     if (rows[0].estado !== "abierta") throw new CajaError(409, "La caja no está abierta.");
-    await client.query(
+    const ins = await client.query<{ id: string }>(
       `INSERT INTO ${tM} (empresa_id, sucursal_id, caja_id, tipo, concepto, monto, metodo_pago, origen, created_by, usuario_nombre)
-       VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5,$6::numeric,$7,'manual',$8::uuid,$9)`,
+       VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5,$6::numeric,$7,'manual',$8::uuid,$9)
+       RETURNING id`,
       [params.empresaId, params.sucursalId, params.cajaId, params.tipo, params.concepto, num(params.monto),
        ["efectivo", "transferencia", "tarjeta"].includes(params.metodoPago) ? params.metodoPago : "efectivo",
        params.usuarioId, params.usuarioNombre]
     );
     await client.query("COMMIT");
+    return String(ins.rows[0].id);
   } catch (e) {
     await client.query("ROLLBACK").catch(() => null);
     throw e;

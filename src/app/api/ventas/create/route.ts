@@ -11,6 +11,7 @@ import type { Venta, LineaVenta } from "@/lib/ventas/types";
 import { createServiceRoleClientWithDbSchema } from "@/lib/supabase/empresa-data-schema";
 import { estaFacturado, marcarFacturado } from "@/lib/caja/facturacion";
 import { resolverCajaParaVenta, CajaError } from "@/lib/caja/server/caja-pg";
+import { exigirCuentaSiCorresponde, sincronizarMovimientoOrigen, CuentasError } from "@/lib/cuentas/server/cuentas-pg";
 
 /** Error tipado: el pedido que se intenta facturar ya tiene venta. */
 class PedidoYaFacturadoError extends Error {
@@ -258,6 +259,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Cobro por transferencia / tarjeta / QR (contado): hay que elegir la cuenta donde se acredita.
+    // El efectivo del Market sigue en la caja del turno (no suma a ninguna cuenta). A crédito se acredita al cobrar.
+    const pdVenta = (o.pago_detalle ?? null) as Record<string, unknown> | null;
+    const cuentaCobroId =
+      pdVenta?.cuenta_id != null && String(pdVenta.cuenta_id).trim() !== "" ? String(pdVenta.cuenta_id).trim() : null;
+    if (tipoVenta === "CONTADO" && metodoPago !== "efectivo") {
+      try {
+        await exigirCuentaSiCorresponde(schema, auth.empresa_id, cuentaCobroId, "donde se acredita el cobro");
+      } catch (e) {
+        if (e instanceof CuentasError) return NextResponse.json(errorResponse(e.message), { status: e.status });
+        throw e;
+      }
+    }
+
     // Caja del turno: resuelve a qué caja abierta se imputa la venta (0→null,
     // 1→esa, varias→exige elegir). No bloquea la venta si no hay caja abierta.
     const sucursalIdVenta = exigirSucursal(auth.sucursal_id);
@@ -342,7 +357,20 @@ export async function POST(request: NextRequest) {
         titular: str(pd?.titular),
         fecha_acreditacion: fechaAcred,
         observacion: str(pd?.observacion, 500),
+        cuenta_id: tipoVenta === "CONTADO" && metodoPago !== "efectivo" ? cuentaCobroId : null,
       });
+      // Suma al saldo de la cuenta elegida. Con fecha de acreditación futura queda "por acreditar".
+      if (tipoVenta === "CONTADO" && metodoPago !== "efectivo" && cuentaCobroId) {
+        await sincronizarMovimientoOrigen({
+          schemaRaw: schema, empresaId: auth.empresa_id, origen: "venta", origenId: ventaId,
+          usuarioNombre: auth.user?.email ?? null,
+          deseado: {
+            cuentaId: cuentaCobroId, tipo: "ingreso", monto: totalDeclarado, fecha: fechaAcred,
+            concepto: `Venta ${numeroControl} (${metodoPago})`, referencia: str(pd?.referencia),
+            sucursalId: sucursalIdVenta,
+          },
+        });
+      }
     } catch (e) {
       console.error("[ventas/create] pago_detalle best-effort fallo (venta OK):", e instanceof Error ? e.message : e);
     }

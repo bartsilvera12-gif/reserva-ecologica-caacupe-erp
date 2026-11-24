@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { Wallet, X, Loader2, AlertTriangle, Search, CalendarClock } from "lucide-react";
 import ProgramarCuotasModal from "@/components/cuotas/ProgramarCuotasModal";
+import CuentaSelect, { useCuentasActivas } from "@/components/cuentas/CuentaSelect";
 
 type Cuenta = {
   id: string;
@@ -218,6 +219,8 @@ function ModalPago({ cuenta, onClose, onPagado }: { cuenta: Cuenta; onClose: () 
   const [monto, setMonto] = useState(String(Math.round(cuenta.saldo)));
   const [metodo, setMetodo] = useState("efectivo");
   const [referencia, setReferencia] = useState("");
+  const [cuentaId, setCuentaId] = useState("");
+  const { cuentas: cuentasPago } = useCuentasActivas();
   const [guardando, setGuardando] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -225,6 +228,7 @@ function ModalPago({ cuenta, onClose, onPagado }: { cuenta: Cuenta; onClose: () 
     setErr(null);
     const m = Number(monto) || 0;
     if (m <= 0) return setErr("El monto debe ser mayor a 0.");
+    if (cuentasPago.length > 0 && !cuentaId) return setErr("Elegí la cuenta (banco o caja chica) de donde sale el pago.");
     // El saldo puede traer decimales (IVA), pero los guaraníes se manejan enteros y en pantalla se muestra redondeado.
     // Comparamos contra el saldo redondeado para no rechazar un pago igual al saldo mostrado.
     if (m > Math.round(cuenta.saldo)) return setErr(`El pago supera el saldo (${Math.round(cuenta.saldo).toLocaleString("es-PY")}).`);
@@ -233,7 +237,7 @@ function ModalPago({ cuenta, onClose, onPagado }: { cuenta: Cuenta; onClose: () 
       const res = await fetchWithSupabaseSession(`/api/cuentas-por-pagar/${cuenta.id}/pago`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ monto: m, metodo_pago: metodo, referencia: referencia.trim() || undefined }),
+        body: JSON.stringify({ monto: m, metodo_pago: metodo, referencia: referencia.trim() || undefined, cuenta_id: cuentaId || undefined }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(typeof json.error === "string" ? json.error : "No se pudo registrar.");
@@ -271,6 +275,15 @@ function ModalPago({ cuenta, onClose, onPagado }: { cuenta: Cuenta; onClose: () 
               <option value="otro">Otro</option>
             </select>
           </div>
+          <CuentaSelect
+            cuentas={cuentasPago}
+            value={cuentaId}
+            onChange={setCuentaId}
+            label="Cuenta de pago (banco / caja chica)"
+            required
+            labelClassName="mb-1 block text-sm font-medium text-slate-700"
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4FAEB2]"
+          />
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">Referencia (opcional)</label>
             <input value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="N° de comprobante / nota"

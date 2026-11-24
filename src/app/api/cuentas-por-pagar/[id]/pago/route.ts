@@ -5,6 +5,7 @@ import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { exigirSucursal } from "@/lib/sucursales/filtro";
 import { registrarPagoProveedor, CxpError } from "@/lib/cuentas-por-pagar/server/cxp-pg";
+import { exigirCuentaSiCorresponde, CuentasError } from "@/lib/cuentas/server/cuentas-pg";
 
 function esAprobador(rol: string | null | undefined): boolean {
   const r = (rol ?? "").trim().toLowerCase();
@@ -32,7 +33,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const fechaRaw = body.fecha;
     const fecha = typeof fechaRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(fechaRaw) ? fechaRaw : null;
 
+    const cuentaId = body.cuenta_id != null && String(body.cuenta_id).trim() !== "" ? String(body.cuenta_id).trim() : null;
+    await exigirCuentaSiCorresponde(schema, empresaId, cuentaId, "de donde sale el pago");
+
     const out = await registrarPagoProveedor({
+      cuentaId,
       schemaRaw: schema,
       empresaId,
       sucursalId,
@@ -46,6 +51,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     });
     return NextResponse.json(successResponse(out));
   } catch (err) {
+    if (err instanceof CuentasError) {
+      return NextResponse.json(errorResponse(err.message), { status: err.status });
+    }
     if (err instanceof CxpError) {
       return NextResponse.json(errorResponse(err.message), { status: err.status });
     }

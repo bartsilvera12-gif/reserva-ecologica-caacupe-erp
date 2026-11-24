@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import MontoInput from "@/components/ui/MontoInput";
 import SearchableSelect from "@/components/ui/SearchableSelect";
+import CuentaSelect, { useCuentasActivas } from "@/components/cuentas/CuentaSelect";
 import { saveCompraMulti, uploadComprobante, type CompraItemPayload } from "@/lib/compras/storage";
 import { getProveedores, proveedorExiste, createProveedor } from "@/lib/proveedores/storage";
 import { getProductos, productoExiste, saveProducto } from "@/lib/inventario/storage";
@@ -106,7 +107,9 @@ export default function NuevaCompraPage() {
     fecha_factura: "" as string,
     metodo_pago: "" as "" | "efectivo" | "transferencia" | "tarjeta" | "cheque",
     cheque_numero: "",
+    cuenta_id: "",
   });
+  const { cuentas: cuentasPago } = useCuentasActivas();
 
   // Líneas ya agregadas
   const [lineas, setLineas] = useState<LineaCompra[]>([]);
@@ -295,6 +298,7 @@ export default function NuevaCompraPage() {
           fecha_factura: cab.fecha_factura || null,
           metodo_pago: cab.metodo_pago || null,
           cheque_numero: cab.metodo_pago === "cheque" ? (cab.cheque_numero.trim() || null) : null,
+          cuenta_id: cab.tipo_pago === "contado" ? cab.cuenta_id || null : null,
           comprobante_storage_path: comprobante?.comprobante_storage_path ?? null,
           comprobante_nombre: comprobante?.comprobante_nombre ?? null,
           comprobante_mime_type: comprobante?.comprobante_mime_type ?? null,
@@ -537,6 +541,17 @@ export default function NuevaCompraPage() {
                 </select>
                 <p className="mt-1 text-[11px] text-slate-500">Cómo se hizo el pago.</p>
               </div>
+              {cab.tipo_pago === "contado" && (
+                <CuentaSelect
+                  cuentas={cuentasPago}
+                  value={cab.cuenta_id}
+                  onChange={(id) => setCab((p) => ({ ...p, cuenta_id: id }))}
+                  label="Cuenta de pago (banco / caja chica)"
+                  required
+                  labelClassName={labelClass}
+                  className={inputClass}
+                />
+              )}
               {cab.metodo_pago === "cheque" && (
                 <div>
                   <label className={labelClass}>Nº de cheque</label>

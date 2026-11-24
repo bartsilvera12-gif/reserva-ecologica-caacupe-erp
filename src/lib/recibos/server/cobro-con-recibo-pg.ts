@@ -14,6 +14,7 @@
 import { getChatPostgresPool, quoteSchemaTable } from "@/lib/supabase/chat-pg-pool";
 import { assertAllowedChatDataSchema } from "@/lib/supabase/chat-data-schema";
 import { montoEfectivoRecibo } from "@/lib/recibos/recibo-calculo";
+import { sincronizarMovimientoOrigen } from "@/lib/cuentas/server/cuentas-pg";
 
 function pool() {
   const p = getChatPostgresPool();
@@ -75,6 +76,8 @@ export type CobrarConReciboInput = {
   cheque_numero?: string | null;
   /** Fecha en que el cheque podrá ser cobrado (independiente de fecha_pago). */
   cheque_fecha_cobro?: string | null;
+  /** Cuenta (banco / caja chica) donde se acredita el cobro (métodos que no son efectivo). */
+  cuentaId?: string | null;
   usuarioId: string | null;
   usuarioNombre: string | null;
 };
@@ -186,15 +189,16 @@ export async function cobrarConRecibo(
         `INSERT INTO ${tCob}
            (empresa_id, sucursal_id, cliente_id, cuenta_por_cobrar_id, venta_id, fecha_pago, monto,
             metodo_pago, entidad_bancaria_id, referencia, observaciones, usuario_id, usuario_nombre,
-            cheque_numero, cheque_fecha_cobro)
+            cheque_numero, cheque_fecha_cobro, cuenta_id)
          VALUES ($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5::uuid,$6::timestamptz,$7::numeric,
-                 $8,$9::uuid,$10,$11,$12::uuid,$13,$14,$15::date)
+                 $8,$9::uuid,$10,$11,$12::uuid,$13,$14,$15::date,$16::uuid)
          RETURNING id`,
         [
           p.empresaId, p.sucursalId, p.clienteId, cxc.id, cxc.venta_id, fechaPago, importe,
           metodo, p.entidad_bancaria_id || null, p.referencia?.trim() || null,
           p.observaciones?.trim() || null, p.usuarioId, p.usuarioNombre,
           chequeNumero, chequeFechaCobro,
+          metodo !== "efectivo" ? p.cuentaId || null : null,
         ]
       );
       const cobroId = cobRows[0]!.id;
@@ -421,6 +425,26 @@ export async function cobrarConRecibo(
     }
 
     await client.query("COMMIT");
+
+    // Suma a la cuenta elegida (un movimiento por cobro; cheque: desde su fecha de cobro).
+    if (metodo !== "efectivo" && p.cuentaId) {
+      for (const it of items) {
+        try {
+          await sincronizarMovimientoOrigen({
+            schemaRaw: p.schemaRaw, empresaId: p.empresaId, origen: "cobro", origenId: it.cobroId,
+            usuarioNombre: p.usuarioNombre,
+            deseado: {
+              cuentaId: p.cuentaId, tipo: "ingreso", monto: it.importe,
+              fecha: metodo === "cheque" && chequeFechaCobro ? chequeFechaCobro : p.fecha_pago?.trim() || null,
+              concepto: `Cobro ${numeroRecibo}${it.numeroDoc ? ` — ${it.numeroDoc}` : ""} (${metodo})`,
+              referencia: p.referencia?.trim() || null, sucursalId: p.sucursalId,
+            },
+          });
+        } catch (e) {
+          console.error("[cobro-con-recibo] cobro registrado pero no se reflejó en la cuenta:", it.cobroId, e instanceof Error ? e.message : e);
+        }
+      }
+    }
     return {
       recibo_id: reciboId,
       numero_recibo: numeroRecibo,

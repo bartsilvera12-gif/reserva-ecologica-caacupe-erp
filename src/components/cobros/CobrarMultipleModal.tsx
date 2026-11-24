@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Search, X } from "lucide-react";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
+import CuentaSelect, { useCuentasActivas } from "@/components/cuentas/CuentaSelect";
 
 /**
  * Modal para registrar un cobro que abarca VARIAS facturas de un mismo cliente
@@ -124,6 +125,8 @@ export function CobrarMultipleModal({
   // fecha del cobro / recibo (puede estar diferido).
   const [chequeNumero, setChequeNumero] = useState("");
   const [chequeFechaCobro, setChequeFechaCobro] = useState("");
+  const [cuentaCobroId, setCuentaCobroId] = useState("");
+  const { cuentas: cuentasBanco } = useCuentasActivas();
   /** Fecha real del pago. Default = hoy. El operador la ajusta cuando registra
    *  un cobro que llego dias antes — asi el recibo lleva la fecha del pago
    *  real (fiscalmente / contablemente lo que corresponde), no la de carga. */
@@ -429,6 +432,10 @@ export function CobrarMultipleModal({
       setError("Ingresá la fecha de cobro del cheque.");
       return;
     }
+    if (metodo !== "efectivo" && aplicaciones.length > 0 && cuentasBanco.length > 0 && !cuentaCobroId) {
+      setError("Elegí la cuenta (banco o caja chica) donde se acredita el cobro.");
+      return;
+    }
 
     // La pestaña del PDF se abre AHORA en el gesto del usuario, para que el
     // bloqueador de pop-ups no la mate (mismo patron que generarYAbrirRecibo).
@@ -453,6 +460,7 @@ export function CobrarMultipleModal({
           fecha_pago: fechaPago || null,
           cheque_numero: metodo === "cheque" ? (chequeNumero.trim() || null) : null,
           cheque_fecha_cobro: metodo === "cheque" ? (chequeFechaCobro || null) : null,
+          cuenta_id: metodo !== "efectivo" ? (cuentaCobroId || null) : null,
         }),
       });
       const body = await res.json();
@@ -783,6 +791,17 @@ export function CobrarMultipleModal({
                   {METODOS.map((m) => <option key={m} value={m}>{METODO_LABEL[m]}</option>)}
                 </select>
               </div>
+              {metodo !== "efectivo" && (
+                <CuentaSelect
+                  cuentas={cuentasBanco}
+                  value={cuentaCobroId}
+                  onChange={setCuentaCobroId}
+                  label="Cuenta donde se acredita"
+                  required
+                  labelClassName="block text-xs font-medium text-gray-600 mb-1"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white"
+                />
+              )}
               {pideBanco && (
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">

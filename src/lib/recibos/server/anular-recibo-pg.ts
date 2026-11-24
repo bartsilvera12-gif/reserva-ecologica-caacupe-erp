@@ -15,6 +15,7 @@
  */
 import { getChatPostgresPool, quoteSchemaTable } from "@/lib/supabase/chat-pg-pool";
 import { assertAllowedChatDataSchema } from "@/lib/supabase/chat-data-schema";
+import { anularMovimientosOrigen } from "@/lib/cuentas/server/cuentas-pg";
 
 function pool() {
   const p = getChatPostgresPool();
@@ -230,6 +231,14 @@ export async function anularRecibo(p: AnularReciboInput): Promise<AnularReciboRe
     );
 
     await client.query("COMMIT");
+    // Revierte lo que los cobros habían sumado a las cuentas (banco / caja chica). Best-effort.
+    for (const cobroId of cobroIds) {
+      try {
+        await anularMovimientosOrigen(p.schemaRaw, p.empresaId, "cobro", cobroId, `Recibo anulado: ${motivo}`);
+      } catch (e) {
+        console.error("[anular recibo] no se pudo revertir el movimiento de cuenta:", cobroId, e instanceof Error ? e.message : e);
+      }
+    }
     return {
       recibo_id: p.reciboId,
       cobros_anulados: cobroIds.length,

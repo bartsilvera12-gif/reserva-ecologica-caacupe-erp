@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getTenantSupabaseFromAuth } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
+import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema";
+import { anularMovimientosOrigen } from "@/lib/cuentas/server/cuentas-pg";
 
 /**
  * POST /api/compras/[numero_control]/anular
@@ -187,6 +189,14 @@ export async function POST(
         .eq("numero_control", numero)
         .eq("empresa_id", empresaId);
       if (updCompras.error) throw new Error(updCompras.error.message);
+
+      // 3b) Revertir el egreso de la cuenta (banco / caja chica) de una compra al contado.
+      try {
+        const schemaCuentas = await fetchDataSchemaForEmpresaId(empresaId);
+        await anularMovimientosOrigen(schemaCuentas, empresaId, "compra", numero, `Compra ${numero} anulada`);
+      } catch (e) {
+        console.error("[anular compra] no se pudo revertir el movimiento de cuenta:", e instanceof Error ? e.message : e);
+      }
 
       // 4) Propagar la anulación a la cuenta por pagar (compras a crédito): la deuda
       //    deja de figurar como pendiente y sale del saldo total. saldo=0 + estado

@@ -4,6 +4,7 @@ import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema"
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
+import { exigirCuentaSiCorresponde, CuentasError } from "@/lib/cuentas/server/cuentas-pg";
 import {
   cobrarConRecibo,
   cuentasPendientesDeCliente,
@@ -14,6 +15,9 @@ import {
 function respError(err: unknown): NextResponse {
   const rSuc = respuestaSucursalNoAsignada(err);
   if (rSuc) return rSuc as NextResponse;
+  if (err instanceof CuentasError) {
+    return NextResponse.json(errorResponse(err.message), { status: err.status });
+  }
   if (err instanceof CobroReciboError) {
     return NextResponse.json(errorResponse(err.message), { status: err.status });
   }
@@ -104,7 +108,14 @@ export async function POST(request: NextRequest) {
     }
 
     const schema = await fetchDataSchemaForEmpresaId(ctx.auth.empresa_id);
+    // Cobros por transferencia / tarjeta / cheque: hay que elegir la cuenta donde se acredita.
+    const cuentaId = typeof body.cuenta_id === "string" && body.cuenta_id.trim() ? body.cuenta_id.trim() : null;
+    const metodoBody = typeof body.metodo_pago === "string" ? body.metodo_pago : "efectivo";
+    if (metodoBody !== "efectivo" && aplicaciones.length > 0) {
+      await exigirCuentaSiCorresponde(schema, ctx.auth.empresa_id, cuentaId, "donde se acredita el cobro");
+    }
     const out = await cobrarConRecibo({
+      cuentaId,
       schemaRaw: schema,
       empresaId: ctx.auth.empresa_id,
       sucursalId: exigirSucursal(ctx.auth.sucursal_id),

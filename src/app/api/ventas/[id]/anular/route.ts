@@ -4,6 +4,8 @@ import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { anularVentaCore, ventaTieneCobrosAplicados } from "@/lib/ventas/server/anular-venta-core";
 import { marcarDesfacturadoPorAnulacion } from "@/lib/caja/facturacion";
+import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema";
+import { anularMovimientosOrigen } from "@/lib/cuentas/server/cuentas-pg";
 
 /**
  * POST /api/ventas/[id]/anular
@@ -134,6 +136,14 @@ export async function POST(
     });
     if (!res.ok) {
       return NextResponse.json(errorResponse(res.message), { status: res.status ?? 500 });
+    }
+
+    // Revierte el ingreso que la venta había sumado a una cuenta (banco / caja chica). Best-effort.
+    try {
+      const schemaCuentas = await fetchDataSchemaForEmpresaId(empresaId);
+      await anularMovimientosOrigen(schemaCuentas, empresaId, "venta", ventaId, `Venta anulada: ${motivo}`);
+    } catch (e) {
+      console.error("[anular venta] no se pudo revertir el movimiento de cuenta:", e instanceof Error ? e.message : e);
     }
 
     // Best-effort: si la venta tenía factura ERP no-aceptada, descartarla también.

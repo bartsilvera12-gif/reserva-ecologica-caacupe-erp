@@ -3,6 +3,8 @@ import { getTenantSupabaseFromAuthWithRol } from "@/lib/supabase/tenant-api";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { registrarCobro, CobroError } from "@/lib/cobros/server/cobros-pg";
+import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema";
+import { exigirCuentaSiCorresponde, sincronizarMovimientoOrigen, CuentasError } from "@/lib/cuentas/server/cuentas-pg";
 
 /** POST /api/cobros — registra un cobro contra una cuenta por cobrar. */
 export async function POST(request: NextRequest) {
@@ -19,7 +21,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(errorResponse("JSON inválido."), { status: 400 });
     }
 
+    // Cobros por transferencia / tarjeta / cheque: hay que elegir la cuenta donde se acredita.
+    // El efectivo sigue en el módulo Caja (no suma a ninguna cuenta, así no se duplica).
+    const empresaId = ctx.auth.empresa_id;
+    const schema = await fetchDataSchemaForEmpresaId(empresaId);
+    const metodoCobro = (body.metodo_pago as string | undefined) ?? "efectivo";
+    const cuentaId = body.cuenta_id ? String(body.cuenta_id).trim() : null;
+    if (metodoCobro !== "efectivo") {
+      await exigirCuentaSiCorresponde(schema, empresaId, cuentaId, "donde se acredita el cobro");
+    }
+
     const result = await registrarCobro(ctx.supabase, ctx.auth.empresa_id, {
+      cuenta_id: cuentaId,
       cuenta_por_cobrar_id: String(body.cuenta_por_cobrar_id ?? ""),
       monto: Number(body.monto),
       metodo_pago: (body.metodo_pago as "efectivo" | "transferencia" | "tarjeta" | "cheque" | "otro") ?? "efectivo",
@@ -35,8 +48,30 @@ export async function POST(request: NextRequest) {
       usuario_nombre: usuarioNombre,
     });
 
+    // Suma al saldo de la cuenta elegida (cheque: desde su fecha de cobro). Un movimiento por cobro.
+    if (metodoCobro !== "efectivo" && cuentaId) {
+      try {
+        await sincronizarMovimientoOrigen({
+          schemaRaw: schema, empresaId, origen: "cobro", origenId: result.cobro_id, usuarioNombre,
+          deseado: {
+            cuentaId, tipo: "ingreso", monto: Number(body.monto),
+            fecha: metodoCobro === "cheque" && typeof body.cheque_fecha_cobro === "string" && body.cheque_fecha_cobro
+              ? body.cheque_fecha_cobro.slice(0, 10)
+              : typeof body.fecha_pago === "string" && body.fecha_pago ? body.fecha_pago : null,
+            concepto: `Cobro de cliente (${metodoCobro})`,
+            referencia: body.referencia ? String(body.referencia) : null,
+          },
+        });
+      } catch (e) {
+        console.error("[/api/cobros POST] cobro registrado pero no se reflejó en la cuenta:", result.cobro_id, e instanceof Error ? e.message : e);
+      }
+    }
+
     return NextResponse.json(successResponse(result));
   } catch (err) {
+    if (err instanceof CuentasError) {
+      return NextResponse.json(errorResponse(err.message), { status: err.status });
+    }
     if (err instanceof CobroError) {
       return NextResponse.json(errorResponse(err.message), { status: err.status });
     }

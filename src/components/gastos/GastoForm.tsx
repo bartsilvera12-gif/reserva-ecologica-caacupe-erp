@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createGasto, updateGasto } from "@/lib/gastos/actions";
 import MontoInput from "@/components/ui/MontoInput";
+import CuentaSelect, { useCuentasActivas } from "@/components/cuentas/CuentaSelect";
 import type { Gasto, GastoInput } from "@/lib/gastos/actions";
 import { hoyAsuncionYmd } from "@/lib/fecha/asuncion";
 
@@ -31,7 +32,9 @@ export default function GastoForm({ gasto, onSuccess }: Props) {
     fecha: gasto?.fecha ?? hoyAsuncionYmd(),
     beneficiario: gasto?.beneficiario ?? "",
     metodo_pago: gasto?.metodo_pago ?? null,
+    cuenta_id: gasto?.cuenta_id ?? "",
   });
+  const { cuentas } = useCuentasActivas();
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) {
     const { name, value, type } = e.target;
@@ -54,6 +57,9 @@ export default function GastoForm({ gasto, onSuccess }: Props) {
 
     if (form.monto <= 0) {
       return setError("El monto debe ser mayor a 0.");
+    }
+    if (!gasto && cuentas.length > 0 && !form.cuenta_id) {
+      return setError("Elegí la cuenta (banco o caja chica) de donde sale el pago.");
     }
 
     setGuardando(true);
@@ -139,6 +145,13 @@ export default function GastoForm({ gasto, onSuccess }: Props) {
               <option value="tarjeta">Tarjeta</option>
             </select>
           </div>
+          <CuentaSelect
+            cuentas={cuentas}
+            value={form.cuenta_id ?? ""}
+            onChange={(id) => setForm((prev) => ({ ...prev, cuenta_id: id }))}
+            label="Cuenta de pago (banco / caja chica)"
+            required={!gasto}
+          />
           <div>
             <label className={fLabel}>Monto (Gs.) *</label>
             <MontoInput

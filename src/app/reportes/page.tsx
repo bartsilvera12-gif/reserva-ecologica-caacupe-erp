@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import PageHeader from "@/components/ui/PageHeader";
 import { ReportCard } from "@/components/reportes/ReportCard";
-import { Wallet, Truck, Package, ShoppingCart, ArrowLeftRight, TrendingDown, PackageX, Banknote, ClipboardList, FileText, Calculator } from "lucide-react";
+import { Wallet, Truck, Package, ShoppingCart, ArrowLeftRight, TrendingDown, PackageX, Banknote, ClipboardList, FileText, Calculator, Landmark } from "lucide-react";
 
 /** Hub de reportería operativa (Fase 1: Estado de cuenta + Proveedores). */
 export default function ReportesPage() {
@@ -88,6 +88,15 @@ export default function ReportesPage() {
             icon={ArrowLeftRight}
             description="Detalle de cobro por venta (efectivo/transferencia/tarjeta), por método y por entidad."
             href="/reportes/conciliacion"
+          />
+        </li>
+        <li>
+          <ReportCard
+            title="Saldos de bancos y caja chica"
+            subtitle="Cuánto dinero hay disponible"
+            icon={Landmark}
+            description="Saldo de cada banco, de la caja chica y del efectivo del Market, con el total general, el historial de movimientos y las transferencias entre cuentas."
+            href="/reportes/cuentas"
           />
         </li>
         {manejaCaja && (

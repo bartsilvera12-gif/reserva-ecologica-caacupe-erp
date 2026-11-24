@@ -25,6 +25,8 @@ export interface PagoDetalleInput {
   titular: string | null;
   fecha_acreditacion: string | null; // YYYY-MM-DD o null
   observacion: string | null;
+  /** Cuenta (banco / caja chica) donde se acredita el cobro. */
+  cuenta_id?: string | null;
 }
 
 export type TipoEntidad = "caja" | "banco" | "tarjeta" | "billetera" | "otro";
@@ -132,15 +134,16 @@ export async function insertVentaPagoDetalle(
   const { rows } = await pool().query<{ id: string }>(
     `INSERT INTO ${t} (
         empresa_id, venta_id, metodo_pago, entidad_bancaria_id, entidad_nombre_snapshot,
-        monto, referencia, titular, fecha_acreditacion, observacion
+        monto, referencia, titular, fecha_acreditacion, observacion, cuenta_id
      ) VALUES (
         $1::uuid, $2::uuid, $3, $4::uuid, $5,
-        $6::numeric, $7, $8, $9::date, $10
+        $6::numeric, $7, $8, $9::date, $10, $11::uuid
      ) RETURNING id`,
     [
       empresaId, ventaId, d.metodo_pago,
       d.entidad_bancaria_id, d.entidad_nombre_snapshot,
       d.monto, d.referencia, d.titular, d.fecha_acreditacion, d.observacion,
+      d.cuenta_id || null,
     ]
   );
   return rows[0]?.id ?? null;

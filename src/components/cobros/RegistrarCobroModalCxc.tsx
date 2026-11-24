@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session";
 import { generarYAbrirRecibo } from "@/lib/recibos/client";
+import CuentaSelect, { useCuentasActivas } from "@/components/cuentas/CuentaSelect";
 
 /** Cuenta por cobrar mínima para registrar un pago. */
 export type CxcRef = {
@@ -50,6 +51,8 @@ export function RegistrarCobroModalCxc({
   const [chequeNumero, setChequeNumero] = useState("");
   const [chequeFechaCobro, setChequeFechaCobro] = useState("");
   const [entidades, setEntidades] = useState<Entidad[]>([]);
+  const [cuentaCobroId, setCuentaCobroId] = useState("");
+  const { cuentas: cuentasBanco } = useCuentasActivas();
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Tras un cobro exitoso, se ofrece generar el recibo (paso opcional).
@@ -72,6 +75,7 @@ export function RegistrarCobroModalCxc({
       setEntidadId("");
       setChequeNumero("");
       setChequeFechaCobro("");
+      setCuentaCobroId("");
       setError(null);
       setCobroOk(null);
     }
@@ -108,6 +112,7 @@ export function RegistrarCobroModalCxc({
     if (pideBanco && !referencia.trim()) { setError("Ingresá la referencia / nº de operación."); return; }
     if (metodo === "cheque" && !chequeNumero.trim()) { setError("Ingresá el número de cheque."); return; }
     if (metodo === "cheque" && !chequeFechaCobro) { setError("Ingresá la fecha de cobro del cheque."); return; }
+    if (metodo !== "efectivo" && cuentasBanco.length > 0 && !cuentaCobroId) { setError("Elegí la cuenta (banco o caja chica) donde se acredita el cobro."); return; }
     setGuardando(true);
     setError(null);
     try {
@@ -126,6 +131,7 @@ export function RegistrarCobroModalCxc({
           entidad_nombre_snapshot: pideBanco ? entidadNombre : null,
           cheque_numero: metodo === "cheque" ? (chequeNumero.trim() || null) : null,
           cheque_fecha_cobro: metodo === "cheque" ? (chequeFechaCobro || null) : null,
+          cuenta_id: metodo !== "efectivo" ? (cuentaCobroId || null) : null,
         }),
       });
       const body = await res.json();
@@ -202,6 +208,17 @@ export function RegistrarCobroModalCxc({
                     {entidadesFiltradas.map((e) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
                   </select>
                 </div>
+              )}
+              {metodo !== "efectivo" && (
+                <CuentaSelect
+                  cuentas={cuentasBanco}
+                  value={cuentaCobroId}
+                  onChange={setCuentaCobroId}
+                  label="Cuenta donde se acredita"
+                  required
+                  labelClassName="block text-xs font-medium text-gray-600 mb-1"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white"
+                />
               )}
               {metodo === "cheque" && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
