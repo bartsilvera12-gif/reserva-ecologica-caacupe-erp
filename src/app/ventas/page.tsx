@@ -12,6 +12,7 @@ import { fetchWithSupabaseSession } from "@/lib/api/fetch-with-supabase-session"
 import { getVentas } from "@/lib/ventas/storage";
 import PedidosPendientesCaja from "./PedidosPendientesCaja";
 import AnularVentaModal from "./AnularVentaModal";
+import CambiarMedioPagoModal from "./CambiarMedioPagoModal";
 import { esMismoDiaAsuncion } from "@/lib/fecha/asuncion";
 import type { Venta, TipoVenta, TipoIvaVenta } from "@/lib/ventas/types";
 
@@ -177,6 +178,7 @@ export default function VentasPage() {
   const [porPagina,  setPorPagina]  = useState<number | "todas">(25);
   const [pagina,     setPagina]     = useState(1);
   const [ventaAnular, setVentaAnular] = useState<{ id: string; numero: string } | null>(null);
+  const [ventaMedioPago, setVentaMedioPago] = useState<{ id: string; numero: string; metodo: string | null } | null>(null);
   const [ventaRegenerar, setVentaRegenerar] = useState<{ id: string; numero: string; eraFactura: boolean } | null>(null);
   const [regenerandoId, setRegenerandoId] = useState<string | null>(null);
   const [errorRegenerar, setErrorRegenerar] = useState<string | null>(null);
@@ -630,6 +632,16 @@ export default function VentasPage() {
                               Ticket
                             </a>
                           )}
+                          {!anulada && v.tipo_venta === "CONTADO" && (
+                            <button
+                              type="button"
+                              onClick={() => setVentaMedioPago({ id: v.id, numero: v.numero_control, metodo: v.metodo_pago ?? null })}
+                              className="inline-flex items-center justify-center rounded-md border border-sky-200 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 transition-colors"
+                              title="Cambiar el medio de pago de esta venta (no toca stock ni factura)"
+                            >
+                              Cambiar medio de pago
+                            </button>
+                          )}
                           {!anulada && (() => {
                             const est = v.factura_estado_sifen;
                             const facturaBloqueaAnular =
@@ -779,6 +791,19 @@ export default function VentasPage() {
           onClose={() => setVentaAnular(null)}
           onAnulada={() => {
             setVentaAnular(null);
+            void recargar();
+          }}
+        />
+      )}
+
+      {ventaMedioPago && (
+        <CambiarMedioPagoModal
+          ventaId={ventaMedioPago.id}
+          numeroControl={ventaMedioPago.numero}
+          metodoActual={ventaMedioPago.metodo}
+          onClose={() => setVentaMedioPago(null)}
+          onCambiado={() => {
+            setVentaMedioPago(null);
             void recargar();
           }}
         />
