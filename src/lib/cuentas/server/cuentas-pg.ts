@@ -365,7 +365,9 @@ export async function retirarDeCajaACuenta(p: {
         sucursalId: String(cj[0].sucursal_id),
       },
     });
-    if (r.accion !== "creado") throw new CuentasError(400, "La fecha es anterior al inicio del control de saldos de la cuenta.");
+    // Si el retiro es anterior al inicio del control de saldos, el efectivo igual salió de Caja:
+    // se conserva el retiro en Caja y no se registra en la cuenta (su saldo inicial ya lo contempla).
+    void r;
   } catch (e) {
     // Deshace el retiro de Caja para no dejar el efectivo "perdido".
     const tM = quoteSchemaTable(schema, "caja_movimientos");
