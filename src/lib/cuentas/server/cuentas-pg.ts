@@ -285,14 +285,14 @@ export async function transferirEntreCuentas(p: {
     const grupo = randomUUID();
     const base = p.concepto?.trim() || null;
     const ins = `INSERT INTO ${tM} (empresa_id, cuenta_id, fecha, tipo, concepto, monto, origen, origen_id, grupo_id, usuario_nombre)
-                 VALUES ($1::uuid,$2::uuid,$3::timestamptz,$4,$5,$6::numeric,'transferencia',$7,$7::uuid,$8)`;
+                 VALUES ($1::uuid,$2::uuid,$3::timestamptz,$4,$5,$6::numeric,'transferencia',$7::text,$9::uuid,$8)`;
     await client.query(ins, [
       p.empresaId, p.origenCuentaId, fecha, "egreso",
-      `Transferencia a ${dst.nombre}${base ? ` — ${base}` : ""}`, monto, grupo, p.usuarioNombre ?? null,
+      `Transferencia a ${dst.nombre}${base ? ` — ${base}` : ""}`, monto, grupo, p.usuarioNombre ?? null, grupo,
     ]);
     await client.query(ins, [
       p.empresaId, p.destinoCuentaId, fecha, "ingreso",
-      `Transferencia desde ${o.nombre}${base ? ` — ${base}` : ""}`, monto, grupo, p.usuarioNombre ?? null,
+      `Transferencia desde ${o.nombre}${base ? ` — ${base}` : ""}`, monto, grupo, p.usuarioNombre ?? null, grupo,
     ]);
     await client.query("COMMIT");
     return { grupo_id: grupo };
