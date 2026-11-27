@@ -47,7 +47,28 @@ const ORIGEN_LABEL: Record<string, string> = {
   gasto: "Gasto",
   transferencia: "Transferencia entre cuentas",
   retiro_caja: "Traslado desde caja del Market",
+  cheque: "Cheque confirmado",
 };
+
+type Cheque = {
+  id: string;
+  tipo: "recibido" | "emitido";
+  numero: string;
+  banco: string;
+  monto: number;
+  fecha_prevista: string;
+  cuenta_nombre: string;
+  estado: string;
+  origen: string | null;
+  referencia: string | null;
+  confirmado_at: string | null;
+  confirmado_por: string | null;
+  dias: number | null;
+};
+const ESTADO_CHEQUE: Record<string, string> = {
+  pendiente: "Pendiente", acreditado: "Acreditado", debitado: "Debitado", rechazado: "Rechazado", anulado: "Anulado",
+};
+const fmtDia = (d: string) => d.split("-").reverse().join("/");
 
 const gs = (n: number) => `Gs. ${Math.round(n).toLocaleString("es-PY")}`;
 const fmtFecha = (iso: string) =>
@@ -86,6 +107,57 @@ export default function CuentasSaldosPage() {
   const [rtMonto, setRtMonto] = useState("");
   const [rtConcepto, setRtConcepto] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Cheques
+  const [cheques, setCheques] = useState<Cheque[]>([]);
+  const [chFiltro, setChFiltro] = useState("pendiente");
+  const [chTipo, setChTipo] = useState("recibido");
+  const [chNumero, setChNumero] = useState("");
+  const [chBanco, setChBanco] = useState("");
+  const [chMonto, setChMonto] = useState("");
+  const [chFecha, setChFecha] = useState("");
+  const [chCuenta, setChCuenta] = useState("");
+  const [chRef, setChRef] = useState("");
+  const [chOrigen, setChOrigen] = useState("");
+
+  const cargarCheques = useCallback(async () => {
+    try {
+      const qs = chFiltro ? `?estado=${chFiltro}` : "";
+      const j = await fetchWithSupabaseSession(`/api/cuentas/cheques${qs}`, { cache: "no-store" }).then((r) => r.json());
+      if (j?.success) setCheques((j.data?.cheques ?? []) as Cheque[]);
+    } catch {
+      /* se ignora: el resto de la pantalla sigue funcionando */
+    }
+  }, [chFiltro]);
+
+  useEffect(() => {
+    cargarCheques();
+  }, [cargarCheques]);
+
+  async function accionCheque(body: Record<string, unknown>, okMsg: string, reset?: () => void) {
+    setBusy(true);
+    setError(null);
+    setOk(null);
+    try {
+      const res = await fetchWithSupabaseSession("/api/cuentas/cheques", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || j?.success === false) {
+        setError(typeof j?.error === "string" ? j.error : "No se pudo procesar el cheque.");
+      } else {
+        setOk(okMsg);
+        reset?.();
+        cargar();
+        cargarCheques();
+      }
+    } catch {
+      setError("Error de red.");
+    }
+    setBusy(false);
+  }
 
   const cargar = useCallback(async () => {
     try {
@@ -287,6 +359,188 @@ export default function CuentasSaldosPage() {
           </div>
         </>
       )}
+
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-end gap-3 border-b border-slate-200 px-5 py-3">
+          <h2 className="mr-auto text-sm font-bold uppercase tracking-wider text-slate-700">Control de cheques</h2>
+          <div>
+            <label className={labelCls}>Estado</label>
+            <select value={chFiltro} onChange={(e) => setChFiltro(e.target.value)} className={inputCls}>
+              <option value="pendiente">Pendientes</option>
+              <option value="">Todos</option>
+              <option value="acreditado">Acreditados</option>
+              <option value="debitado">Debitados</option>
+              <option value="rechazado">Rechazados</option>
+              <option value="anulado">Anulados</option>
+            </select>
+          </div>
+        </div>
+        {(() => {
+          const pend = cheques.filter((c) => c.estado === "pendiente");
+          const vencidos = pend.filter((c) => (c.dias ?? 1) <= 0);
+          const proximos = pend.filter((c) => (c.dias ?? 99) > 0 && (c.dias ?? 99) <= 7);
+          return (
+            <>
+              {vencidos.length > 0 && (
+                <div className="mx-5 mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+                  {vencidos.length} cheque(s) pendiente(s) de confirmación: ya llegó o pasó la fecha prevista.
+                </div>
+              )}
+              {proximos.length > 0 && (
+                <div className="mx-5 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700">
+                  {proximos.length} cheque(s) próximo(s) a vencer en los próximos 7 días.
+                </div>
+              )}
+            </>
+          );
+        })()}
+        <div className="grid gap-3 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <label className={labelCls}>Tipo de cheque</label>
+            <select value={chTipo} onChange={(e) => setChTipo(e.target.value)} className={inputCls}>
+              <option value="recibido">Recibido (de un cliente)</option>
+              <option value="emitido">Emitido (a un proveedor)</option>
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>N° de cheque</label>
+            <input value={chNumero} onChange={(e) => setChNumero(e.target.value)} placeholder="Número del cheque" className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Banco del cheque</label>
+            <input value={chBanco} onChange={(e) => setChBanco(e.target.value)} placeholder="Banco emisor" className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Monto del cheque (Gs.)</label>
+            <input type="number" min={0} value={chMonto} onChange={(e) => setChMonto(e.target.value)} placeholder="0" className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Fecha prevista (cobro / débito)</label>
+            <input type="date" value={chFecha} onChange={(e) => setChFecha(e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Cuenta bancaria</label>
+            <select value={chCuenta} onChange={(e) => setChCuenta(e.target.value)} className={inputCls}>
+              <option value="">Elegí la cuenta…</option>
+              {activas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Vinculado a</label>
+            <select value={chOrigen} onChange={(e) => setChOrigen(e.target.value)} className={inputCls}>
+              <option value="">Sin vincular</option>
+              <option value="venta">Venta</option>
+              <option value="cobro">Cobranza</option>
+              <option value="compra">Compra</option>
+              <option value="pago">Pago a proveedor</option>
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>N° de documento vinculado</label>
+            <input value={chRef} onChange={(e) => setChRef(e.target.value)} placeholder="Ej: N° de factura o compra" className={inputCls} />
+          </div>
+          <div className="sm:col-span-2 lg:col-span-4">
+            <button
+              disabled={busy || !chNumero.trim() || !chBanco.trim() || !(Number(chMonto) > 0) || !chFecha || !chCuenta}
+              onClick={() =>
+                accionCheque(
+                  {
+                    accion: "crear", tipo: chTipo, numero: chNumero, banco: chBanco, monto: Number(chMonto),
+                    fecha_prevista: chFecha, cuenta_id: chCuenta, origen: chOrigen, referencia: chRef,
+                  },
+                  "Cheque registrado como pendiente. No modifica el saldo hasta confirmarlo.",
+                  () => { setChNumero(""); setChBanco(""); setChMonto(""); setChFecha(""); setChRef(""); setChOrigen(""); }
+                )
+              }
+              className="rounded-lg bg-[#4FAEB2] px-4 py-2 text-sm font-semibold text-white hover:bg-[#3F8E91] disabled:opacity-50"
+            >
+              Registrar cheque
+            </button>
+          </div>
+        </div>
+        <div className="overflow-x-auto border-t border-slate-100">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="bg-slate-50 text-xs text-slate-600">
+                <th className="px-4 py-2 font-medium">Fecha prevista</th>
+                <th className="px-4 py-2 font-medium">Tipo</th>
+                <th className="px-4 py-2 font-medium">N°</th>
+                <th className="px-4 py-2 font-medium">Banco</th>
+                <th className="px-4 py-2 font-medium">Cuenta</th>
+                <th className="px-4 py-2 font-medium text-right">Monto</th>
+                <th className="px-4 py-2 font-medium">Estado</th>
+                <th className="px-4 py-2 font-medium">Vinculado</th>
+                <th className="px-4 py-2 font-medium">Confirmación</th>
+                <th className="px-4 py-2" />
+              </tr>
+            </thead>
+            <tbody>
+              {cheques.length === 0 && (
+                <tr><td colSpan={10} className="px-4 py-6 text-center text-slate-400">No hay cheques para mostrar.</td></tr>
+              )}
+              {cheques.map((c) => (
+                <tr key={c.id} className="border-t border-slate-100">
+                  <td className="px-4 py-2 whitespace-nowrap">
+                    {fmtDia(c.fecha_prevista)}
+                    {c.estado === "pendiente" && (c.dias ?? 1) <= 0 && <span className="ml-2 text-xs font-semibold text-red-600">Confirmar</span>}
+                    {c.estado === "pendiente" && (c.dias ?? 99) > 0 && (c.dias ?? 99) <= 7 && <span className="ml-2 text-xs font-semibold text-amber-600">En {c.dias} día(s)</span>}
+                  </td>
+                  <td className="px-4 py-2">{c.tipo === "recibido" ? "Recibido" : "Emitido"}</td>
+                  <td className="px-4 py-2">{c.numero}</td>
+                  <td className="px-4 py-2">{c.banco}</td>
+                  <td className="px-4 py-2">{c.cuenta_nombre}</td>
+                  <td className={`px-4 py-2 text-right tabular-nums ${c.tipo === "recibido" ? "text-emerald-700" : "text-red-600"}`}>
+                    {c.tipo === "recibido" ? "+" : "−"}{gs(c.monto)}
+                  </td>
+                  <td className="px-4 py-2">{ESTADO_CHEQUE[c.estado] ?? c.estado}</td>
+                  <td className="px-4 py-2 text-slate-500">{c.origen ? `${c.origen}${c.referencia ? ` ${c.referencia}` : ""}` : "—"}</td>
+                  <td className="px-4 py-2 text-slate-500 whitespace-nowrap">
+                    {c.confirmado_at ? `${fmtFecha(c.confirmado_at)} · ${c.confirmado_por ?? "—"}` : "—"}
+                  </td>
+                  <td className="px-4 py-2 whitespace-nowrap space-x-3">
+                    {c.estado === "pendiente" && (
+                      <>
+                        <button
+                          disabled={busy}
+                          onClick={() =>
+                            accionCheque(
+                              { accion: "confirmar", cheque_id: c.id },
+                              c.tipo === "recibido" ? "Cheque acreditado: se sumó al saldo de la cuenta." : "Cheque debitado: se descontó del saldo de la cuenta."
+                            )
+                          }
+                          className="text-xs font-semibold text-emerald-700 hover:underline disabled:opacity-50"
+                        >
+                          {c.tipo === "recibido" ? "Confirmar acreditación" : "Confirmar débito"}
+                        </button>
+                        <button
+                          disabled={busy}
+                          onClick={() => {
+                            const motivo = window.prompt("Motivo del rechazo del cheque (mínimo 5 letras):");
+                            if (motivo) accionCheque({ accion: "rechazar", cheque_id: c.id, motivo }, "Cheque marcado como rechazado.");
+                          }}
+                          className="text-xs text-red-600 hover:underline disabled:opacity-50"
+                        >
+                          Rechazar
+                        </button>
+                        <button
+                          disabled={busy}
+                          onClick={() => {
+                            const motivo = window.prompt("Motivo de la anulación del cheque (mínimo 5 letras):");
+                            if (motivo) accionCheque({ accion: "anular", cheque_id: c.id, motivo }, "Cheque anulado.");
+                          }}
+                          className="text-xs text-slate-500 hover:underline disabled:opacity-50"
+                        >
+                          Anular
+                        </button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-end gap-3 border-b border-slate-200 px-5 py-3">
