@@ -362,7 +362,7 @@ export default function CuentasSaldosPage() {
 
       <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-end gap-3 border-b border-slate-200 px-5 py-3">
-          <h2 className="mr-auto text-sm font-bold uppercase tracking-wider text-slate-700">Control de cheques</h2>
+          <h2 className="mr-auto text-sm font-bold tracking-wider text-slate-700">Control de cheques</h2>
           <div>
             <label className={labelCls}>Estado</label>
             <select value={chFiltro} onChange={(e) => setChFiltro(e.target.value)} className={inputCls}>
@@ -396,38 +396,38 @@ export default function CuentasSaldosPage() {
         })()}
         <div className="grid gap-3 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
-            <label className={labelCls}>Tipo de cheque</label>
-            <select value={chTipo} onChange={(e) => setChTipo(e.target.value)} className={inputCls}>
+            <label htmlFor="ch-tipo" className={labelCls}>Tipo de cheque</label>
+            <select id="ch-tipo" value={chTipo} onChange={(e) => setChTipo(e.target.value)} className={inputCls}>
               <option value="recibido">Recibido (de un cliente)</option>
               <option value="emitido">Emitido (a un proveedor)</option>
             </select>
           </div>
           <div>
-            <label className={labelCls}>N° de cheque</label>
-            <input value={chNumero} onChange={(e) => setChNumero(e.target.value)} placeholder="Número del cheque" className={inputCls} />
+            <label htmlFor="ch-numero" className={labelCls}>N° de cheque</label>
+            <input id="ch-numero" value={chNumero} onChange={(e) => setChNumero(e.target.value)} placeholder="Número del cheque" className={inputCls} />
           </div>
           <div>
-            <label className={labelCls}>Banco del cheque</label>
-            <input value={chBanco} onChange={(e) => setChBanco(e.target.value)} placeholder="Banco emisor" className={inputCls} />
+            <label htmlFor="ch-banco" className={labelCls}>Banco del cheque</label>
+            <input id="ch-banco" value={chBanco} onChange={(e) => setChBanco(e.target.value)} placeholder="Banco emisor" className={inputCls} />
           </div>
           <div>
-            <label className={labelCls}>Monto del cheque (Gs.)</label>
-            <input type="number" min={0} value={chMonto} onChange={(e) => setChMonto(e.target.value)} placeholder="0" className={inputCls} />
+            <label htmlFor="ch-monto" className={labelCls}>Monto del cheque (Gs.)</label>
+            <input id="ch-monto" type="number" min={0} value={chMonto} onChange={(e) => setChMonto(e.target.value)} placeholder="0" className={inputCls} />
           </div>
           <div>
-            <label className={labelCls}>Fecha prevista (cobro / débito)</label>
-            <input type="date" value={chFecha} onChange={(e) => setChFecha(e.target.value)} className={inputCls} />
+            <label htmlFor="ch-fecha" className={labelCls}>Fecha prevista (cobro / débito)</label>
+            <input id="ch-fecha" type="date" value={chFecha} onChange={(e) => setChFecha(e.target.value)} className={inputCls} />
           </div>
           <div>
-            <label className={labelCls}>Cuenta bancaria</label>
-            <select value={chCuenta} onChange={(e) => setChCuenta(e.target.value)} className={inputCls}>
+            <label htmlFor="ch-cuenta" className={labelCls}>Cuenta bancaria</label>
+            <select id="ch-cuenta" value={chCuenta} onChange={(e) => setChCuenta(e.target.value)} className={inputCls}>
               <option value="">Elegí la cuenta…</option>
               {activas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
             </select>
           </div>
           <div>
-            <label className={labelCls}>Vinculado a</label>
-            <select value={chOrigen} onChange={(e) => setChOrigen(e.target.value)} className={inputCls}>
+            <label htmlFor="ch-origen" className={labelCls}>Vinculado a</label>
+            <select id="ch-origen" value={chOrigen} onChange={(e) => setChOrigen(e.target.value)} className={inputCls}>
               <option value="">Sin vincular</option>
               <option value="venta">Venta</option>
               <option value="cobro">Cobranza</option>
@@ -436,8 +436,8 @@ export default function CuentasSaldosPage() {
             </select>
           </div>
           <div>
-            <label className={labelCls}>N° de documento vinculado</label>
-            <input value={chRef} onChange={(e) => setChRef(e.target.value)} placeholder="Ej: N° de factura o compra" className={inputCls} />
+            <label htmlFor="ch-ref" className={labelCls}>N° de documento vinculado</label>
+            <input id="ch-ref" value={chRef} onChange={(e) => setChRef(e.target.value)} placeholder="Ej: N° de factura o compra" className={inputCls} />
           </div>
           <div className="sm:col-span-2 lg:col-span-4">
             <button
