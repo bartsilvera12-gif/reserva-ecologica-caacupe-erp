@@ -220,6 +220,8 @@ function ModalPago({ cuenta, onClose, onPagado }: { cuenta: Cuenta; onClose: () 
   const [metodo, setMetodo] = useState("efectivo");
   const [referencia, setReferencia] = useState("");
   const [cuentaId, setCuentaId] = useState("");
+  const [chequeNumero, setChequeNumero] = useState("");
+  const [chequeFecha, setChequeFecha] = useState("");
   const { cuentas: cuentasPago } = useCuentasActivas();
   const [guardando, setGuardando] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -235,6 +237,8 @@ function ModalPago({ cuenta, onClose, onPagado }: { cuenta: Cuenta; onClose: () 
     setErr(null);
     const m = Number(monto) || 0;
     if (m <= 0) return setErr("El monto debe ser mayor a 0.");
+    if (metodo === "cheque" && !chequeNumero.trim()) return setErr("Ingresá el número del cheque.");
+    if (metodo === "cheque" && !chequeFecha) return setErr("Ingresá la fecha de débito del cheque.");
     if (cuentasPago.length > 0 && !cuentaId) return setErr("Elegí la cuenta (banco o caja chica) de donde sale el pago.");
     // El saldo puede traer decimales (IVA), pero los guaraníes se manejan enteros y en pantalla se muestra redondeado.
     // Comparamos contra el saldo redondeado para no rechazar un pago igual al saldo mostrado.
@@ -244,7 +248,8 @@ function ModalPago({ cuenta, onClose, onPagado }: { cuenta: Cuenta; onClose: () 
       const res = await fetchWithSupabaseSession(`/api/cuentas-por-pagar/${cuenta.id}/pago`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ monto: m, metodo_pago: metodo, referencia: referencia.trim() || undefined, cuenta_id: cuentaId || undefined }),
+        body: JSON.stringify({ monto: m, metodo_pago: metodo, referencia: referencia.trim() || undefined, cuenta_id: cuentaId || undefined,
+          cheque_numero: metodo === "cheque" ? chequeNumero.trim() : undefined, cheque_fecha: metodo === "cheque" ? chequeFecha : undefined }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(typeof json.error === "string" ? json.error : "No se pudo registrar.");
@@ -279,9 +284,25 @@ function ModalPago({ cuenta, onClose, onPagado }: { cuenta: Cuenta; onClose: () 
               <option value="efectivo">Efectivo</option>
               <option value="transferencia">Transferencia</option>
               <option value="tarjeta">Tarjeta</option>
+              <option value="cheque">Cheque</option>
               <option value="otro">Otro</option>
             </select>
           </div>
+          {metodo === "cheque" && (
+            <>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Número de cheque</label>
+                <input value={chequeNumero} onChange={(e) => setChequeNumero(e.target.value)} placeholder="Nº de cheque"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4FAEB2]" />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Fecha de débito del cheque</label>
+                <input type="date" value={chequeFecha} onChange={(e) => setChequeFecha(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4FAEB2]" />
+                <p className="mt-1 text-[11px] text-slate-500">Queda pendiente en Control de cheques hasta confirmar el débito.</p>
+              </div>
+            </>
+          )}
           <CuentaSelect
             cuentas={cuentasPago}
             value={cuentaId}

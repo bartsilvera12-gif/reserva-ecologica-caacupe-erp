@@ -4,7 +4,8 @@ import { successResponse, errorResponse } from "@/lib/api/response";
 import { API_ERRORS } from "@/lib/api/errors";
 import { registrarCobro, CobroError } from "@/lib/cobros/server/cobros-pg";
 import { fetchDataSchemaForEmpresaId } from "@/lib/supabase/empresa-data-schema";
-import { exigirCuentaSiCorresponde, sincronizarMovimientoOrigen, CuentasError } from "@/lib/cuentas/server/cuentas-pg";
+import { registrarChequeDeOperacion } from "@/lib/cuentas/server/cheques-pg";
+import { exigirCuentaSiCorresponde,sincronizarMovimientoOrigen, CuentasError } from "@/lib/cuentas/server/cuentas-pg";
 
 /** POST /api/cobros — registra un cobro contra una cuenta por cobrar. */
 export async function POST(request: NextRequest) {
@@ -49,7 +50,22 @@ export async function POST(request: NextRequest) {
     });
 
     // Suma al saldo de la cuenta elegida (cheque: desde su fecha de cobro). Un movimiento por cobro.
-    if (metodoCobro !== "efectivo" && cuentaId) {
+    if (metodoCobro === "cheque" && cuentaId) {
+      // Cheque recibido: queda PENDIENTE en el control de cheques; el saldo sube recién al confirmar la acreditación.
+      try {
+        await registrarChequeDeOperacion({
+          schemaRaw: schema, empresaId, sucursalId: ctx.auth.sucursal_id ?? null, usuarioNombre,
+          tipo: "recibido", numero: typeof body.cheque_numero === "string" ? body.cheque_numero : null,
+          banco: typeof body.entidad_nombre_snapshot === "string" ? body.entidad_nombre_snapshot : null,
+          monto: Number(body.monto), fechaPrevista: typeof body.cheque_fecha_cobro === "string" ? body.cheque_fecha_cobro : null,
+          cuentaId, origen: "cobro", origenId: result.cobro_id,
+          referencia: body.referencia ? String(body.referencia) : null,
+          observaciones: "Cobro de cliente",
+        });
+      } catch (e) {
+        console.error("[/api/cobros POST] cobro registrado pero no se creó el cheque pendiente:", result.cobro_id, e instanceof Error ? e.message : e);
+      }
+    } else if (metodoCobro !== "efectivo" && cuentaId) {
       try {
         await sincronizarMovimientoOrigen({
           schemaRaw: schema, empresaId, origen: "cobro", origenId: result.cobro_id, usuarioNombre,

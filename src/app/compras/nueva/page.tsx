@@ -107,6 +107,7 @@ export default function NuevaCompraPage() {
     fecha_factura: "" as string,
     metodo_pago: "" as "" | "efectivo" | "transferencia" | "tarjeta" | "cheque",
     cheque_numero: "",
+    cheque_fecha: "",
     cuenta_id: "",
   });
   const { cuentas: cuentasPago } = useCuentasActivas();
@@ -298,6 +299,7 @@ export default function NuevaCompraPage() {
           fecha_factura: cab.fecha_factura || null,
           metodo_pago: cab.metodo_pago || null,
           cheque_numero: cab.metodo_pago === "cheque" ? (cab.cheque_numero.trim() || null) : null,
+          cheque_fecha: cab.metodo_pago === "cheque" ? (cab.cheque_fecha || null) : null,
           cuenta_id: cab.tipo_pago === "contado" ? cab.cuenta_id || null : null,
           comprobante_storage_path: comprobante?.comprobante_storage_path ?? null,
           comprobante_nombre: comprobante?.comprobante_nombre ?? null,
@@ -569,6 +571,18 @@ export default function NuevaCompraPage() {
                     maxLength={50}
                   />
                   <p className="mt-1 text-[11px] text-slate-500">Numeración del cheque.</p>
+                </div>
+              )}
+              {cab.metodo_pago === "cheque" && (
+                <div>
+                  <label className={labelClass}>Fecha de débito del cheque</label>
+                  <input
+                    type="date"
+                    value={cab.cheque_fecha}
+                    onChange={(e) => setCab((p) => ({ ...p, cheque_fecha: e.target.value }))}
+                    className={inputClass}
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">Queda pendiente en Control de cheques hasta confirmar el débito.</p>
                 </div>
               )}
               <div>

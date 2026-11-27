@@ -141,6 +141,54 @@ export async function crearCheque(p: {
 }
 
 /**
+ * Crea (si no existe) el cheque pendiente de una operación del ERP (compra, pago a proveedor, cobro).
+ * NO toca el saldo: el movimiento recién se genera al confirmarlo. Idempotente por (origen, origen_id) y
+ * por número + banco, así que repetirlo no duplica. Si no se indica banco usa el nombre de la cuenta.
+ */
+export async function registrarChequeDeOperacion(p: {
+  schemaRaw: string;
+  empresaId: string;
+  sucursalId?: string | null;
+  usuarioNombre?: string | null;
+  tipo: ChequeTipo;
+  numero: string | null | undefined;
+  banco?: string | null;
+  monto: number;
+  fechaPrevista: string | null | undefined;
+  cuentaId: string;
+  origen: "compra" | "pago" | "cobro" | "venta";
+  origenId: string;
+  referencia?: string | null;
+  observaciones?: string | null;
+}): Promise<{ accion: "creado" | "existente" }> {
+  const schema = assertAllowedChatDataSchema(p.schemaRaw);
+  const tK = quoteSchemaTable(schema, "cheques");
+  const tC = quoteSchemaTable(schema, "cuentas_financieras");
+  const { rows: ya } = await pool().query(
+    `SELECT 1 FROM ${tK} WHERE empresa_id=$1::uuid AND origen=$2 AND origen_id=$3 AND tipo=$4 AND estado<>'anulado' LIMIT 1`,
+    [p.empresaId, p.origen, p.origenId, p.tipo]
+  );
+  if (ya[0]) return { accion: "existente" };
+  const { rows: cu } = await pool().query(`SELECT nombre FROM ${tC} WHERE id=$1::uuid AND empresa_id=$2::uuid`, [p.cuentaId, p.empresaId]);
+  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Asuncion" });
+  const fecha = p.fechaPrevista && /^\d{4}-\d{2}-\d{2}/.test(p.fechaPrevista) ? p.fechaPrevista.slice(0, 10) : hoy;
+  const numero = (p.numero ?? "").trim() || `S/N ${p.origenId.slice(0, 8)}`;
+  const banco = (p.banco ?? "").trim() || String(cu[0]?.nombre ?? "").trim() || "Sin banco";
+  try {
+    await crearCheque({
+      schemaRaw: p.schemaRaw, empresaId: p.empresaId, sucursalId: p.sucursalId, usuarioNombre: p.usuarioNombre,
+      tipo: p.tipo, numero, banco, monto: p.monto, fechaPrevista: fecha, cuentaId: p.cuentaId,
+      origen: p.origen, origenId: p.origenId, referencia: p.referencia, observaciones: p.observaciones,
+    });
+  } catch (e) {
+    // Ya cargado a mano con ese número y banco: no se duplica.
+    if (e instanceof CuentasError && e.status === 409) return { accion: "existente" };
+    throw e;
+  }
+  return { accion: "creado" };
+}
+
+/**
  * Cambia el estado de un cheque pendiente.
  *  acreditar (recibido) / debitar (emitido): registra el movimiento en la cuenta (una sola vez).
  *  rechazar / anular: sin movimiento.

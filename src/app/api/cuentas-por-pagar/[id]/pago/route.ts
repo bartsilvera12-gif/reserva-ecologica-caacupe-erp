@@ -28,16 +28,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const monto = Number(body.monto) || 0;
     const metodoRaw = String(body.metodo_pago ?? "efectivo");
-    const metodo = ["efectivo", "transferencia", "tarjeta", "otro"].includes(metodoRaw) ? metodoRaw : "efectivo";
+    const metodo = ["efectivo", "transferencia", "tarjeta", "cheque", "otro"].includes(metodoRaw) ? metodoRaw : "efectivo";
     const referencia = body.referencia != null && String(body.referencia).trim() !== "" ? String(body.referencia).trim() : null;
     const fechaRaw = body.fecha;
     const fecha = typeof fechaRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(fechaRaw) ? fechaRaw : null;
 
     const cuentaId = body.cuenta_id != null && String(body.cuenta_id).trim() !== "" ? String(body.cuenta_id).trim() : null;
     await exigirCuentaSiCorresponde(schema, empresaId, cuentaId, "de donde sale el pago");
+    const chequeNumero = body.cheque_numero != null && String(body.cheque_numero).trim() !== "" ? String(body.cheque_numero).trim().slice(0, 50) : null;
+    const chequeFechaRaw = typeof body.cheque_fecha === "string" ? body.cheque_fecha.trim() : "";
+    const chequeFecha = /^\d{4}-\d{2}-\d{2}$/.test(chequeFechaRaw) ? chequeFechaRaw : null;
+    if (metodo === "cheque") {
+      if (!chequeNumero) return NextResponse.json(errorResponse("Ingresá el número del cheque."), { status: 400 });
+      if (!chequeFecha) return NextResponse.json(errorResponse("Ingresá la fecha de débito del cheque."), { status: 400 });
+    }
 
     const out = await registrarPagoProveedor({
       cuentaId,
+      chequeNumero,
+      chequeFecha,
       schemaRaw: schema,
       empresaId,
       sucursalId,

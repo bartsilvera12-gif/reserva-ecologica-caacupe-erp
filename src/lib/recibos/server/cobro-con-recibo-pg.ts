@@ -15,6 +15,7 @@ import { getChatPostgresPool, quoteSchemaTable } from "@/lib/supabase/chat-pg-po
 import { assertAllowedChatDataSchema } from "@/lib/supabase/chat-data-schema";
 import { montoEfectivoRecibo } from "@/lib/recibos/recibo-calculo";
 import { sincronizarMovimientoOrigen } from "@/lib/cuentas/server/cuentas-pg";
+import { registrarChequeDeOperacion } from "@/lib/cuentas/server/cheques-pg";
 
 function pool() {
   const p = getChatPostgresPool();
@@ -427,7 +428,19 @@ export async function cobrarConRecibo(
     await client.query("COMMIT");
 
     // Suma a la cuenta elegida (un movimiento por cobro; cheque: desde su fecha de cobro).
-    if (metodo !== "efectivo" && p.cuentaId) {
+    if (metodo === "cheque" && p.cuentaId && items.length > 0) {
+      // Cheque recibido: UN cheque pendiente por el total del recibo; el saldo sube al confirmar la acreditación.
+      try {
+        await registrarChequeDeOperacion({
+          schemaRaw: p.schemaRaw, empresaId: p.empresaId, sucursalId: p.sucursalId, usuarioNombre: p.usuarioNombre,
+          tipo: "recibido", numero: chequeNumero, monto: items.reduce((s, it) => round2(s + it.importe), 0),
+          fechaPrevista: chequeFechaCobro, cuentaId: p.cuentaId, origen: "cobro", origenId: reciboId,
+          referencia: p.referencia?.trim() || null, observaciones: `Recibo ${numeroRecibo}`,
+        });
+      } catch (e) {
+        console.error("[cobro-con-recibo] cobro registrado pero no se creó el cheque pendiente:", reciboId, e instanceof Error ? e.message : e);
+      }
+    } else if (metodo !== "efectivo" && p.cuentaId) {
       for (const it of items) {
         try {
           await sincronizarMovimientoOrigen({

@@ -16,6 +16,7 @@ import { getChatPostgresPool, quoteSchemaTable } from "@/lib/supabase/chat-pg-po
 import { assertAllowedChatDataSchema } from "@/lib/supabase/chat-data-schema";
 import type { PoolClient } from "pg";
 import { sincronizarMovimientoOrigen } from "@/lib/cuentas/server/cuentas-pg";
+import { registrarChequeDeOperacion } from "@/lib/cuentas/server/cheques-pg";
 
 function pool() {
   const p = getChatPostgresPool();
@@ -277,6 +278,9 @@ export async function registrarPagoProveedor(params: {
   usuarioNombre: string | null;
   /** Cuenta (banco / caja chica) de donde sale el pago: descuenta su saldo. */
   cuentaId?: string | null;
+  /** Solo método "cheque": el pago genera un cheque emitido pendiente (no baja el saldo hasta confirmar el débito). */
+  chequeNumero?: string | null;
+  chequeFecha?: string | null;
 }): Promise<{ saldo: number; estado: string }> {
   const schema = assertAllowedChatDataSchema(params.schemaRaw);
   const tCxp = quoteSchemaTable(schema, "cuentas_por_pagar");
@@ -333,7 +337,19 @@ export async function registrarPagoProveedor(params: {
     );
     await client.query("COMMIT");
     // Descuenta de la cuenta elegida (un solo movimiento por pago: no se duplica).
-    if (params.cuentaId) {
+    if (params.cuentaId && params.metodoPago === "cheque") {
+      try {
+        await registrarChequeDeOperacion({
+          schemaRaw: params.schemaRaw, empresaId: params.empresaId, sucursalId: params.sucursalId,
+          usuarioNombre: params.usuarioNombre, tipo: "emitido", numero: params.chequeNumero, monto,
+          fechaPrevista: params.chequeFecha ?? params.fecha, cuentaId: params.cuentaId,
+          origen: "pago", origenId: pagoId, referencia: params.referencia,
+          observaciones: `Pago a proveedor ${proveedorNombre}${nroFactura ? ` (fact. ${nroFactura})` : ""}`.trim(),
+        });
+      } catch (e) {
+        console.error("[cxp] pago registrado pero no se creó el cheque pendiente:", pagoId, e instanceof Error ? e.message : e);
+      }
+    } else if (params.cuentaId) {
       try {
         await sincronizarMovimientoOrigen({
           schemaRaw: params.schemaRaw, empresaId: params.empresaId, origen: "pago_proveedor", origenId: pagoId,

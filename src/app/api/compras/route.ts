@@ -10,7 +10,8 @@ import {
   type CompraItemInput,
 } from "@/lib/compras/server/compras-pg";
 import { exigirSucursal, respuestaSucursalNoAsignada } from "@/lib/sucursales/filtro";
-import { exigirCuentaSiCorresponde, sincronizarMovimientoOrigen, CuentasError } from "@/lib/cuentas/server/cuentas-pg";
+import { registrarChequeDeOperacion } from "@/lib/cuentas/server/cheques-pg";
+import { exigirCuentaSiCorresponde,sincronizarMovimientoOrigen, CuentasError } from "@/lib/cuentas/server/cuentas-pg";
 
 /**
  * GET /api/compras — lista via PG directo.
@@ -142,7 +143,23 @@ export async function POST(request: NextRequest) {
     try {
       const out = await insertComprasConImpacto(schema, empresaId, exigirSucursal(ctx.auth.sucursal_id), header, items);
 
-      if (header.tipo_pago === "contado" && cuentaId) {
+      const chequeFechaRaw = typeof body.cheque_fecha === "string" ? body.cheque_fecha.trim() : "";
+      if (header.tipo_pago === "contado" && cuentaId && metodoPago === "cheque") {
+        // Cheque emitido: queda PENDIENTE en el control de cheques; el saldo baja recién al confirmar el débito.
+        try {
+          await registrarChequeDeOperacion({
+            schemaRaw: schema, empresaId, sucursalId: exigirSucursal(ctx.auth.sucursal_id),
+            usuarioNombre: ctx.auth.user?.email ?? null,
+            tipo: "emitido", numero: chequeNumero, monto: items.reduce((s, i) => s + i.total, 0),
+            fechaPrevista: /^\d{4}-\d{2}-\d{2}$/.test(chequeFechaRaw) ? chequeFechaRaw : fechaFactura,
+            cuentaId, origen: "compra", origenId: out.numero_control,
+            referencia: header.numero_factura_proveedor,
+            observaciones: `Compra ${out.numero_control} — ${header.proveedor_nombre}`.trim(),
+          });
+        } catch (e) {
+          console.error("[/api/compras POST] compra guardada pero no se creó el cheque pendiente:", out.numero_control, e instanceof Error ? e.message : e);
+        }
+      } else if (header.tipo_pago === "contado" && cuentaId) {
         try {
           await sincronizarMovimientoOrigen({
             schemaRaw: schema, empresaId, origen: "compra", origenId: out.numero_control,
